@@ -1,0 +1,20 @@
+
+# ignore ./dev
+/dev
+
+# ignore files generated from pypi package
+/dist
+/build
+*.egg-info
+
+# ignore other approriate files
+*.pyc
+*.pyo
+*.swp
+*.bak
+*.orig
+*.rej
+*.~*
+*.log
+*.tmp
+*.tmp.*
