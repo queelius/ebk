@@ -1,19 +1,33 @@
 import os
-from PyPDF2 import PdfReader
-from ebooklib import epub
-import re
 import xmltodict
+from typing import Dict, Optional
+from slugify import slugify
+import PyPDF2
+from ebooklib import epub
 
-def opf_to_dublin_core(opf_file: str) -> dict:
-    """Parse a Calibre OPF file into a simplified structure for metadata."""
-    with open(opf_file, "r", encoding="utf-8") as f:
-        opf_dict = xmltodict.parse(f.read(), process_namespaces=False)
+def extract_metadata_from_opf(opf_file: str) -> Dict:
+    """
+    Parse a Calibre OPF file into a simplified dictionary structure (Dublin Core).
+    Returns a dict with keys:
+      - title
+      - creators
+      - subjects
+      - description
+      - language
+      - date
+      - identifiers
+    """
+    try:
+        with open(opf_file, "r", encoding="utf-8") as f:
+            opf_dict = xmltodict.parse(f.read(), process_namespaces=False)
+    except Exception as e:
+        print(f"[extract_metadata_from_opf] Error reading '{opf_file}': {e}")
+        return {}
 
-    # Extract metadata section
     package = opf_dict.get("package", {})
     metadata = package.get("metadata", {})
 
-    # Extract core metadata fields
+    # Prepare simplified structure
     simplified = {
         "title": metadata.get("dc:title", metadata.get("title")),
         "creators": [],
@@ -21,55 +35,51 @@ def opf_to_dublin_core(opf_file: str) -> dict:
         "description": metadata.get("dc:description", metadata.get("description")),
         "language": metadata.get("dc:language", metadata.get("language")),
         "date": metadata.get("dc:date", metadata.get("date")),
-        "publisher": metadata.get("dc:publisher", metadata.get("publisher")),
-        "rights": metadata.get("dc:rights", metadata.get("rights")),
         "identifiers": {},
     }
 
-    # Extract creators (handles single and multiple entries)
+    # -- Creators
     creators = metadata.get("dc:creator", metadata.get("creator", []))
     if isinstance(creators, list):
-        simplified["creators"] = [creator.get("#text", "").strip() if isinstance(creator, dict) else creator for creator in creators]
+        simplified["creators"] = [
+            c.get("#text", "").strip() if isinstance(c, dict) else c
+            for c in creators
+        ]
     elif isinstance(creators, dict):
         simplified["creators"] = [creators.get("#text", "").strip()]
     elif isinstance(creators, str):
         simplified["creators"] = [creators.strip()]
 
-    # Extract subjects (handles single and multiple entries)
+    # -- Subjects
     subjects = metadata.get("dc:subject", metadata.get("subject", []))
     if isinstance(subjects, list):
-        simplified["subjects"] = [subject.strip() for subject in subjects]
+        simplified["subjects"] = [s.strip() for s in subjects]
     elif isinstance(subjects, str):
         simplified["subjects"] = [subjects.strip()]
 
-    # Extract identifiers (handles single and multiple entries)
+    # -- Identifiers
     identifiers = metadata.get("dc:identifier", metadata.get("identifier", []))
     if isinstance(identifiers, list):
         for identifier in identifiers:
-            scheme = identifier.get("@opf:scheme", "unknown") if isinstance(identifier, dict) else "unknown"
-            simplified["identifiers"][scheme] = identifier.get("#text", "").strip() if isinstance(identifier, dict) else identifier
+            if isinstance(identifier, dict):
+                scheme = identifier.get("@opf:scheme", "unknown")
+                text = identifier.get("#text", "").strip()
+                simplified["identifiers"][scheme] = text
+            else:
+                simplified["identifiers"]["unknown"] = identifier
     elif isinstance(identifiers, dict):
         scheme = identifiers.get("@opf:scheme", "unknown")
-        simplified["identifiers"][scheme] = identifiers.get("#text", "").strip()
+        text = identifiers.get("#text", "").strip()
+        simplified["identifiers"][scheme] = text
 
     return simplified
 
 
-def extract_metadata_from_ebook(ebook_path: str) -> dict:
+def extract_metadata_from_pdf(pdf_path: str) -> Dict:
     """
-    Attempt to extract metadata from various ebook formats when no OPF file is found.
-    Returns a dict with the same structure you use for OPF-based metadata.
-    {
-        "title": str,
-        "creators": [str],
-        "subjects": [str],
-        "description": str,
-        "language": str,
-        "date": str,
-        "identifiers": {},
-    }
+    Extract metadata from a PDF file using PyPDF2.
+    Returns a dictionary with the same keys as the OPF-based dict.
     """
-    # Basic skeleton of metadata in your existing style
     metadata = {
         "title": None,
         "creators": [],
@@ -77,99 +87,196 @@ def extract_metadata_from_ebook(ebook_path: str) -> dict:
         "description": None,
         "language": None,
         "date": None,
-        "identifiers": {}
+        "identifiers": {},
     }
-    
-    # Use the file extension to decide how to parse
-    _, ext = os.path.splitext(ebook_path)
-    ext = ext.lower()
 
     try:
-        if ext == ".pdf":
-            # Parse with PyPDF2
-            reader = PdfReader(ebook_path)
-            pdf_info = reader.metadata
+        with open(pdf_path, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            info = reader.metadata or {}
 
-            if pdf_info is not None:
-                metadata["title"] = pdf_info.title if pdf_info.title else None
-                if pdf_info.author:
-                    # If authors field is a single string, split on possible delimiters if needed
-                    authors = [auth.strip() for auth in re.split("[,;]", pdf_info.author)]
-                    metadata["creators"] = authors
-                # Additional fields like creationDate, subject, etc. might be used
-                # but are less standardized
+        # NOTE: Depending on PyPDF2 version, metadata keys can differ
+        # e.g. info.title vs info.get('/Title')
+        pdf_title = info.get("/Title", None) or info.get("title", None)
+        pdf_author = info.get("/Author", None) or info.get("author", None)
+        pdf_subject = info.get("/Subject", None) or info.get("subject", None)
+        pdf_creator = info.get("/Creator", None) or info.get("creator", None)
+        pdf_creation_date = info.get("/CreationDate", None)
 
-        elif ext == ".epub":
-            # Parse with ebooklib
-            book = epub.read_epub(ebook_path)
+        if pdf_title:
+            metadata["title"] = pdf_title.strip()
+        if pdf_author:
+            metadata["creators"] = [pdf_author.strip()]
+        if pdf_subject:
+            metadata["subjects"] = [sub.strip() for sub in pdf_subject.split(",")]
+            metadata["description"] = pdf_subject.strip()
+        if pdf_creator:
+            # Sometimes PDF can have a separate "Creator" field, which could be
+            # a software tool. For now, we won't treat it as the 'author' but you could if needed.
+            pass
 
-            # The following fields often appear in ePub metadata
-            if book.metadata:
-                # ebooklib stores metadata in a dict keyed by namespace, e.g., 'DC'
-                # The standard keys for ePub's Dublin Core are often something like:
-                # book.metadata['DC']['title'], book.metadata['DC']['creator'], etc.
-                
-                dc_dict = book.metadata.get("DC", {})
-                
-                # Titles
-                if "title" in dc_dict:
-                    metadata["title"] = dc_dict["title"][0][0]
-                
-                # Creators
-                if "creator" in dc_dict:
-                    metadata["creators"] = [item[0] for item in dc_dict["creator"]]
-                
-                # Description
-                if "description" in dc_dict:
-                    metadata["description"] = dc_dict["description"][0][0]
-                
-                # Language
-                if "language" in dc_dict:
-                    metadata["language"] = dc_dict["language"][0][0]
-                
-                # Date
-                if "date" in dc_dict:
-                    metadata["date"] = dc_dict["date"][0][0]
-                
-                # Subjects
-                if "subject" in dc_dict:
-                    metadata["subjects"] = [item[0] for item in dc_dict["subject"]]
+        if pdf_creation_date and len(pdf_creation_date) >= 10:
+            # Format: 'D:YYYYMMDDhhmmss'
+            # We'll extract 'YYYY-MM-DD'
+            date_str = pdf_creation_date[2:10]  # e.g., 20210101
+            metadata["date"] = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+        # Language not typically stored in PDF metadata
+        metadata["language"] = None
 
-        else:
-            #  - Attempt to read the first line from the file or 
-            #    rely on the filename as a last resort.
-            base_filename = os.path.splitext(os.path.basename(ebook_path))[0]
-            
-            # Possibly you have a naming scheme like "Title - Author"
-            guess_parts = re.split(r'[\-_]', base_filename)
-            if guess_parts:
-                metadata["title"] = guess_parts[0].strip()
-            if len(guess_parts) > 1:
-                # Everything beyond the first might be considered the creator guess
-                metadata["creators"] = [" ".join(guess_parts[1:]).strip()]
-
-        elif ext == ".txt":
-            # For plain text, there's typically no embedded metadata.
-            # Let's just set the title from the filename:
-            base_filename = os.path.splitext(os.path.basename(ebook_path))[0]
-            metadata["title"] = base_filename
-            # No creators or other info. A possible approach:
-            #  - If you have naming convention "Author - Title.txt", parse it.
-            #  - Or if the folder name indicates something, parse that.
-
-        else:
-            # Unrecognized format, fallback
-            base_filename = os.path.splitext(os.path.basename(ebook_path))[0]
-            metadata["title"] = base_filename
-
+        # For an "identifier," we don't really have a built-in PDF field, so it's optional
+        metadata["identifiers"] = {"pdf:identifier": pdf_path}
     except Exception as e:
-        print(f"Error extracting metadata from {ebook_path}: {e}")
-        # In case of error, fallback to filename
-        base_filename = os.path.splitext(os.path.basename(ebook_path))[0]
-        metadata["title"] = base_filename
+        print(f"[extract_metadata_from_pdf] Error reading '{pdf_path}': {e}")
 
-    # Provide minimal fallback if title is still None
-    if not metadata["title"]:
-        metadata["title"] = os.path.splitext(os.path.basename(ebook_path))[0]
-    
     return metadata
+
+
+def extract_metadata_from_epub(epub_path: str) -> Dict:
+    """
+    Extract metadata from an EPUB file using ebooklib.
+    Returns a dictionary with the same keys as the OPF-based dict.
+    """
+    metadata = {
+        "title": None,
+        "creators": [],
+        "subjects": [],
+        "description": None,
+        "language": None,
+        "date": None,
+        "identifiers": {},
+    }
+
+    try:
+        book = epub.read_epub(epub_path)
+
+        # Title
+        dc_title = book.get_metadata("DC", "title")
+        if dc_title:
+            metadata["title"] = dc_title[0][0]
+
+        # Creators
+        dc_creators = book.get_metadata("DC", "creator")
+        if dc_creators:
+            metadata["creators"] = [c[0] for c in dc_creators]
+
+        # Subjects
+        dc_subjects = book.get_metadata("DC", "subject")
+        if dc_subjects:
+            metadata["subjects"] = [s[0] for s in dc_subjects]
+
+        # Description
+        dc_description = book.get_metadata("DC", "description")
+        if dc_description:
+            metadata["description"] = dc_description[0][0]
+
+        # Language
+        dc_language = book.get_metadata("DC", "language")
+        if dc_language:
+            metadata["language"] = dc_language[0][0]
+
+        # Date
+        dc_date = book.get_metadata("DC", "date")
+        if dc_date:
+            metadata["date"] = dc_date[0][0]
+
+        # Identifiers
+        identifiers = book.get_metadata("DC", "identifier")
+        if identifiers:
+            for identifier in identifiers:
+                # identifier is a tuple: (value, { 'scheme': '...' })
+                ident_value, ident_attrs = identifier
+                scheme = ident_attrs.get("scheme", "unknown")
+                metadata["identifiers"][scheme] = ident_value
+    except Exception as e:
+        print(f"[extract_metadata_from_epub] Error reading '{epub_path}': {e}")
+
+    return metadata
+
+
+def extract_metadata_from_path(file_path: str) -> Dict:
+    """
+    Fallback metadata extraction by interpreting the path as <...>/<author>/<title>.
+    Slugify them to remove invalid characters.
+    """
+    metadata = {
+        "title": "unknown_title",
+        "creators": ["unknown_author"],
+        "subjects": [],
+        "description": "",
+        "language": None,
+        "date": None,
+        "identifiers": {},
+    }
+
+    try:
+        path_parts = file_path.split(os.sep)
+        # Last part is likely the file name; the second last part might be the "author"
+        if len(path_parts) >= 2:
+            author = path_parts[-2]
+            title = os.path.splitext(path_parts[-1])[0]  # remove extension
+            metadata["title"] = slugify(title)
+            metadata["creators"] = [slugify(author)]
+    except Exception as e:
+        print(f"[extract_metadata_from_path] Error with '{file_path}': {e}")
+
+    return metadata
+
+
+def merge_metadata(primary: Dict, fallback: Dict) -> Dict:
+    """
+    Merge two metadata dicts, favoring 'primary'.
+    If a field is missing in 'primary', fill in from 'fallback'.
+    For 'identifiers', union them.
+    """
+    merged = dict(primary)  # copy primary
+
+    # List of top-level fields
+    fields = ["title", "creators", "subjects", "description", "language", "date"]
+    for field in fields:
+        if not merged.get(field) and fallback.get(field):
+            merged[field] = fallback[field]
+
+    # Identifiers
+    if "identifiers" not in merged:
+        merged["identifiers"] = {}
+    for scheme, val in fallback.get("identifiers", {}).items():
+        if scheme not in merged["identifiers"]:
+            merged["identifiers"][scheme] = val
+
+    return merged
+
+
+def extract_metadata(ebook_file: str, opf_file: Optional[str] = None) -> Dict:
+    """
+    High-level function to extract metadata from either:
+      - OPF file (if provided)
+      - The ebook_file (PDF, EPUB, or fallback from path)
+    Then merges them, giving priority to OPF data.
+    
+    Returns a final merged dictionary with keys:
+      - title
+      - creators
+      - subjects
+      - description
+      - language
+      - date
+      - identifiers
+    """
+
+    # 1. Extract from OPF if we have it
+    opf_metadata = {}
+    if opf_file and os.path.isfile(opf_file):
+        opf_metadata = extract_metadata_from_opf(opf_file)
+
+    # 2. Extract from ebook_file (pdf/epub/path fallback)
+    _, ext = os.path.splitext(ebook_file.lower())
+    if ext == ".pdf":
+        ebook_metadata = extract_metadata_from_pdf(ebook_file)
+    elif ext == ".epub":
+        ebook_metadata = extract_metadata_from_epub(ebook_file)
+    else:
+        ebook_metadata = extract_metadata_from_path(ebook_file)
+
+    # 3. Merge them: OPF is primary, ebook is fallback
+    final = merge_metadata(opf_metadata, ebook_metadata)
+    return final
