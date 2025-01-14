@@ -16,6 +16,7 @@ def extract_metadata_from_opf(opf_file: str) -> Dict:
       - language
       - date
       - identifiers
+      - publisher
     """
     try:
         with open(opf_file, "r", encoding="utf-8") as f:
@@ -30,16 +31,17 @@ def extract_metadata_from_opf(opf_file: str) -> Dict:
     # Prepare simplified structure
     simplified = {
         "title": metadata.get("dc:title", metadata.get("title")),
-        "creators": [],
-        "subjects": [],
+        "creators": None,
+        "subjects": None,
         "description": metadata.get("dc:description", metadata.get("description")),
         "language": metadata.get("dc:language", metadata.get("language")),
         "date": metadata.get("dc:date", metadata.get("date")),
-        "identifiers": {},
+        "publisher": metadata.get("dc:publisher", metadata.get("publisher")),
+        "identifiers": None
     }
 
     # -- Creators
-    creators = metadata.get("dc:creator", metadata.get("creator", []))
+    creators = metadata.get("dc:creator", metadata.get("creator"))
     if isinstance(creators, list):
         simplified["creators"] = [
             c.get("#text", "").strip() if isinstance(c, dict) else c
@@ -51,15 +53,16 @@ def extract_metadata_from_opf(opf_file: str) -> Dict:
         simplified["creators"] = [creators.strip()]
 
     # -- Subjects
-    subjects = metadata.get("dc:subject", metadata.get("subject", []))
+    subjects = metadata.get("dc:subject", metadata.get("subject"))
     if isinstance(subjects, list):
         simplified["subjects"] = [s.strip() for s in subjects]
     elif isinstance(subjects, str):
         simplified["subjects"] = [subjects.strip()]
 
     # -- Identifiers
-    identifiers = metadata.get("dc:identifier", metadata.get("identifier", []))
+    identifiers = metadata.get("dc:identifier", metadata.get("identifier"))
     if isinstance(identifiers, list):
+        simplified["identifiers"] = {}
         for identifier in identifiers:
             if isinstance(identifier, dict):
                 scheme = identifier.get("@opf:scheme", "unknown")
@@ -80,14 +83,15 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
     Extract metadata from a PDF file using PyPDF2.
     Returns a dictionary with the same keys as the OPF-based dict.
     """
+
     metadata = {
         "title": None,
-        "creators": [],
-        "subjects": [],
+        "creators": None,
+        "subjects": None,
         "description": None,
         "language": None,
         "date": None,
-        "identifiers": {},
+        "identifiers": None
     }
 
     try:
@@ -199,52 +203,26 @@ def extract_metadata_from_path(file_path: str) -> Dict:
     Slugify them to remove invalid characters.
     """
     metadata = {
-        "title": "unknown_title",
-        "creators": ["unknown_author"],
+        "title": None,
+        "creators": [],
         "subjects": [],
         "description": "",
-        "language": None,
-        "date": None,
-        "identifiers": {},
+        "language": "unknown-language",
+        "date": "unknown-date",
+        "identifiers": {}
     }
 
     try:
         path_parts = file_path.split(os.sep)
-        # Last part is likely the file name; the second last part might be the "author"
-        if len(path_parts) >= 2:
-            author = path_parts[-2]
-            title = os.path.splitext(path_parts[-1])[0]  # remove extension
-            metadata["title"] = slugify(title)
-            metadata["creators"] = [slugify(author)]
+        # path_parts: ['base_dir', 'author_dir', 'title', 'title - author.ext'] ]
+        title = path_parts[-2]
+        creators = path_parts[1].split(",")
+        metadata["title"] = title
+        metadata["creators"] = creators
     except Exception as e:
         print(f"[extract_metadata_from_path] Error with '{file_path}': {e}")
 
     return metadata
-
-
-def merge_metadata(primary: Dict, fallback: Dict) -> Dict:
-    """
-    Merge two metadata dicts, favoring 'primary'.
-    If a field is missing in 'primary', fill in from 'fallback'.
-    For 'identifiers', union them.
-    """
-    merged = dict(primary)  # copy primary
-
-    # List of top-level fields
-    fields = ["title", "creators", "subjects", "description", "language", "date"]
-    for field in fields:
-        if not merged.get(field) and fallback.get(field):
-            merged[field] = fallback[field]
-
-    # Identifiers
-    if "identifiers" not in merged:
-        merged["identifiers"] = {}
-    for scheme, val in fallback.get("identifiers", {}).items():
-        if scheme not in merged["identifiers"]:
-            merged["identifiers"][scheme] = val
-
-    return merged
-
 
 def extract_metadata(ebook_file: str, opf_file: Optional[str] = None) -> Dict:
     """
@@ -261,6 +239,10 @@ def extract_metadata(ebook_file: str, opf_file: Optional[str] = None) -> Dict:
       - language
       - date
       - identifiers
+      - cover_path
+      - file_paths
+      - virtual_libs
+      - unique_id
     """
 
     # 1. Extract from OPF if we have it
@@ -268,15 +250,15 @@ def extract_metadata(ebook_file: str, opf_file: Optional[str] = None) -> Dict:
     if opf_file and os.path.isfile(opf_file):
         opf_metadata = extract_metadata_from_opf(opf_file)
 
-    # 2. Extract from ebook_file (pdf/epub/path fallback)
     _, ext = os.path.splitext(ebook_file.lower())
     if ext == ".pdf":
         ebook_metadata = extract_metadata_from_pdf(ebook_file)
     elif ext == ".epub":
         ebook_metadata = extract_metadata_from_epub(ebook_file)
-    else:
-        ebook_metadata = extract_metadata_from_path(ebook_file)
 
-    # 3. Merge them: OPF is primary, ebook is fallback
-    final = merge_metadata(opf_metadata, ebook_metadata)
-    return final
+    path_metadata = extract_metadata_from_path(ebook_file)
+
+    metadata = {key: opf_metadata.get(key) or ebook_metadata.get(key) or value for key, value in path_metadata.items()}
+    metadata = {key: metadata.get(key) or value for key, value in path_metadata.items()}
+    return metadata
+

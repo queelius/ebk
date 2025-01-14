@@ -1,10 +1,10 @@
-from .convert_calibre import convert_calibre
 from .extract_metadata import extract_metadata
 from .manager import LibraryManager
-from .exporter import export_to_hugo
+from .exports.hugo import export_hugo
+from .imports.calibre import import_calibre
 
 # Define the public API
-__all__ = ["convert_calibre", "LibraryManager", "export_to_hugo", "extract_metadata"]
+__all__ = ["import_calibre", "LibraryManager", "export_hugo", "extract_metadata"]
 
 # Optional package metadata
 __version__ = "0.1.0"

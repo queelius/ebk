@@ -1,0 +1,8 @@
+dev
+ebk.egg-info
+tests
+.*
+build
+__pycache__
+*.pyc
+dist
