@@ -163,6 +163,8 @@ def display_table_view_tab(filtered_df: pd.DataFrame):
     st.dataframe(filtered_df)
 
 
+
+
 def display_advanced_search_tab(metadata_list: list):
     """
     Using JMESPath to search the metadata list.

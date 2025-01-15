@@ -2,11 +2,14 @@ import argparse
 import subprocess
 import sys
 import json
+import shutil
 from .exports.hugo import export_hugo
 from .exports.zip import export_zipfile
 from .imports.calibre import import_calibre
 from .imports.ebooks import import_ebooks
 from .merge import merge_libraries
+from .utils import enumerate_ebooks, load_library
+from .ident import add_unique_id
 from pathlib import Path
 import logging
 
@@ -84,15 +87,37 @@ def main():
     stats_parser.add_argument("lib_dir", help="Path to the ebk library directory to get stats")
     stats_parser.add_argument("--keywords", nargs="+", help="Keywords to search for in titles", default=["python", "data", "machine learning"])
 
-    # Modify Command: NEED TO IMPLEMENT
-    modify_parser = subparsers.add_parser(
-        "modify", help="Add or remove entries from the ebk library.")
-    modify_parser.add_argument(
-        "operation", choices=["add", "remove"],
-        help="Operation to perform")
-    modify_parser.add_argument("expression", help="Operation applies to entries matching this expression")
-    modify_parser.add_argument("lib_dir", help="Path to the ebk library directory to modify")
-    modify_parser.add_argument("--regex", action="store_true", help="Treat the expression as a regex")
+    # List Command
+    list_parser = subparsers.add_parser(
+        "list", help="List entries in an ebk library.")
+    list_parser.add_argument("lib_dir", help="Path to the ebk library directory to list")
+
+    # Add Command
+    add_parser = subparsers.add_parser(
+        "add", help="Add entries to the ebk library.")
+    add_parser.add_argument("lib_dir", help="Path to the ebk library directory to modify")
+    add_parser.add_argument("--json", help="JSON file containing entry info to add - may be combined with the other options")
+    add_parser.add_argument("--title", help="Title of the entry to add")
+    add_parser.add_argument("--creators", nargs="+", help="Creators of the entry to add")
+    add_parser.add_argument("--ebooks", nargs="+", help="Paths to the ebook files to add")
+    add_parser.add_argument("--cover", help="Path to the cover image to add")
+
+    # Remove Command
+    remove_parser = subparsers.add_parser(
+        "remove", help="Remove entries from the ebk library.")
+    remove_parser.add_argument("lib_dir", help="Path to the ebk library directory to modify")
+    remove_parser.add_argument("regex", help="Regex search expression to remove entries")
+    #remove_parser.add_argument("--dry-run", action="store_true", help="Perform a dry-run without modifying the library")
+    remove_parser.add_argument("--force", action="store_true", help="Force removal without confirmation")
+    remove_parser.add_argument("--apply-to", nargs="+",
+                               default=["title"],
+                               choices=["identifers", "creators", "title"], help="Apply the removal to ebooks, covers, or all files")
+    
+    # Remove by index Command
+    remove_index_parser = subparsers.add_parser(
+        "remove-index", help="Remove entries from the ebk library by index.")
+    remove_index_parser.add_argument("lib_dir", help="Path to the ebk library directory to modify")
+    remove_index_parser.add_argument("indices", nargs="+", help="Indices of entries to remove")
                              
     # Dashboard Command
     dash_parser = subparsers.add_parser("dash", help="Launch the Streamlit dashboard")
@@ -138,6 +163,80 @@ def main():
     elif args.command == "stats":
         stats = get_library_statistics(args.lib_dir, args.keywords)
         print(json.dumps(stats, indent=2))
+
+    elif args.command == "remove-index":
+        metadata_list = load_library(args.lib_dir)
+        if not metadata_list:
+            print("Failed to load library.")
+            sys.exit(1)
+        print(f"Loaded {len(metadata_list)} entries from {args.lib_dir}")
+        indices = [int(i) for i in args.indices]
+        indices.sort(reverse=True)
+        for i in indices:
+            del metadata_list[i]
+        with open(Path(args.lib_dir) / "metadata.json", "w") as f:
+            json.dump(metadata_list, f, indent=2)
+
+    elif args.command == "remove":
+        metadata_list = load_library(args.lib_dir)
+        if not metadata_list:
+            print("Failed to load library.")
+            sys.exit(1)
+        print(f"Loaded {len(metadata_list)} entries from {args.lib_dir}")
+
+        import re
+        if "title" in args.apply_to:
+            rem_list = [entry for entry in metadata_list if re.search(args.regex, entry["title"])]
+        if "creators" in args.apply_to:
+            rem_list = [entry for entry in metadata_list if any(re.search(args.regex, creator) for creator in entry["creators"])]
+        if "identifiers" in args.apply_to:
+            rem_list = [entry for entry in metadata_list if any(re.search(args.regex, identifier) for identifier in entry["identifiers"])]
+        
+        for entry in rem_list:
+            # confirm removal
+            if not args.force:
+                print(f"Remove entry: {entry}")
+                confirm = input("Confirm removal? (y/n): ")
+                if confirm.lower() != "y":
+                    continue
+
+            metadata_list.remove(entry)
+            print(f"Removed entry: {entry}")
+
+        with open(Path(args.lib_dir) / "metadata.json", "w") as f:
+            json.dump(metadata_list, f, indent=2)
+
+    elif args.command == "add":
+        metadata_list = load_library(args.lib_dir)
+        if not metadata_list:
+            print("Failed to load library.")
+            sys.exit(1)
+        print(f"Loaded {len(metadata_list)} entries from {args.lib_dir}")
+        new_entry = {
+            "title": args.title,
+            "creators": args.creators,
+            "file_paths": args.ebooks,
+            "cover_path": args.cover,
+        }
+        add_unique_id(new_entry)
+
+        print(f"Adding new entry: {new_entry}")
+        metadata_list.append(new_entry)
+        with open(Path(args.lib_dir) / "metadata.json", "w") as f:
+            json.dump(metadata_list, f, indent=2)
+
+        # let's use shutil to copy the files
+        if args.ebooks:
+            for ebook in args.ebooks:
+                shutil.copy(ebook, args.lib_dir)
+        if args.cover:
+            shutil.copy(args.cover, args.lib_dir)
+
+
+
+
+    elif args.command == "list":
+        enumerate_ebooks(args.lib_dir)
 
     else:
         parser.print_help()

@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import List, Dict
 import logging
 from jmespath import search
+import sys
+from rich.console import Console
+from rich.table import Table
+from rich.markdown import Markdown
+RICH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
@@ -159,3 +164,75 @@ def get_unique_filename(target_path: str) -> str:
         new_path = f"{base} ({counter}){ext}"
 
     return new_path
+
+def enumerate_ebooks(lib_dir: str) -> None:
+    """
+    Enumerates and displays the ebooks in the specified library directory.
+
+    For each ebook, displays its index, title, creators, and a clickable link to the first PDF file.
+
+    Args:
+        lib_dir (str): The path to the library directory containing ebook metadata.
+    """
+    console = Console()
+    lib_path = Path(lib_dir)
+
+    if not lib_path.exists():
+        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
+        sys.exit(1)
+
+    if not lib_path.is_dir():
+        console.print(f"[bold red]Error:[/bold red] The path '{lib_dir}' is not a directory.")
+        sys.exit(1)
+
+    try:
+        metadata_list = load_library(lib_path)
+    except Exception as e:
+        console.print(f"[bold red]Error loading library metadata:[/bold red] {e}")
+        sys.exit(1)
+
+    total_books = len(metadata_list)
+    if total_books == 0:
+        console.print("[yellow]No ebooks found in the library.[/yellow]")
+        return
+
+    console.print(f"📚 [bold]Found {total_books} ebook(s) in the library:[/bold]\n")
+
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Title", min_width=20)
+    table.add_column("Creators", min_width=20)
+    table.add_column("Link", min_width=30)
+
+    for i, book in enumerate(metadata_list, start=1):
+        title = book.get('title', 'Unknown Title')
+        creators = book.get('creators', ['Unknown'])
+        if not isinstance(creators, list):
+            creators = [str(creators)]
+        creators_str = ', '.join(creators)
+
+        ebook_paths = book.get('file_paths', [])
+        ebook_path = ebook_paths[0] if ebook_paths else None
+
+        if ebook_path:
+            ebook_full_path = lib_path / ebook_path
+            if ebook_full_path.exists():
+                # Resolve the path to an absolute path
+                resolved_path = ebook_full_path.resolve()
+                # Convert Windows paths to URL format if necessary
+                if sys.platform.startswith('win'):
+                    ebook_link = resolved_path.as_uri()
+                else:
+                    ebook_link = f"file://{resolved_path}"
+                link_display = f"[link={ebook_link}]🔗 Open[/link]"
+            else:
+                ebook_link = "File not found"
+                link_display = "[red]🔗 Not Found[/red]"
+        else:
+            ebook_link = "Unknown"
+            link_display = "[red]🔗 Unknown[/red]"
+
+        table.add_row(str(i), title, creators_str, link_display)
+
+    console.print(table)
+    console.print("\n")  # Add some spacing
