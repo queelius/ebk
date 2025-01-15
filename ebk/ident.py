@@ -1,6 +1,6 @@
 import hashlib
 import re
-from typing import List, Optional, Dict
+from typing import List, Dict
 import uuid
 
 def canonicalize_text(text: str) -> str:

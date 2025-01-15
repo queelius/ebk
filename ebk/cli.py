@@ -2,22 +2,21 @@ import argparse
 import subprocess
 import sys
 import json
-import re
-from jmespath import search
-from typing import List, Dict
 from .exports.hugo import export_hugo
-from .exports.markdown import export_markdown
+from .exports.zip import export_zipfile
 from .imports.calibre import import_calibre
 from .imports.ebooks import import_ebooks
 from .merge import merge_libraries
 from pathlib import Path
 import logging
 
+from .utils import search_entries, get_library_statistics
+
 logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(
-        description="eBook Library Manager CLI",
+        description="ebk - eBook CLI",
         formatter_class=argparse.RawTextHelpFormatter
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -53,10 +52,10 @@ def main():
     hugo_parser.add_argument("lib_dir", help="Path to the ebk library directory to export (contains `metadata.json` and ebook-related files)")    
     hugo_parser.add_argument("hugo_dir", help="Path to the Hugo site directory")
 
-    ## Export to Markdown
-    markdown_parser = export_subparsers.add_parser("markdown", help="Export to Markdown. Library exported to nested directory where each directory is an entry in the ebk library and metadata is stored in a markdown file in each directory.")
-    markdown_parser.add_argument("lib_dir", help="Path to the ebk library directory to export (contains `metadata.json` and ebook-related files)")
-    markdown_parser.add_argument("markdown_dir", help="Path to the Markdown output directory")
+    ## Export to Zip format
+    zip_parser = export_subparsers.add_parser("zip", help="Export to Zip format. This will create a Zip file containing the library. All commands work with the Zip file, so they are interchangeable. When using the streamlist dashboard, however, the Zip format is required.")
+    zip_parser.add_argument("lib_dir", help="Path to the ebk library directory to export (contains `metadata.json` and ebook-related files)")
+    zip_parser.add_argument("zip_file", help="Path to the Zip file to export the library to")
 
     # Merge Command
     merge_parser = subparsers.add_parser(
@@ -83,12 +82,9 @@ def main():
     stats_parser = subparsers.add_parser(
         "stats", help="Get statistics about the ebk library.")
     stats_parser.add_argument("lib_dir", help="Path to the ebk library directory to get stats")
-    stats_parser.add_argument("--json", action="store_true", help="Output stats in JSON format")
+    stats_parser.add_argument("--keywords", nargs="+", help="Keywords to search for in titles", default=["python", "data", "machine learning"])
 
-
-
-    
-    # Modify Command
+    # Modify Command: NEED TO IMPLEMENT
     modify_parser = subparsers.add_parser(
         "modify", help="Add or remove entries from the ebk library.")
     modify_parser.add_argument(
@@ -97,10 +93,7 @@ def main():
     modify_parser.add_argument("expression", help="Operation applies to entries matching this expression")
     modify_parser.add_argument("lib_dir", help="Path to the ebk library directory to modify")
     modify_parser.add_argument("--regex", action="store_true", help="Treat the expression as a regex")
-
-
-                              
-
+                             
     # Dashboard Command
     dash_parser = subparsers.add_parser("dash", help="Launch the Streamlit dashboard")
     dash_parser.add_argument(
@@ -120,11 +113,11 @@ def main():
 
     elif args.command == "export":
         if args.format == "hugo":
-            export_hugo(args.json_file, args.hugo_dir)
+            export_hugo(args.lib_dir, args.hugo_dir)
             logger.debug(f"Library exported to Hugo at {args.hugo_dir}")
-        elif args.format == "markdown":
-            export_markdown(args.json_file, args.markdown_dir)
-            logger.debug(f"Library exported to Markdown at {args.markdown_dir}")
+        elif args.format == "zip":
+            export_zipfile(args.lib_dir, args.zip_file)
+            logger.debug(f"Library exported to Zip file {args.zip_file}")
         else:
             export_parser.print_help()
 
@@ -141,6 +134,10 @@ def main():
 
     elif args.command == "dash":
         streamlit_app(args.port)
+
+    elif args.command == "stats":
+        stats = get_library_statistics(args.lib_dir, args.keywords)
+        print(json.dumps(stats, indent=2))
 
     else:
         parser.print_help()
@@ -172,60 +169,6 @@ def streamlit_app(port: int):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
-
-def search_entries(lib_dir: str, expression: str):
-    """
-    Search entries in an ebk library.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory
-        expression (str): Search expression (regex)
-
-    Returns:
-        List[Dict]: List of matching entries
-    """
-
-    print(f"Searching for entries matching '{expression}' in {lib_dir}")
-
-    # Load the library
-    library = load_library(lib_dir)
-
-    for i, entry in enumerate(library):
-        print((i, entry['title']))
-
-    if not library:
-        logger.error(f"Failed to load the library at {lib_dir}")
-        return []
-    
-    result = search(expression, library)
-    return result
-
-
-def load_library(lib_dir: str) -> List[Dict]:
-    """
-    Load an ebk library from the specified directory.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory
-
-    Returns:
-        List[Dict]: List of entries in the library
-    """
-    lib_dir = Path(lib_dir)
-    metadata_path = lib_dir / "metadata.json"
-    if not metadata_path.exists():
-        logger.error(f"Metadata file not found at {metadata_path}")
-        return []
-
-    with open(metadata_path, "r") as f:
-        try:
-            library = json.load(f)
-            return library
-        except json.JSONDecodeError as e:
-            logger.error(f"Error decoding JSON from {metadata_path}: {e}")
-            return []
-
-
 
 if __name__ == "__main__":
     main()

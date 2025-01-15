@@ -76,11 +76,11 @@ def main():
         key="zip_upload"
     )
 
-    MAX_ZIP_SIZE = 1024 * 1024 * 1024  # 1 GB
+    MAX_ZIP_SIZE = 8 * 1024 * 1024 * 1024  # 1 GB
 
     if zip_file:
         if zip_file.size > MAX_ZIP_SIZE:
-            st.error("❌ Uploaded ZIP file is too large. Please upload a ZIP file smaller than 200 MB.")
+            st.error(f"❌ Uploaded ZIP file is {zip_file.size / 1024 / 1024 / 1024:.2f} GB, which exceeds the size limit of 1 GB.")
             logger.error("Uploaded ZIP file exceeds the size limit.")
             st.stop()
 

@@ -6,6 +6,7 @@ from typing import Dict
 import logging
 from ..extract_metadata import extract_metadata
 from ..ident import add_unique_id
+from ..utils import get_unique_filename
 
 logger = logging.getLogger(__name__)
 
@@ -14,15 +15,15 @@ ebook_exts = (".pdf", ".epub", ".mobi", ".azw3", ".txt", ".docx", ".odt",
               ".xps", ".ibooks", ".azw", ".lit", ".pdb", ".prc", ".lrf",
               ".pdb", ".pml", ".rb", ".snb", ".tcr", ".txtz", ".azw1")                
 
-def import_calibre(calibre_folder: str,
-                   output_folder: str,
+def import_calibre(calibre_dir: str,
+                   output_dir: str,
                    ebook_exts: tuple = ebook_exts):
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
     metadata_list = []
 
-    for root, _, files in os.walk(calibre_folder):
+    for root, _, files in os.walk(calibre_dir):
         # Look for OPF
         opf_file_path = os.path.join(root, "metadata.opf")
         
@@ -48,10 +49,10 @@ def import_calibre(calibre_folder: str,
         # Extract metadata (OPF + ebook)
         metadata = extract_metadata(ebook_full_path, opf_file_path)
         metadata["root"] = root
-        metadata["source_folder"] = calibre_folder
-        metadata["output_folder"] = output_folder
+        metadata["source_folder"] = calibre_dir
+        metadata["output_folder"] = output_dir
         metadata["imported_from"] = "calibre"
-        metadata["virtual_libs"] = [slugify(output_folder)]
+        metadata["virtual_libs"] = [slugify(output_dir)]
 
         # Generate base name
         title_slug = slugify(metadata.get("title", "unknown_title"))
@@ -65,17 +66,17 @@ def import_calibre(calibre_folder: str,
         for ebook_file in ebook_files:
             _, ext = os.path.splitext(ebook_file)
             src = os.path.join(root, ebook_file)
-            dst = os.path.join(output_folder, f"{base_name}{ext}")
+            dst = os.path.join(output_dir, f"{base_name}{ext}")
             dst = get_unique_filename(dst)
             shutil.copy(src, dst)
-            file_paths.append(os.path.relpath(dst, output_folder))
+            file_paths.append(os.path.relpath(dst, output_dir))
 
         # Optionally handle cover.jpg
         if "cover.jpg" in files:
             cover_src = os.path.join(root, "cover.jpg")
-            cover_dst = os.path.join(output_folder, f"{base_name}_cover.jpg")
+            cover_dst = os.path.join(output_dir, f"{base_name}_cover.jpg")
             shutil.copy(cover_src, cover_dst)
-            metadata["cover_path"] = os.path.relpath(cover_dst, output_folder)
+            metadata["cover_path"] = os.path.relpath(cover_dst, output_dir)
 
         # Store relative paths in metadata
         metadata["file_paths"] = file_paths
@@ -85,29 +86,10 @@ def import_calibre(calibre_folder: str,
         add_unique_id(entry)
 
     # Write out metadata.json
-    output_json = os.path.join(output_folder, "metadata.json")
+    output_json = os.path.join(output_dir, "metadata.json")
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(metadata_list, f, indent=2, ensure_ascii=False)
 
-def get_unique_filename(target_path: str) -> str:
-    """
-    If target_path already exists, generate a new path with (1), (2), etc.
-    Otherwise just return target_path.
-    
-    Example:
-       'myfile.pdf' -> if it exists -> 'myfile (1).pdf' -> if that exists -> 'myfile (2).pdf'
-    """
-    if not os.path.exists(target_path):
-        return target_path
-
-    base, ext = os.path.splitext(target_path)
-    counter = 1
-    new_path = f"{base} ({counter}){ext}"
-    while os.path.exists(new_path):
-        counter += 1
-        new_path = f"{base} ({counter}){ext}"
-
-    return new_path
 
 def ensure_metadata_completeness(metadata: Dict) -> Dict:
     """

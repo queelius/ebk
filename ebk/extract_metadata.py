@@ -91,7 +91,9 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
         "description": None,
         "language": None,
         "date": None,
-        "identifiers": None
+        "publisher": None,
+        "identifiers": None,
+        "keywords": None,
     }
 
     try:
@@ -104,7 +106,8 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
         pdf_title = info.get("/Title", None) or info.get("title", None)
         pdf_author = info.get("/Author", None) or info.get("author", None)
         pdf_subject = info.get("/Subject", None) or info.get("subject", None)
-        pdf_creator = info.get("/Creator", None) or info.get("creator", None)
+        pdf_keywords = info.get("/Keywords", None) or info.get("keywords", None)
+        pdf_publisher = info.get("/Producer", None) or info.get("producer", None) or info.get("/Publisher", None) or info.get("publisher", None)
         pdf_creation_date = info.get("/CreationDate", None)
 
         if pdf_title:
@@ -114,10 +117,6 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
         if pdf_subject:
             metadata["subjects"] = [sub.strip() for sub in pdf_subject.split(",")]
             metadata["description"] = pdf_subject.strip()
-        if pdf_creator:
-            # Sometimes PDF can have a separate "Creator" field, which could be
-            # a software tool. For now, we won't treat it as the 'author' but you could if needed.
-            pass
 
         if pdf_creation_date and len(pdf_creation_date) >= 10:
             # Format: 'D:YYYYMMDDhhmmss'
@@ -125,10 +124,20 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
             date_str = pdf_creation_date[2:10]  # e.g., 20210101
             metadata["date"] = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
         # Language not typically stored in PDF metadata
-        metadata["language"] = None
+        metadata["language"] = "unknown-language"
 
         # For an "identifier," we don't really have a built-in PDF field, so it's optional
         metadata["identifiers"] = {"pdf:identifier": pdf_path}
+
+        if pdf_keywords:
+            metadata["keywords"] = [kw.strip() for kw in pdf_keywords.split(",")]
+
+        if pdf_publisher:
+            metadata["publisher"] = pdf_publisher.strip()
+
+        metadata["file_paths"] = [pdf_path]
+
+
     except Exception as e:
         print(f"[extract_metadata_from_pdf] Error reading '{pdf_path}': {e}")
 
@@ -258,7 +267,7 @@ def extract_metadata(ebook_file: str, opf_file: Optional[str] = None) -> Dict:
 
     path_metadata = extract_metadata_from_path(ebook_file)
 
-    metadata = {key: opf_metadata.get(key) or ebook_metadata.get(key) or value for key, value in path_metadata.items()}
+    metadata = {key: opf_metadata.get(key) or ebook_metadata.get(key) or value for key, value in ebook_metadata.items()}
     metadata = {key: metadata.get(key) or value for key, value in path_metadata.items()}
     return metadata
 
