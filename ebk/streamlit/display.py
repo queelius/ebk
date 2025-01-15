@@ -52,11 +52,10 @@ def display_books_tab(filtered_df: pd.DataFrame, cover_images: dict, ebook_files
                         "🌐 **Language**": row.get("language", "N/A"),
                         "📅 **Publication Date**": row.get("date", "N/A") if pd.notna(row.get("date", None)) else "N/A",
                         "📖 **Publisher**": row.get("publisher", "N/A"),
-                        #"📏 **File Size**": row.get("file_size", "N/A"),
-                        # next item of metadata is: "virtual_libs: row.get("virtual_libs", "N/A"), so let's do it
+                        "📏 **File Size**": row.get("file_size", "N/A"),
                         "📚 **Virtual Libraries**": ", ".join(row.get("virtual_libs", ["N/A"])),
-                        #"🔑 **Identifiers**": ", ".join([f"{k}: {v}" for k, v in row.get("identifiers", {}).items()]),
-                        "🔑 **Unique ID**": row.get("unique_id", "NA")
+                        "🔑 **Identifiers**": ", ".join([f"{k}: {v}" for k, v in row.get("identifiers", {}).items()]),
+                        "🔑 **Unique ID**": row.get("unique_id", "NA"),
                     }
 
                     for key, value in metadata_details.items():

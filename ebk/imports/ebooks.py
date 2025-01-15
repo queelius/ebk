@@ -77,7 +77,7 @@ def import_ebooks(ebooks_dir, output_dir):
                         with open(cover_image_file, "wb") as cover:
                             cover.write(cover_image)
 
-                        metadata["cover_path"] = os.path.relpath(cover_image_file, output_dir)
+                        item["cover_path"] = os.path.relpath(cover_image_file, output_dir)
 
 
 

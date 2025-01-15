@@ -169,7 +169,11 @@ def copy_entry_files(
         dst_filename = f"{base_name}{ext}"
         dst_path = os.path.join(dst_folder, dst_filename)
         dst_path = get_unique_filename(dst_path)
-        shutil.copy(src_path, dst_path)
+        try:
+            shutil.copy(src_path, dst_path)
+        except OSError as e:
+            logger.error(f"Error copying file '{src_path}' to '{dst_path}': {e}")
+            continue
         new_file_paths.append(os.path.basename(dst_path))
         logger.debug(f"Copied ebook file '{src_path}' to '{dst_path}'")
     
@@ -184,7 +188,12 @@ def copy_entry_files(
             dst_cover_filename = f"{base_name}_cover{ext}"
             dst_cover_path = os.path.join(dst_folder, dst_cover_filename)
             dst_cover_path = get_unique_filename(dst_cover_path)
-            shutil.copy(src_cover, dst_cover_path)
+            try:
+                shutil.copy(src_cover, dst_cover_path)
+            except OSError as e:
+                logger.error(f"Error copying cover image '{src_cover}' to '{dst_cover_path}': {e}")
+                new_entry['cover_path'] = None
+                return new_entry
             new_entry['cover_path'] = os.path.basename(dst_cover_path)
             logger.debug(f"Copied cover image '{src_cover}' to '{dst_cover_path}'")
         else:

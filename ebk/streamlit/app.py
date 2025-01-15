@@ -34,7 +34,8 @@ def display_dashboard(metadata_list: list, cover_images: dict, ebook_files: dict
     logger.debug("Applied filters to DataFrame.")
 
     # Create Tabs
-    tabs = st.tabs(["📚 Books", "📊 Statistics"])
+    tabs = st.tabs(["📚 Books", "📊 Statistics", "Advanced Search", "📖 Table", "📝 Instructions"])
+    
 
     with tabs[0]:
         # Display Books
@@ -44,28 +45,37 @@ def display_dashboard(metadata_list: list, cover_images: dict, ebook_files: dict
         # Display Statistics
         display_statistics_tab(filtered_df)
 
+    with tabs[2]:
+        # Display Advanced Search
+        display_advanced_search_tab(metadata_list)
+
+    with tabs[3]:
+        # Display Table
+        display_table_view_tab(filtered_df)
+
+    with tabs[4]:
+        # Display Instructions
+        st.header("📝 Instructions")
+        st.markdown("""
+        1. **Prepare a ZIP Archive** of an ebk library using the following process:
+        - Go to the directory containing the desired ebk library (should have 'metadata.json` and associated files).
+        - Compress the directory into a ZIP archive.
+                - The `ebk` CLI tool can also autoatically output a ZIP archive,
+                e.g., `ebk import calibre <calibre-library> --output.zip`.
+        2. **Upload the ZIP Archive** using the uploader below.
+        3. **Use the Sidebar** to apply filters and search your library.
+        4. **Interact** with the dashboard to view details and download ebooks.
+        """)
+
     # Display Footer
     # display_footer()
 
 def main():
-    st.set_page_config(page_title="Calibre Metadata Dashboard", layout="wide")
-    st.title("📚 Calibre Metadata Dashboard")
+    st.set_page_config(page_title="ebk Dashboard", layout="wide")
+    st.title("📚 ebk Dashoard")
     st.write("""
     Upload a **ZIP archive** containing your `metadata.json`, all associated cover images, and ebook files.
     The app will automatically process and display your library with advanced search and filtering options.
-    """)
-
-    # Sidebar for Instructions
-    st.sidebar.header("📝 Instructions")
-    st.sidebar.write("""
-    1. **Prepare a ZIP Archive** of an ebk library using the following process:
-       - Go to the directory containing the desired ebk library (should have 'metadata.json` and associated files).
-       - Compress the directory into a ZIP archive.
-            - The `ebk` CLI tool can also autoatically output a ZIP archive,
-              e.g., `ebk import calibre <calibre-library> --output.zip`.
-    2. **Upload the ZIP Archive** using the uploader below.
-    3. **Use the Sidebar** to apply filters and search your library.
-    4. **Interact** with the dashboard to view details and download ebooks.
     """)
 
     # File uploader for ZIP archive
@@ -79,6 +89,8 @@ def main():
     MAX_ZIP_SIZE = 8 * 1024 * 1024 * 1024  # 1 GB
 
     if zip_file:
+        print("Uploaded ZIP file:", zip_file.name)
+        print("🔄 File size:", zip_file.size)
         if zip_file.size > MAX_ZIP_SIZE:
             st.error(f"❌ Uploaded ZIP file is {zip_file.size / 1024 / 1024 / 1024:.2f} GB, which exceeds the size limit of 1 GB.")
             logger.error("Uploaded ZIP file exceeds the size limit.")
@@ -141,6 +153,34 @@ def main():
     else:
         st.info("📥 Please upload a ZIP archive to get started.")
         logger.debug("No ZIP archive uploaded yet.")
+
+def display_table_view_tab(filtered_df: pd.DataFrame):
+    """
+    Displays the Table tab with a searchable table of metadata.
+    """
+    st.header("📖 Table")
+    st.write("Explore the metadata of your library using the interactive table below.")
+    st.dataframe(filtered_df)
+
+
+def display_advanced_search_tab(metadata_list: list):
+    """
+    Using JMESPath to search the metadata list.
+    """
+    import jmespath
+
+    st.header("Advanced Search")
+    st.write("Use JMESPath queries to search the metadata list.")
+    query = st.text_input("Enter a JMESPath query", "[].[?date > `2020-01-01`]")
+    try:
+        result = jmespath.search(query, metadata_list)
+        st.write("Search Results:")
+        st.write(result)
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
+        logger.error(f"JMESPath search error: {e}")
+
+
 
 if __name__ == "__main__":
     main()

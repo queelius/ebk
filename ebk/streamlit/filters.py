@@ -142,10 +142,10 @@ def create_filters(df: pd.DataFrame) -> pd.DataFrame:
         logger.debug(f"Applied publication year range filter: {selected_years}")
     
     if identifier_search:
-        # Assuming identifiers are stored as dictionaries
-        filtered_df = filtered_df[filtered_df['identifiers'].apply(
-            lambda ids: any(identifier_search.lower() in str(v).lower() for k, v in ids.items())
-        )]
-        logger.debug(f"Applied identifier search filter: '{identifier_search}'")
+        idents = filtered_df['identifiers']
+        idents_stringified = idents.apply(
+            lambda x: ' '.join(f"{k}:{v}" for k, v in x.items()) if isinstance(x, dict) else str(x)
+        )
+        filtered_df = filtered_df[idents_stringified.str.contains(identifier_search)]
     
     return filtered_df
