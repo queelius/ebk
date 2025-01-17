@@ -1,0 +1,11 @@
+streamlit
+lxml
+pandas
+slugify
+pyyaml
+pathlib
+PyPDF2
+ebooklib
+altair
+Pillow
+xmltodict
