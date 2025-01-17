@@ -2,7 +2,7 @@ import json
 import os
 from collections import Counter
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 import logging
 from jmespath import search
 import sys
@@ -165,36 +165,28 @@ def get_unique_filename(target_path: str) -> str:
 
     return new_path
 
-def enumerate_ebooks(lib_dir: str) -> None:
+def enumerate_ebooks(metadata_list: List[Dict],
+                     lib_path: Path,
+                     indices: Optional[List[int]] = None,
+                     detailed: Optional[bool] = False) -> None:
     """
     Enumerates and displays the ebooks in the specified library directory.
 
     For each ebook, displays its index, title, creators, and a clickable link to the first PDF file.
 
     Args:
-        lib_dir (str): The path to the library directory containing ebook metadata.
+        metadata_list (List[Dict]): List of metadata dictionaries for each ebook.
+        indices (List[int]): List of indices to display (default: None).
     """
     console = Console()
-    lib_path = Path(lib_dir)
-
-    if not lib_path.exists():
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        sys.exit(1)
-
-    if not lib_path.is_dir():
-        console.print(f"[bold red]Error:[/bold red] The path '{lib_dir}' is not a directory.")
-        sys.exit(1)
-
-    try:
-        metadata_list = load_library(lib_path)
-    except Exception as e:
-        console.print(f"[bold red]Error loading library metadata:[/bold red] {e}")
-        sys.exit(1)
 
     total_books = len(metadata_list)
     if total_books == 0:
         console.print("[yellow]No ebooks found in the library.[/yellow]")
         return
+    
+    if indices is None:
+        indices = range(total_books)
 
     console.print(f"📚 [bold]Found {total_books} ebook(s) in the library:[/bold]\n")
 
@@ -204,7 +196,21 @@ def enumerate_ebooks(lib_dir: str) -> None:
     table.add_column("Creators", min_width=20)
     table.add_column("Link", min_width=30)
 
-    for i, book in enumerate(metadata_list, start=1):
+    if detailed:
+        table.add_column("Subjects", min_width=20)
+        table.add_column("Language", min_width=10)
+        table.add_column("Date", min_width=10)
+        table.add_column("Identifiers", min_width=20)
+        table.add_column("Publisher", min_width=20)
+        table.add_column("File Size", min_width=10)
+        table.add_column("Virtual Libraries", min_width=20)
+        table.add_column("Unique ID", min_width=10)
+
+    for i, book in enumerate(metadata_list, start=0):
+
+        if i not in indices:
+            continue
+
         title = book.get('title', 'Unknown Title')
         creators = book.get('creators', ['Unknown'])
         if not isinstance(creators, list):
@@ -236,3 +242,29 @@ def enumerate_ebooks(lib_dir: str) -> None:
 
     console.print(table)
     console.print("\n")  # Add some spacing
+
+def get_index_by_unique_id(lib_dir: str, id: str) -> int:
+    """
+    Get the index of an entry in the library by its unique ID.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory.
+        id (str): Unique ID to search for.
+
+    Returns:
+        int: Index of the entry with the specified unique ID. -1 if not found.
+
+    Raises:
+        ValueError: If the library cannot be loaded.
+    """
+
+    library = load_library(lib_dir)
+    if not library:
+       raise ValueError("Failed to load the library.")
+
+    for i, entry in enumerate(library):
+        if entry.get('unique_id') == id:
+            return i
+
+    return -1
+

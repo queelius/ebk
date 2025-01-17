@@ -17,7 +17,8 @@ setup(
     packages=find_packages(),
     entry_points={
         "console_scripts": [
-            "ebk=ebk.cli:main"
+            "ebk=ebk.cli:app"
+            #"ebk=ebk.cli:main"
         ]
     },
     install_requires=[

@@ -1,5 +1,3 @@
-
-import json
 import os
 import zipfile
 from pathlib import Path
@@ -23,6 +21,5 @@ def export_zipfile(lib_dir, zip_file):
         for root, _, files in os.walk(lib_dir):
             for file in files:
                 file_path = Path(root) / file
+                logging.debug(f"Adding file to zip: {file_path}")
                 z.write(file_path, arcname=file_path.relative_to(lib_dir))
-
-    logger.debug(f"Exported ebk library at '{lib_dir}' to '{zip_file}'")

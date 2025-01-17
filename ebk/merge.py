@@ -3,7 +3,7 @@ import json
 import shutil
 from slugify import slugify
 from typing import List, Dict, Tuple
-from .ident import generate_hash_id  # Ensure this function is available
+from .ident import add_unique_id
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,23 +21,12 @@ def load_all_metadata(source_folders: List[str]) -> List[Tuple[Dict, str]]:
                 try:
                     data = json.load(f)
                     for entry in data:
-                        # Ensure each entry has a unique_id
-                        if 'unique_id' not in entry:
-                            entry = add_unique_id(entry)  # Assuming this function adds 'unique_id'
                         all_entries.append((entry, folder))
                 except json.JSONDecodeError as e:
                     logger.error(f"Error decoding JSON from {meta_path}: {e}")
         else:
             logger.warning(f"No metadata.json found in {folder}")
     return all_entries
-
-def add_unique_id(entry: Dict) -> Dict:
-    """
-    Ensure that each entry has a unique_id. If not, generate one.
-    """
-    if 'unique_id' not in entry or not entry['unique_id']:
-        entry = add_unique_id(entry)  # Recursive call; ensure no infinite loop
-    return entry
 
 def perform_set_operation(
     entries: List[Dict], 
@@ -117,12 +106,32 @@ def merge_libraries(
     
     logger.info(f"Performing '{operation}' operation. {len(filtered_entries)} entries selected.")
     
+    # **New Step:** Preprocess filenames to identify conflicts
+    filename_counts = {}
+    cover_filename_counts = {}
+    
+    for entry in filtered_entries:
+        # Count ebook filenames
+        for file_rel_path in entry.get('file_paths', []):
+            filename = os.path.basename(file_rel_path)
+            filename_counts[filename] = filename_counts.get(filename, 0) + 1
+        # Count cover filenames
+        cover_path = entry.get('cover_path')
+        if cover_path:
+            cover_filename = os.path.basename(cover_path)
+            cover_filename_counts[cover_filename] = cover_filename_counts.get(cover_filename, 0) + 1
+    
+    logger.debug(f"Ebook filename counts: {filename_counts}")
+    logger.debug(f"Cover filename counts: {cover_filename_counts}")
+    
     # Copy files and prepare merged metadata
     merged_metadata = []
     
     for entry in filtered_entries:
-        # Copy eBook files
-        new_entry = copy_entry_files(entry, source_folders, merged_folder)
+        # Copy eBook files with awareness of filename uniqueness
+        new_entry = copy_entry_files(entry, source_folders, merged_folder, filename_counts)
+        # Copy cover image with awareness of filename uniqueness
+        new_entry = copy_cover_image(new_entry, source_folders, merged_folder, cover_filename_counts)
         merged_metadata.append(new_entry)
     
     # Write merged metadata.json
@@ -135,21 +144,21 @@ def merge_libraries(
 def copy_entry_files(
     entry: Dict, 
     source_folders: List[str], 
-    dst_folder: str
+    dst_folder: str,
+    filename_counts: Dict[str, int]
 ) -> Dict:
     """
     Copies all relevant files for an entry from its source folder to the destination folder.
     
     Args:
         entry (Dict): The eBook entry metadata.
-        source_folders (List[str]): List of source folders to search for the entry's files.
+        source_folders (List[str]): List of source library folders.
         dst_folder (str): Destination folder to copy files to.
+        filename_counts (Dict[str, int]): Counts of each ebook filename across all entries.
     
     Returns:
         Dict: The updated entry with new file paths.
     """
-    base_name = f"{slugify(entry.get('title', 'unknown_title'))}__{slugify(entry['creators'][0] if entry.get('creators') else 'unknown_creator')}__{entry.get('unique_id')}"
-    
     new_entry = entry.copy()
     
     # Find the source folder containing this entry
@@ -165,8 +174,18 @@ def copy_entry_files(
         if not os.path.exists(src_path):
             logger.warning(f"Ebook file '{src_path}' does not exist.")
             continue
-        _, ext = os.path.splitext(file_rel_path)
-        dst_filename = f"{base_name}{ext}"
+        original_filename = os.path.basename(file_rel_path)
+        
+        if filename_counts.get(original_filename, 0) == 1:
+            # Filename is unique; keep it as is
+            dst_filename = original_filename
+        else:
+            # Filename is duplicated; append unique_id to disambiguate
+            name, ext = os.path.splitext(original_filename)
+            safe_name = slugify(name)
+            safe_unique_id = slugify(entry['unique_id'])
+            dst_filename = f"{safe_name}__{safe_unique_id}{ext}"
+        
         dst_path = os.path.join(dst_folder, dst_filename)
         dst_path = get_unique_filename(dst_path)
         try:
@@ -179,28 +198,67 @@ def copy_entry_files(
     
     new_entry['file_paths'] = new_file_paths
     
-    # Copy cover image if exists
+    return new_entry
+
+def copy_cover_image(
+    entry: Dict, 
+    source_folders: List[str], 
+    dst_folder: str,
+    cover_filename_counts: Dict[str, int]
+) -> Dict:
+    """
+    Copies the cover image for an entry from its source folder to the destination folder.
+    
+    Args:
+        entry (Dict): The eBook entry metadata.
+        source_folders (List[str]): List of source library folders.
+        dst_folder (str): Destination folder to copy files to.
+        cover_filename_counts (Dict[str, int]): Counts of each cover filename across all entries.
+    
+    Returns:
+        Dict: The updated entry with new cover path.
+    """
     cover_path = entry.get('cover_path')
-    if cover_path:
-        src_cover = os.path.join(source_folder, cover_path)
-        if os.path.exists(src_cover):
-            _, ext = os.path.splitext(cover_path)
-            dst_cover_filename = f"{base_name}_cover{ext}"
-            dst_cover_path = os.path.join(dst_folder, dst_cover_filename)
-            dst_cover_path = get_unique_filename(dst_cover_path)
-            try:
-                shutil.copy(src_cover, dst_cover_path)
-            except OSError as e:
-                logger.error(f"Error copying cover image '{src_cover}' to '{dst_cover_path}': {e}")
-                new_entry['cover_path'] = None
-                return new_entry
-            new_entry['cover_path'] = os.path.basename(dst_cover_path)
-            logger.debug(f"Copied cover image '{src_cover}' to '{dst_cover_path}'")
-        else:
-            logger.warning(f"Cover image '{src_cover}' does not exist.")
-            new_entry['cover_path'] = None
-    else:
+    if not cover_path:
+        return entry  # No cover to copy
+    
+    new_entry = entry.copy()
+    
+    # Find the source folder containing this entry
+    source_folder = find_source_folder(entry, source_folders)
+    if not source_folder:
+        logger.warning(f"Source folder not found for entry with unique_id {entry['unique_id']} (cover)")
         new_entry['cover_path'] = None
+        return new_entry
+    
+    src_cover = os.path.join(source_folder, cover_path)
+    if not os.path.exists(src_cover):
+        logger.warning(f"Cover image '{src_cover}' does not exist.")
+        new_entry['cover_path'] = None
+        return new_entry
+    
+    original_cover_filename = os.path.basename(cover_path)
+    
+    if cover_filename_counts.get(original_cover_filename, 0) == 1:
+        # Cover filename is unique; keep it as is
+        dst_cover_filename = original_cover_filename
+    else:
+        # Cover filename is duplicated; append unique_id to disambiguate
+        name, ext = os.path.splitext(original_cover_filename)
+        safe_name = slugify(name)
+        safe_unique_id = slugify(entry['unique_id'])
+        dst_cover_filename = f"{safe_name}__{safe_unique_id}{ext}"
+    
+    dst_cover_path = os.path.join(dst_folder, dst_cover_filename)
+    dst_cover_path = get_unique_filename(dst_cover_path)
+    try:
+        shutil.copy(src_cover, dst_cover_path)
+    except OSError as e:
+        logger.error(f"Error copying cover image '{src_cover}' to '{dst_cover_path}': {e}")
+        new_entry['cover_path'] = None
+        return new_entry
+    new_entry['cover_path'] = os.path.basename(dst_cover_path)
+    logger.debug(f"Copied cover image '{src_cover}' to '{dst_cover_path}'")
     
     return new_entry
 
