@@ -1,6 +1,3 @@
-Below is an **updated** `README.md` that reflects the current codebase—including the Typer-based CLI, advanced search options (regex & JMESPath), `import-zip`, future LLM integration notes, and other recent additions.
-
-```markdown
 # ebk
 
 ![ebk Logo](https://github.com/queelius/ebk/blob/main/logo.png?raw=true)
@@ -15,6 +12,7 @@ Below is an **updated** `README.md` that reflects the current codebase—includi
 
 - [Features](#features)
 - [Installation](#installation)
+- [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
   - [General CLI Structure](#general-cli-structure)
   - [Importing Libraries](#importing-libraries)
@@ -73,9 +71,18 @@ Below is an **updated** `README.md` that reflects the current codebase—includi
 
 2. **(Optional) Create a Virtual Environment**
 
+   Using `venv`:
+
    ```bash
    python -m venv venv
    source venv/bin/activate  # (On Windows: venv\Scripts\activate)
+   ```
+
+   Using `conda`:
+
+   ```bash
+   conda create -n ebk python=3.8
+   conda activate ebk
    ```
 
 3. **Install Dependencies & `ebk`**
@@ -85,9 +92,30 @@ Below is an **updated** `README.md` that reflects the current codebase—includi
    pip install .
    ```
 
-> **Note**: You need Python 3.7+.
+> **Note**: You need Python 3.8+.
 
 ---
+
+## Configuration
+
+The primary configuration file should be placed in `~/.ebkrc`.
+Here’s a sample configuration:
+
+```
+[llm]
+endpoint = <your_llm_endpoint>
+api_key = <your_llm_api_key>
+model = <your_llm_model>
+
+[streamlit]
+port = 8501
+host = "0.0.0.0" # this allows external access
+
+[export]
+hugo = "/path/to/hugo_site"
+
+
+```
 
 ## CLI Usage
 
@@ -328,14 +356,20 @@ manager.update_book("Example Book", {"Tags": "fiction, fantasy"})
 
 ---
 
-## Future LLM Integration
+## LLM Integration
 
-We plan to integrate optional **Large Language Model (LLM)** functionalities for:
-- Automatic summarization of eBooks or chapters
-- Generating or refining metadata
-- Auto-tagging with relevant subjects or categories
+The ebk library may be queried using a natural language interface using the
+streamlit dashboard's chat interface or the command line. For the comamnd line
+interface, the `llm` subcommand is used:
 
-Keep an eye on our [GitHub issues](https://github.com/queelius/ebk/issues) or the “Future Plans” section for announcements.
+```bash
+ebk llm <ebklib> "What are the books about Python and machine learning published after 2020?"
+```
+
+The `llm` subcommand uses the `ebk` library to answer questions about the library
+using a large language model. The configuration file should contain the endpoint
+of the LLM server, the API key, and the model to use. Either an Ollama compatible
+endpoint or an OpenAI compatible endpoint can be used.
 
 ---
 
@@ -390,13 +424,3 @@ Distributed under the [MIT License](https://github.com/queelius/ebk/blob/main/LI
 ---
 
 Happy eBook managing! 📚✨
-```
-
-Feel free to adjust the wording or add/remove details as needed. This version incorporates:
-
-- **Typer-based CLI** details (including advanced subcommands).
-- **Regex & JMESPath** searching.
-- **LLM** mention for future roadmap.
-- **Import from ZIP** usage example.
-- **Rich**-based fancy outputs in the CLI.
-- References to known issues, performance ideas, and future expansions.

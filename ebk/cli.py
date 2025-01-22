@@ -1,3 +1,5 @@
+import os
+import networkx as nx
 import subprocess
 import sys
 import json
@@ -5,7 +7,7 @@ import shutil
 from pathlib import Path
 import logging
 import re
-
+from typing import List, Optional
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
@@ -13,6 +15,8 @@ from rich.progress import Progress
 from rich.prompt import Confirm
 from rich.traceback import install
 from rich.table import Table
+from rich import print_json as print_json_as_table
+from rich.json import JSON
 
 from .exports.hugo import export_hugo
 from .exports.zip import export_zipfile
@@ -20,8 +24,7 @@ from .imports import ebooks, calibre
 from .merge import merge_libraries
 from .utils import enumerate_ebooks, load_library, get_unique_filename, search_regex, search_jmes, get_library_statistics, get_index_by_unique_id, print_json_as_table
 from .ident import add_unique_id
-
-from typing import List, Optional
+from .llm import query_llm
 
 # Initialize Rich Traceback for better error messages
 install(show_locals=True)
@@ -247,6 +250,10 @@ def show_index(
 
 @app.command()
 def about():
+    """
+    Display information about ebk.
+    """
+    
     console.print("[bold green]Welcome to ebk![/bold green]\n")
     console.print("A lightweight and efficient tool for managing eBook metadata.\n")
 
@@ -269,6 +276,17 @@ def merge(
 ):
     """
     Merge multiple ebk libraries using set-theoretic operations.
+
+    Args:
+        operation (str): Set-theoretic operation to apply (union, intersect, diff, symdiff)
+        output_dir (str): Output directory for the merged ebk library
+        libs (List[str]): Paths to the source ebk library directories
+
+    Raises:
+        typer.Exit: If the library directory is invalid or the index is out of range
+
+    Output:
+        Merges the specified libraries using the set-theoretic operation and saves the result in the output directory.
     """
     with Progress(console=console) as progress:
         task = progress.add_task(f"[cyan]Merging libraries with operation '{operation}'...", total=None)
@@ -283,32 +301,6 @@ def merge(
             raise typer.Exit(code=1)
 
 @app.command()
-def search(
-    expression: str = typer.Argument(..., help="Regex search expression."),
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to search"),
-    jmespath: bool = typer.Option(False, "--jmespath", "-j", help="Use JMESPath for search"),
-    json_out: bool = typer.Option(False, "--json", "-j", help="Output search results as JSON"),
-    fields: List[str] = typer.Option(["title"], "--regex-fields", "-f", help="Fields to search in (default: title)")
-):
-    """
-    Search entries in an ebk library.
-    """
-    console.print("[bold magenta]Searching entries...[/bold magenta]")
-    if jmespath:
-        results = search_jmes(lib_dir, expression)
-        if json_out:
-            console.print_json(json.dumps(results, indent=2))
-        else:
-            print_json_as_table(results)
-    else:
-        results = search_regex(lib_dir, expression, fields)
-        if json_out:
-            console.print_json(json.dumps(results, indent=2))
-        else:
-            enumerate_ebooks(results, Path(lib_dir))
-
-
-@app.command()
 def stats(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to get stats"),
     keywords: List[str] = typer.Option(
@@ -320,6 +312,16 @@ def stats(
 ):
     """
     Get statistics about the ebk library.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to get stats
+        keywords (List[str]): Keywords to search for in titles
+
+    Raises:
+        typer.Exit: If the library directory is invalid
+
+    Output:
+        Prints the statistics about the library.
     """
     try:
         stats = get_library_statistics(lib_dir, keywords)
@@ -334,8 +336,22 @@ def list_indices(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to list"),
     indices: List[int] = typer.Argument(..., help="Indices of entries to list"),
     output_json: bool = typer.Option(False, "--json", help="Output as JSON"),
-    detailed: bool = typer.Option(False, "--detailed", "-d", help="Show detailed information")
-):
+    detailed: bool = typer.Option(False, "--detailed", "-d", help="Show detailed information")):
+    """
+    List the entries in the ebk library directory by index.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to list
+        indices (List[int]): Indices of entries to list
+        output_json (bool): Output as JSON
+        detailed (bool): Show detailed information
+
+    Raises:
+        typer.Exit: If the library directory is invalid or the index is out of range
+
+    Output:
+        Prints the list of entries in the library directory.
+    """
     lib_path = Path(lib_dir)
     if not lib_path.exists():
         console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
@@ -358,17 +374,22 @@ def list_indices(
 
 @app.command()
 def list(
-    lib_dir: str = typer.Argument(
-        ..., 
-        help="Path to the ebk library directory to list"
-    ),
-    output_json: bool = typer.Option(
-        False, 
-        "--json", 
-        "-j", 
-        help="Output as JSON"
-    )
-):
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to list"),
+    output_json: bool = typer.Option(False, "--json", "-j",  help="Output as JSON")):
+    """
+    List the entries in the ebk library directory.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to list
+        output_json (bool): Output as JSON
+
+    Raises:
+        typer.Exit: If the library directory is invalid
+
+    Output:
+        Prints the list of entries in the library directory.
+    """
+    
     lib_path = Path(lib_dir)
 
     if not lib_path.exists():
@@ -401,6 +422,20 @@ def add(
 ):
     """
     Add entries to the ebk library.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to modify
+        json_file (str): Path to a JSON file containing entry info to add
+        title (str): Title of the entry to add
+        creators (List[str]): Creators of the entry to add
+        ebooks (List[str]): Paths to the ebook files to add
+        cover (str): Path to the cover image to add
+
+    Raises:
+        typer.Exit: If the library directory is invalid or the entry is invalid
+
+    Output:
+        Adds the specified entry to the library and updates the metadata file in-place.
     """
     try:
         metadata_list = load_library(lib_dir)
@@ -469,6 +504,18 @@ def remove(
 ):
     """
     Remove entries from the ebk library.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to modify
+        regex (str): Regex search expression to remove entries
+        force (bool): Force removal without confirmation
+        apply_to (List[str]): Apply the removal to ebooks, covers, or all files
+
+    Raises:
+        typer.Exit: If the library directory is invalid or the index is out of range
+
+    Output:
+        Removed entries from the library directory and associated files in-place.
     """
     try:
         metadata_list = load_library(lib_dir)
@@ -619,6 +666,16 @@ def remove_index(
 ):
     """
     Remove entries from the ebk library by index.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to modify
+        indices (List[int]): Indices of entries to remove
+
+    Raises:
+        typer.Exit: If the library directory is invalid or the index is out of range
+
+    Output:
+        Removes the specified entries from the library and updates the metadata file in-place.
     """
     try:
         metadata_list = load_library(lib_dir)
@@ -658,7 +715,16 @@ def dash(
     Launch the Streamlit dashboard.
     """
     try:
-        streamlit_app(port)
+        app_path = Path(__file__).parent / 'streamlit' / 'app.py'
+        
+        if not app_path.exists():
+            console.print(f"[bold red]Streamlit app not found at {app_path}[/bold red]")
+            raise typer.Exit(code=1)
+        
+        subprocess.run(
+            ['streamlit', 'run', str(app_path), "--server.port", str(port)],
+            check=True
+        )
         logger.info(f"Streamlit dashboard launched on port {port}")
     except FileNotFoundError:
         console.print("[bold red]Error:[/bold red] Streamlit is not installed. Please install it with `pip install streamlit`.")
@@ -672,20 +738,142 @@ def dash(
         console.print(f"[bold red]An unexpected error occurred: {e}[/bold red]")
         raise typer.Exit(code=1)
 
-def streamlit_app(port: int):
+@app.command()
+def regex(
+    query: str = typer.Argument(..., help="Regex search expression."),
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to search"),
+    json_out: bool = typer.Option(False, "--json", "-j", help="Output search results as JSON"),
+    fields: List[str] = typer.Option(["title"], "--fields", "-f", help="Fields to search in (default: title)")):
     """
-    Launch the Streamlit dashboard using subprocess.
+    Search entries in an ebk library using a regex expression on specified fields.
+
+    Args:
+        query (str): Regex search expression
+        lib_dir (str): Path to the ebk library directory to search
+        json_out (bool): Output search results as JSON
+        fields (List[str]): Fields to search in (default: title)
+
+    Returns:
+        Search results as a table or JSON
     """
-    app_path = Path(__file__).parent / 'streamlit' / 'app.py'
-    
-    if not app_path.exists():
-        console.print(f"[bold red]Streamlit app not found at {app_path}[/bold red]")
+    try:
+        results = search_regex(lib_dir, query, fields)
+        if json_out:
+            console.print_json(json.dumps(results, indent=2))
+        else:
+            enumerate_ebooks(results, Path(lib_dir))
+    except Exception as e:
+        logger.error(f"Error searching library with regex: {e}")
+        console.print(f"[bold red]Failed to search library with regex: {e}[/bold red]")
         raise typer.Exit(code=1)
+
+@app.command()
+def jmespath(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to query"),
+    query: str = typer.Argument(..., help="JMESPath query string to search in the library"),
+    json_out: bool = typer.Option(False, "--json", "-j", help="Output search results as JSON")):
+    """
+    Query the ebk library using JMESPath.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to query
+        query (str): JMESPath query string to search in the library
+        output_json (bool): Output search results as JSON
+
+    Returns:
+        JMEPSath query results, either pretty printed or as JSON.
+    """
+    try:
+        results = search_jmes(lib_dir, query)
+        if json_out:
+            console.print_json(json.dumps(results, indent=2))
+        else:
+            print_json_as_table(results)
+    except Exception as e:
+        logger.error(f"Error querying library with JMESPath: {e}")
+        console.print(f"[bold red]Failed to query library with JMESPath: {e}[/bold red]")
+        raise typer.Exit(code=1)
+
+@app.command()
+def llm(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to query"),
+    query: str = typer.Argument(..., help="Query string to search in the library")
+):
+    """
+    Query the ebk library using the LLM (Large Language Model) endpoint.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to query
+        query (str): Natural language query to interact with the library
+
+    Returns:
+        LLM query results
+    """
+    try:
+        query_llm(lib_dir, query)
+    except Exception as e:
+        logger.error(f"Error querying library with LLM: {e}")
+        console.print(f"[bold red]Failed to query library with LLM: {e}[/bold red]")
+        raise typer.Exit(code=1)
+
+@app.command()
+def visualize(lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to generate a complex network"),
+              output_file: str = typer.Option(None, "--output-file", "-o", help="Output file for the graph visualization"),
+              pretty_stats: bool = typer.Option(True, "--stats", "-s", help="Pretty print complex network statistics"),
+              json_stats: bool = typer.Option(False, "--json-stats", "-j", help="Output complex network statistics as JSON")):
     
-    subprocess.run(
-        ['streamlit', 'run', str(app_path), "--server.port", str(port)],
-        check=True
-    )
+    """
+    Generate a complex network visualization from the ebk library.
+
+    Args:
+        lib_dir (str): Path to the ebk library directory to generate a complex network
+        output_file (str): Output file for the graph visualization
+        pretty_stats (bool): Pretty print complex network statistics
+        json_stats (bool): Output complex network statistics as JSON
+
+    Returns:
+        Complex network visualization and statistics
+    """
+
+    if output_file and not output_file.endswith(('.html', '.png', '.json')):
+        logging.error("Output file must be either an HTML file, PNG file, or JSON file.")
+        sys.exit(1)
+
+    if not os.path.isdir(lib_dir):
+        logging.error(f"The specified library directory '{lib_dir}' does not exist or is not a directory.")
+        sys.exit(1)
+    
+    metadata_list = load_library(lib_dir)
+    if not metadata_list:
+        logging.error(f"No metadata found in the library directory '{lib_dir}'.")
+        sys.exit(1)
+    
+    net = visualize.generate_complex_network(metadata_list)
+    
+    if output_file:
+        if output_file.endswith('.html'):
+            # Interactive visualization with pyvis
+            visualize.as_pyvis(net, output_file)
+        elif output_file.endswith('.json'):
+            net_json = nx.node_link_data(net)  # Convert to node-link format
+            console.print(JSON(json.dumps(net_json, indent=2)))
+        elif output_file.endswith('.png'):
+            visualize.as_png(net, output_file)
+    
+    if pretty_stats:
+        console.print(nx.info(net))
+        # console.print(f"[bold green]Complex network generated successfully![/bold green]")
+        # console.print(f"Nodes: {net.number_of_nodes()}")
+        # console.print(f"Edges: {net.number_of_edges()}")
+        # console.print(f"Average Degree: {np.mean([d for n, d in net.degree()])}")
+        # console.print(f"Average Clustering Coefficient: {nx.average_clustering(net)}")
+        # console.print(f"Transitivity: {nx.transitivity(net)}")
+        # console.print(f"Average Shortest Path Length: {nx.average_shortest_path_length(net)}")
+        # console.print(f"Global Clustering Coefficient: {nx.transitivity(net)}")
+        # console.print(f"Global Efficiency: {nx.global_efficiency(net)}")
+        # console.print(f"Modularity: {community.modularity(community.best_partition(net), net)}")
+    if json_stats:
+        console.print_json(json.dumps(nx.info(net), indent=2))
 
 if __name__ == "__main__":
     app()
