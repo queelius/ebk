@@ -26,7 +26,7 @@ def import_calibre(calibre_dir: str,
     for root, _, files in os.walk(calibre_dir):
         # Look for OPF
         opf_file_path = os.path.join(root, "metadata.opf")
-        
+
         # Gather valid ebook files
         ebook_files = [f for f in files if f.lower().endswith(ebook_exts)]
         

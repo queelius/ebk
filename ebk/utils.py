@@ -4,33 +4,52 @@ from collections import Counter
 from pathlib import Path
 from typing import List, Dict, Optional
 import logging
-from jmespath import search
+from jmespath import search as jmes_search
 import sys
 from rich.console import Console
 from rich.table import Table
 from rich.markdown import Markdown
+from rich import print
+import re
+
 RICH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
-def search_entries(lib_dir: str, expression: str):
+def search_jmes(lib_dir: str, expression: str):
     """
-    Search entries in an ebk library.
+    Search entries in an ebk library using a JMESPath expression. This is a
+    very flexible way to search for entries in the library, but may have a
+    steep learning curve.
 
     Args:
         lib_dir (str): Path to the ebk library directory
-        expression (str): Search expression (regex)
+        expression (str): Search expression (JMESPath)
 
     Returns:
-        List[Dict]: List of matching entries
+        Any: Result of the JMESPath search
     """
     library = load_library(lib_dir)
     if not library:
         logger.error(f"Failed to load the library at {lib_dir}")
         return []
     
-    result = search(expression, library)
+    result = jmes_search(expression, library)
+ 
     return result
+
+def search_regex(lib_dir: str, expression: str, fields: List[str] = ["title"]):
+
+    library = load_library(lib_dir)
+    results = []
+    for entry in library:
+        for key, value in entry.items():
+            if key in fields and value:
+                if isinstance(value, str) and re.search(expression, value):
+                    results.append(entry)
+                    break
+
+    return results
 
 
 def load_library(lib_dir: str) -> List[Dict]:
@@ -191,28 +210,28 @@ def enumerate_ebooks(metadata_list: List[Dict],
     console.print(f"📚 [bold]Found {total_books} ebook(s) in the library:[/bold]\n")
 
     table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("#", style="dim", width=4)
-    table.add_column("Title", min_width=20)
-    table.add_column("Creators", min_width=20)
-    table.add_column("Link", min_width=30)
+    table.add_column("#", style="dim")
+    table.add_column("Title")
+    table.add_column("Creators")
+    table.add_column("Link")
 
     if detailed:
-        table.add_column("Subjects", min_width=20)
-        table.add_column("Language", min_width=10)
-        table.add_column("Date", min_width=10)
-        table.add_column("Identifiers", min_width=20)
-        table.add_column("Publisher", min_width=20)
-        table.add_column("File Size", min_width=10)
-        table.add_column("Virtual Libraries", min_width=20)
-        table.add_column("Unique ID", min_width=10)
+        table.add_column("Subjects")
+        table.add_column("Language")
+        table.add_column("Date")
+        table.add_column("Identifiers")
+        table.add_column("Publisher")
+        table.add_column("File Size")
+        table.add_column("Virtual Libraries")
+        table.add_column("UID")
 
     for i, book in enumerate(metadata_list, start=0):
 
         if i not in indices:
             continue
 
-        title = book.get('title', 'Unknown Title')
-        creators = book.get('creators', ['Unknown'])
+        title = book.get('title', '-')
+        creators = book.get('creators', ['-'])
         if not isinstance(creators, list):
             creators = [str(creators)]
         creators_str = ', '.join(creators)
@@ -267,4 +286,26 @@ def get_index_by_unique_id(lib_dir: str, id: str) -> int:
             return i
 
     return -1
+
+def print_json_as_table(data):
+    """
+    Pretty print JSON data as a table using Rich.
+
+    Args:
+        data: JSON data to print
+    """
+    if not RICH_AVAILABLE:
+        print(json.dumps(data, indent=2))
+        return
+
+    if isinstance(data, dict):
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Key", style="dim", width=20)
+        table.add_column("Value", width=80)
+        for key, value in data.items():
+            table.add_row(str(key), str(value))
+        console = Console()
+        console.print(table)
+    else:
+        print(data)
 
