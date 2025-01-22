@@ -18,7 +18,7 @@ from .exports.hugo import export_hugo
 from .exports.zip import export_zipfile
 from .imports import ebooks, calibre
 from .merge import merge_libraries
-from .utils import enumerate_ebooks, load_library, get_unique_filename, search_entries, get_library_statistics, get_index_by_unique_id
+from .utils import enumerate_ebooks, load_library, get_unique_filename, search_regex, search_jmes, get_library_statistics, get_index_by_unique_id, print_json_as_table
 from .ident import add_unique_id
 
 from typing import List, Optional
@@ -284,18 +284,29 @@ def merge(
 
 @app.command()
 def search(
-    expression: str = typer.Argument("*", help="Regex search expression. Default: '*' (all entries)"),
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to search")
+    expression: str = typer.Argument(..., help="Regex search expression."),
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to search"),
+    jmespath: bool = typer.Option(False, "--jmespath", "-j", help="Use JMESPath for search"),
+    json_out: bool = typer.Option(False, "--json", "-j", help="Output search results as JSON"),
+    fields: List[str] = typer.Option(["title"], "--regex-fields", "-f", help="Fields to search in (default: title)")
 ):
     """
     Search entries in an ebk library.
     """
     console.print("[bold magenta]Searching entries...[/bold magenta]")
-    results = search_entries(lib_dir, expression)
-    if results:
-        console.print_json(json.dumps(results, indent=2))
+    if jmespath:
+        results = search_jmes(lib_dir, expression)
+        if json_out:
+            console.print_json(json.dumps(results, indent=2))
+        else:
+            print_json_as_table(results)
     else:
-        console.print("[yellow]No matching entries found.[/yellow]")
+        results = search_regex(lib_dir, expression, fields)
+        if json_out:
+            console.print_json(json.dumps(results, indent=2))
+        else:
+            enumerate_ebooks(results, Path(lib_dir))
+
 
 @app.command()
 def stats(
