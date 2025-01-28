@@ -56,3 +56,30 @@ def extract_zip(zip_bytes: BytesIO) -> dict:
         logger.error(f"Exception during ZIP extraction: {e}")
         return {}
 
+
+
+def get_files(lib_dir: str) -> dict:
+    """
+    Gets the files in lib_dir and returns a dictionary of its contents.
+    Keys are file names, and values are BytesIO objects containing the file data.
+    """
+    files = {}
+    try:
+        for root, _, filenames in os.walk(lib_dir):
+            for filename in filenames:
+                file_path = os.path.join(root, filename)
+                with open(file_path, "rb") as f:
+                    data = f.read()
+                    files[filename] = BytesIO(data)
+                    # get byte length of file
+                    #file_length = files[filename].getbuffer().nbytes
+                    #if filename.endswith('.djvu'):
+                    #    print(f"Read file: {filename}")
+                    #    print(f"File length: {file_length}")
+                    #logger.debug(f"Added file: {filename}")
+        logger.debug("Files loaded successfully.")
+        return files
+    except Exception as e:
+        st.error(f"Error loading files: {e}")
+        logger.error(f"Exception during file loading: {e}")
+        return {}

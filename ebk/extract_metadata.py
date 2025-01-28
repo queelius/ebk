@@ -259,6 +259,8 @@ def extract_metadata(ebook_file: str, opf_file: Optional[str] = None) -> Dict:
     if opf_file and os.path.isfile(opf_file):
         opf_metadata = extract_metadata_from_opf(opf_file)
 
+    
+    ebook_metadata = {}
     _, ext = os.path.splitext(ebook_file.lower())
     if ext == ".pdf":
         ebook_metadata = extract_metadata_from_pdf(ebook_file)

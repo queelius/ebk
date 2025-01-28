@@ -652,13 +652,14 @@ def remove_index(
 
 @app.command()
 def dash(
+    lib_dir: str = typer.Option(None, "--lib-dir", help="Path to the ebk library directory"),
     port: int = typer.Option(8501, "--port", help="Port to run the Streamlit app (default: 8501)")
 ):
     """
     Launch the Streamlit dashboard.
     """
     try:
-        streamlit_app(port)
+        streamlit_app(lib_dir=lib_dir, port=port)
         logger.info(f"Streamlit dashboard launched on port {port}")
     except FileNotFoundError:
         console.print("[bold red]Error:[/bold red] Streamlit is not installed. Please install it with `pip install streamlit`.")
@@ -672,20 +673,23 @@ def dash(
         console.print(f"[bold red]An unexpected error occurred: {e}[/bold red]")
         raise typer.Exit(code=1)
 
-def streamlit_app(port: int):
+def streamlit_app(lib_dir: str, port: int):
     """
     Launch the Streamlit dashboard using subprocess.
     """
     app_path = Path(__file__).parent / 'streamlit' / 'app.py'
     
     if not app_path.exists():
-        console.print(f"[bold red]Streamlit app not found at {app_path}[/bold red]")
+        print(f"[bold red]Streamlit app not found at {app_path}[/bold red]")
         raise typer.Exit(code=1)
+
+    # Construct the command
+    cmd = ['streamlit', 'run', str(app_path), "--server.port", str(port), "--"]
     
-    subprocess.run(
-        ['streamlit', 'run', str(app_path), "--server.port", str(port)],
-        check=True
-    )
+    if lib_dir:
+        cmd.extend(["--lib-dir", lib_dir])
+
+    subprocess.run(cmd, check=True)
 
 if __name__ == "__main__":
     app()

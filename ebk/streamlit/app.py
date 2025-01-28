@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import logging
-from utils import load_metadata, extract_zip
+from utils import load_metadata, extract_zip, get_files
 from filters import sanitize_dataframe, create_filters
 from display import display_books_tab, display_statistics_tab
 
@@ -71,37 +71,63 @@ def display_dashboard(metadata_list: list, cover_images: dict, ebook_files: dict
     # display_footer()
 
 def main():
+    """
+    Main Streamlit app entry point.
+    """
+
     st.set_page_config(page_title="ebk Dashboard", layout="wide")
     st.title("📚 ebk Dashoard")
-    st.write("""
-    Upload a **ZIP archive** containing your `metadata.json`, all associated cover images, and ebook files.
-    The app will automatically process and display your library with advanced search and filtering options.
-    """)
 
-    # File uploader for ZIP archive
-    st.subheader("📁 Upload ZIP Archive")
-    zip_file = st.file_uploader(
-        label="Upload a ZIP file containing `metadata.json`, cover images, and ebook files",
-        type=["zip"],
-        key="zip_upload"
-    )
+    extracted_files = None
 
-    MAX_ZIP_SIZE = 8 * 1024 * 1024 * 1024  # 1 GB
+    import argparse
+    parser = argparse.ArgumentParser(description="Run the Streamlit app with optional directory input.")
+    parser.add_argument("--lib-dir", type=str, help="Path to the library directory (if provided, uploader is bypassed).")
+    
+    args = parser.parse_args()
 
-    if zip_file:
-        print("Uploaded ZIP file:", zip_file.name)
-        print("🔄 File size:", zip_file.size)
-        if zip_file.size > MAX_ZIP_SIZE:
-            st.error(f"❌ Uploaded ZIP file is {zip_file.size / 1024 / 1024 / 1024:.2f} GB, which exceeds the size limit of 1 GB.")
-            logger.error("Uploaded ZIP file exceeds the size limit.")
-            st.stop()
+    if args.lib_dir is None:
+        st.write("""
+        Upload a **ZIP archive** containing your `metadata.json`, all associated cover images, and ebook files.
+        The app will automatically process and display your library with advanced search and filtering options.
+        """)
 
-        with st.spinner("🔄 Extracting and processing ZIP archive..."):
-            extracted_files = extract_zip(zip_file)
-        if not extracted_files:
-            logger.error("No files extracted from the ZIP archive.")
-            st.stop()  # Stop if extraction failed
+        # File uploader for ZIP archive
+        st.subheader("📁 Upload ZIP Archive")
+        zip_file = st.file_uploader(
+            label="Upload a ZIP file containing `metadata.json`, cover images, and ebook files",
+            type=["zip"],
+            key="zip_upload"
+        )
 
+        MAX_ZIP_SIZE = 200 * 1024 * 1024  # 200 MB
+
+        if zip_file:
+            print("Uploaded ZIP file:", zip_file.name)
+            print("🔄 File size:", zip_file.size)
+            if zip_file.size > MAX_ZIP_SIZE:
+                st.error(f"❌ Uploaded ZIP file is {zip_file.size / 1024 / 1024 / 1024:.2f} GB, which exceeds the size limit of 1 GB.")
+                logger.error("Uploaded ZIP file exceeds the size limit.")
+                st.stop()
+
+            with st.spinner("🔄 Extracting and processing ZIP archive..."):
+                extracted_files = extract_zip(zip_file)
+            if not extracted_files:
+                logger.error("No files extracted from the ZIP archive.")
+                st.stop()  # Stop if extraction failed
+            else:
+                st.info("📥 Please upload a ZIP archive to get started.")
+                logger.debug("No ZIP archive uploaded yet.")
+    else:
+        extracted_files = get_files(args.lib_dir)
+        #  see  if any filename with .djvu extension is present
+        #for filename in extracted_files.keys():
+        #    if filename.endswith('.djvu'):
+        #        print(f"Found file: {filename}")
+        #        print(f"File length: {extracted_files[filename].getbuffer().nbytes}")
+
+
+    if extracted_files is not None:
         # Locate metadata.json (case-insensitive search)
         metadata_key = next((k for k in extracted_files if os.path.basename(k).lower() == "metadata.json"), None)
         if not metadata_key:
@@ -121,16 +147,17 @@ def main():
         for filename, file_bytes in extracted_files.items():
             lower_filename = filename.lower()
             basename = os.path.basename(filename)
-            if lower_filename.endswith(('.jpg', '.jpeg', '.png')):
+            if lower_filename.endswith(('.jpg', '.jpeg', '.png', 'gif', 'webp', 'bmp', 'tiff', 'svg', 'ico')):
                 cover_images[basename] = file_bytes
                 logger.debug(f"Added cover image: {basename}")
-            elif lower_filename.endswith(('.pdf', '.epub', '.mobi', '.azw3', '.txt')):
-                ebook_files[basename] = file_bytes
-                logger.debug(f"Added ebook file: {basename}")
+            #ame.endswith(('.pdf', '.epub', '.mobi', '.azw3', '.txt', '.docx', '.odt', '.djvu')):
+            #    ebook_files[basename] = file_bytes
+            #    logger.debug(f"Added ebook file: {basename}")
             else:
+                ebook_files[basename] = file_bytes
                 # Ignore other file types or handle as needed
-                logger.debug(f"Ignored unsupported file type: {basename}")
-                pass
+                #logger.debug(f"Ignored unsupported file type: {basename}")
+                #pass
 
         # Inform user about unmatched cover images
         expected_covers = {os.path.basename(md.get("cover_path", "")) for md in metadata_list if md.get("cover_path")}
@@ -150,9 +177,6 @@ def main():
 
         # Display the dashboard with metadata and cover images
         display_dashboard(metadata_list, cover_images, ebook_files)
-    else:
-        st.info("📥 Please upload a ZIP archive to get started.")
-        logger.debug("No ZIP archive uploaded yet.")
 
 def display_table_view_tab(filtered_df: pd.DataFrame):
     """
@@ -170,7 +194,7 @@ def display_advanced_search_tab(metadata_list: list):
 
     st.header("Advanced Search")
     st.write("Use JMESPath queries to search the metadata list.")
-    query = st.text_input("Enter a JMESPath query", "[].[?date > `2020-01-01`]")
+    query = st.text_input("Enter a JMESPath query", "[].{title: title, authors: creators}")
     try:
         result = jmespath.search(query, metadata_list)
         st.write("Search Results:")
