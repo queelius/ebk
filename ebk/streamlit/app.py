@@ -120,11 +120,6 @@ def main():
                 logger.debug("No ZIP archive uploaded yet.")
     else:
         extracted_files = get_files(args.lib_dir)
-        #  see  if any filename with .djvu extension is present
-        #for filename in extracted_files.keys():
-        #    if filename.endswith('.djvu'):
-        #        print(f"Found file: {filename}")
-        #        print(f"File length: {extracted_files[filename].getbuffer().nbytes}")
 
 
     if extracted_files is not None:
