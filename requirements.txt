@@ -74,3 +74,4 @@ tzdata==2024.2
 urllib3==2.3.0
 watchdog==6.0.0
 xmltodict==0.14.2
+networkx
