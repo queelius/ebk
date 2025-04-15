@@ -86,6 +86,10 @@ def import_calibre(
 ):
     """
     Import a Calibre library.
+
+    Args:
+        calibre_dir (str): Path to the Calibre library directory
+        output_dir (str): Output directory for the ebk library (default: <calibre_dir>_ebk)
     """
     output_dir = output_dir or f"{calibre_dir.rstrip('/')}-ebk"
     with Progress(console=console) as progress:

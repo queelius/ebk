@@ -9,11 +9,9 @@ ci-info==0.3.0
 click==8.1.8
 configobj==5.0.9
 configparser==7.1.0
--e git+https://github.com/queelius/ebk.git@f27de8c4c7024e39456a8548d57858274ad191d0#egg=ebk
 EbookLib==0.18
 etelemetry==0.3.1
 filelock==3.16.1
-fitz==0.0.1.dev2
 gitdb==4.0.12
 GitPython==3.1.44
 httplib2==0.22.0
@@ -45,7 +43,7 @@ pyarrow==19.0.0
 pydeck==0.9.1
 pydot==3.0.4
 Pygments==2.19.1
-PyMuPDF==1.25.1
+pymupdf==1.25.3
 pyparsing==3.2.1
 PyPDF2==3.0.1
 python-dateutil==2.9.0.post0
@@ -61,7 +59,6 @@ scipy==1.15.1
 shellingham==1.5.4
 simplejson==3.19.3
 six==1.17.0
-slugify==0.0.1
 smmap==5.0.2
 streamlit==1.41.1
 tenacity==9.0.0
@@ -75,3 +72,4 @@ urllib3==2.3.0
 watchdog==6.0.0
 xmltodict==0.14.2
 networkx
+python-slugify

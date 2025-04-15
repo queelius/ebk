@@ -7,13 +7,13 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="ebk",
-    version="0.1.0",
+    version="0.2.0",
     description="A lightweight tool for managing eBook metadata",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Alex Towell",
     author_email="lex@metafunctor.com",
-    url="https://github.com/yourusername/ebk",  # Replace with your repository URL
+    url="https://github.com/queelius/ebk",
     packages=find_packages(),
     entry_points={
         "console_scripts": [
@@ -37,7 +37,7 @@ setup(
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.10',
     include_package_data=True,  # Include non-Python files specified in MANIFEST.in
     package_data={
         "ebk.streamlit": ["*"],  # Include all files in the streamlit subpackage
