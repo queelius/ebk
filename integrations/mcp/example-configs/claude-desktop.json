@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ebk": {
+      "command": "python",
+      "args": ["/path/to/ebk/integrations/mcp/ebk_mcp_server.py"],
+      "env": {}
+    }
+  }
+}

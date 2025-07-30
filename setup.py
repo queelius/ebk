@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="ebk",
-    version="0.2.0",
+    version="0.3.0",
     description="A lightweight tool for managing eBook metadata",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -18,28 +18,85 @@ setup(
     entry_points={
         "console_scripts": [
             "ebk=ebk.cli:app"
-            #"ebk=ebk.cli:main"
         ]
     },
     install_requires=[
-        "streamlit",
-        "lxml",
-        "pandas",
-        "slugify",
-        "pyyaml",
-        "pathlib",
-        "PyPDF2",
-        "ebooklib",
-        "altair",
-        "Pillow"
+        # Core dependencies only
+        "typer>=0.9.0",
+        "rich>=13.0.0",
+        "lxml>=4.9.0",
+        "python-slugify>=8.0.0",
+        "pyyaml>=6.0",
+        "PyPDF2>=3.0.0",
+        "PyMuPDF>=1.23.0",  # For PDF processing (fitz)
+        "ebooklib>=0.18",
+        "Pillow>=10.0.0",
+        "jmespath>=1.0.0",
+        "networkx>=3.0",
+        "jinja2>=3.0.0",
+        "pypdf>=3.0.0",  # Updated from PyPDF2
+        "python-slugify>=8.0.0",
+        "xmltodict>=0.13.0"
     ],
+    extras_require={
+        # Optional dependencies
+        "streamlit": [
+            "streamlit>=1.28.0",
+            "pandas>=2.0.0",
+            "altair>=5.0.0"
+        ],
+        "viz": [
+            "matplotlib>=3.5.0",
+            "pyvis>=0.3.0",
+            "plotly>=5.0.0"
+        ],
+        "mcp": [
+            "mcp>=0.1.0"
+        ],
+        "all": [
+            # Include all optional dependencies
+            "streamlit>=1.28.0",
+            "pandas>=2.0.0", 
+            "altair>=5.0.0",
+            "matplotlib>=3.5.0",
+            "pyvis>=0.3.0",
+            "plotly>=5.0.0",
+            "mcp>=0.1.0"
+        ],
+        "dev": [
+            "pytest>=7.0.0",
+            "pytest-cov>=4.0.0",
+            "black>=23.0.0",
+            "isort>=5.0.0",
+            "flake8>=6.0.0",
+            "mypy>=1.0.0",
+            "pylint>=2.0.0",
+            "pre-commit>=3.0.0",
+            "mkdocs>=1.5.0",
+            "mkdocs-material>=9.0.0",
+            "mkdocstrings[python]>=0.24.0",
+            "pymdown-extensions>=10.0",
+            "twine>=4.0.0",
+            "build>=0.10.0"
+        ]
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9", 
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
+        "Intended Audience :: End Users/Desktop",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: Text Processing :: Markup",
     ],
-    python_requires='>=3.10',
-    include_package_data=True,  # Include non-Python files specified in MANIFEST.in
+    python_requires='>=3.8',
+    include_package_data=True,
     package_data={
-        "ebk.streamlit": ["*"],  # Include all files in the streamlit subpackage
+        "ebk": ["exports/templates/**/*"],
     },
 )

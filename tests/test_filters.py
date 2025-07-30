@@ -1,7 +1,20 @@
 import unittest
-import pandas as pd
-from ebk.streamlit.filters import sanitize_dataframe
+import sys
+from pathlib import Path
 
+# Skip this test file if the streamlit integration is not available
+# since it's been moved to integrations/
+try:
+    # Add integrations path to sys.path temporarily
+    integrations_path = Path(__file__).parent.parent / "integrations" / "streamlit-dashboard"
+    sys.path.insert(0, str(integrations_path))
+    from filters import sanitize_dataframe
+    import pandas as pd
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+
+@unittest.skipUnless(STREAMLIT_AVAILABLE, "Streamlit integration not available")
 class TestFilters(unittest.TestCase):
     def test_sanitize_dataframe(self):
         data = {

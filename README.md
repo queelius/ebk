@@ -2,9 +2,8 @@
 
 ![ebk Logo](https://github.com/queelius/ebk/blob/main/logo.png?raw=true)
 
-**ebk** is a lightweight and versatile tool for managing eBook metadata. It provides a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), supports import/export of libraries from multiple sources (Calibre, raw ebooks, ZIP archives), enables advanced set-theoretic merges, and offers an interactive Streamlit web dashboard. 
+**ebk** is a lightweight and versatile tool for managing eBook metadata. It provides a comprehensive fluent API for programmatic use, a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), supports import/export of libraries from multiple sources (Calibre, raw ebooks, ZIP archives), enables advanced set-theoretic merges, and offers flexible export options including Hugo static sites and symlink-based navigation. 
 
-> **Note**: We have future plans to integrate Large Language Model (LLM) features for automated tagging, summarization, and metadata generation—stay tuned!
 
 ---
 
@@ -12,6 +11,7 @@
 
 - [Features](#features)
 - [Installation](#installation)
+- [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
   - [General CLI Structure](#general-cli-structure)
@@ -25,10 +25,8 @@
     - [Regex Search](#regex-search)
     - [JMESPath Search](#jmespath-search)
   - [Listing, Adding, Updating, and Removing Entries](#listing-adding-updating-and-removing-entries)
-  - [Launch Streamlit Dashboard](#launch-streamlit-dashboard)
-- [Streamlit Dashboard Usage](#streamlit-dashboard-usage)
-- [Library Management Class (Python API)](#library-management-class-python-api)
-- [Future LLM Integration](#future-llm-integration)
+- [Python API](#python-api)
+- [Integrations](#integrations)
 - [Contributing](#contributing)
 - [License](#license)
 - [Known Issues & TODOs](#known-issues--todos)
@@ -39,82 +37,111 @@
 
 ## Features
 
-- **Typer + Rich CLI**: A colorized, easy-to-use, and extensible command-line interface.
+- **Fluent Python API**: Comprehensive programmatic interface with method chaining, query builders, and batch operations
+- **Typer + Rich CLI**: A colorized, easy-to-use, and extensible command-line interface built on top of the fluent API
 - **Multiple Import Paths**:
   - Calibre libraries → JSON-based ebk library
   - Raw eBook folders → Basic metadata inference (cover extraction, PDF metadata)
   - Existing ebk libraries in `.zip` format
-- **Advanced Metadata**:
+- **Advanced Metadata Management**:
   - Set-theoretic merges (union, intersect, diff, symdiff)
   - Unique entry identification (hash-based)
   - Automatic cover image extraction
+  - Transaction support for atomic operations
 - **Flexible Exports**:
-  - Export to ZIP
-  - Hugo-compatible Markdown for static site integration
-- **Streamlit Dashboard**:
-  - Interactive web interface for browsing, filtering, and managing your eBook library
-  - Search by title, author, subjects, language, etc.
-  - Download eBooks from the dashboard
-- **Regex & JMESPath Searching**: Perform advanced queries on your metadata (CLI + Streamlit).
-- **(Planned) LLM Extensions**: Automatic summarization, tagging, or classification using large language models.
+  - Export to ZIP archives
+  - Hugo-compatible Markdown with multiple organization options (by year, language, subject, creator)
+  - Jinja2 template support for customizable export formats
+  - Symlink-based DAG navigation for hierarchical tag browsing
+- **Integrations** (optional):
+  - **Streamlit Dashboard**: Interactive web interface for browsing and filtering
+  - **MCP Server**: AI assistant integration via Model Context Protocol
+  - **Visualizations**: Network graphs for co-authorship and subject analysis
+- **Advanced Search & Query**:
+  - Regex pattern matching across any field
+  - JMESPath queries for complex filtering
+  - Fluent query builder with operators (>, <, contains, regex)
+- **Smart Recommendations**: Find similar books based on metadata similarity
+- **Batch Operations**: Efficiently process multiple entries at once
 
 ---
 
 ## Installation
 
-1. **Clone the Repository**
+### Basic Installation
 
-   ```bash
-   git clone https://github.com/queelius/ebk.git
-   cd ebk
-   ```
+```bash
+pip install ebk
+```
 
-2. **(Optional) Create a Virtual Environment**
+### From Source
 
-   Using `venv`:
+```bash
+git clone https://github.com/queelius/ebk.git
+cd ebk
+pip install .
+```
 
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # (On Windows: venv\Scripts\activate)
-   ```
+### With Optional Features
 
-   Using `conda`:
+```bash
+# With Streamlit dashboard
+pip install ebk[streamlit]
 
-   ```bash
-   conda create -n ebk python=3.8
-   conda activate ebk
-   ```
+# With visualization tools
+pip install ebk[viz]
 
-3. **Install Dependencies & `ebk`**
+# With all optional features
+pip install ebk[all]
 
-   ```bash
-   pip install -r requirements.txt
-   pip install .
-   ```
+# For development
+pip install ebk[dev]
+```
 
-> **Note**: You need Python 3.8+.
+> **Note**: Requires Python 3.10+
+
+---
+
+## Quick Start
+
+```bash
+# Import a Calibre library
+ebk import-calibre ~/Calibre/Library --output-dir ~/my-ebk-library
+
+# Search for books
+ebk search "Python" ~/my-ebk-library
+
+# Get statistics
+ebk stats ~/my-ebk-library
+
+# Export to Hugo site
+ebk export hugo ~/my-ebk-library ~/my-hugo-site --jinja --organize-by subject
+
+# Find similar books
+ebk similar ~/my-ebk-library book_id_here
+
+# Launch web interface (requires pip install ebk[streamlit])
+streamlit run -m ebk.integrations.streamlit.app -- ~/my-ebk-library
+```
 
 ---
 
 ## Configuration
 
-The primary configuration file should be placed in `~/.ebkrc`.
-Here’s a sample configuration:
+ebk can be configured via environment variables or a configuration file at `~/.ebkrc`:
 
-```
-[llm]
-endpoint = <your_llm_endpoint>
-api_key = <your_llm_api_key>
-model = <your_llm_model>
-
-[streamlit]
-port = 8501
-host = "0.0.0.0" # this allows external access
-
+```ini
 [export]
-hugo = "/path/to/hugo_site"
+# Default Hugo export path
+hugo_path = "/path/to/hugo/site"
 
+[library]
+# Default library location
+default_path = "~/ebooks/library"
 
+[import]
+# Default formats to import
+formats = ["pdf", "epub", "mobi", "azw3"]
 ```
 
 ## CLI Usage
@@ -142,7 +169,10 @@ The primary commands include:
 - `remove-index`
 - `update-index`
 - `update-id`
-- `dash`
+- `export-dag`
+- `recommend`
+- `similar`
+- `visualize`
 - …and more!
 
 ---
@@ -189,9 +219,13 @@ ebk import-ebooks /path/to/raw/ebooks --output-dir /path/to/output
 Available formats:
 - **Hugo**:  
   ```bash
+  # Basic export
   ebk export hugo /path/to/ebk_library /path/to/hugo_site
+  
+  # With Jinja templates and organization
+  ebk export hugo /path/to/ebk_library /path/to/hugo_site --jinja --organize-by subject
   ```
-  This writes Hugo-compatible Markdown files (and copies covers/ebooks) into your Hugo `content` + `static` folders.
+  This writes Hugo-compatible Markdown files (and copies covers/ebooks) into your Hugo `content` + `static` folders. See [Hugo Export Documentation](docs/HUGO_EXPORT.md) for advanced options.
 
 - **Zip**:  
   ```bash
@@ -253,6 +287,28 @@ ebk search "[?language=='en']" /path/to/lib --jmespath --json
 
 ---
 
+### Advanced Features
+
+#### Symlink DAG Export
+```bash
+ebk export-dag /path/to/library /path/to/output
+```
+Creates a navigable directory structure where tags become folders and books appear via symlinks. See [Symlink DAG Documentation](docs/SYMLINK_DAG_EXPORT.md).
+
+#### Find Similar Books
+```bash
+ebk similar /path/to/library book_unique_id --threshold 0.7
+```
+
+#### Get Recommendations
+```bash
+# Random recommendations
+ebk recommend /path/to/library
+
+# Based on specific books
+ebk recommend /path/to/library --based-on book_id_1 --based-on book_id_2
+```
+
 ### Listing, Adding, Updating, and Removing Entries
 
 - **List**:
@@ -303,73 +359,58 @@ ebk search "[?language=='en']" /path/to/lib --jmespath --json
 
 ---
 
-### Launch Streamlit Dashboard
 
-```bash
-ebk dash --port 8501
-```
+## Python API
 
-- By default, the dashboard runs at `http://localhost:8501`.
-
----
-
-## Streamlit Dashboard Usage
-
-1. **Prepare a ZIP Archive**  
-   From any ebk library folder (containing `metadata.json`), compress the entire folder into a `.zip`. Or use:
-   ```bash
-   ebk export zip /path/to/lib /path/to/lib.zip
-   ```
-
-2. **Upload it** via the Streamlit interface (`ebk dash`).
-3. **Browse & Filter** your library:
-   - Advanced filtering (author, subject, language, year, etc.).
-   - View cover images, descriptions, and download eBooks.
-   - JMESPath-based advanced search in the “Advanced Search” tab.
-4. **Enjoy** a modern, interactive interface for eBook exploration.
-
----
-
-## Library Management Class (Python API)
-
-For programmatic usage, `ebk` includes a simple `LibraryManager` class:
+ebk provides a comprehensive fluent API for programmatic library management:
 
 ```python
-from ebk.manager import LibraryManager
+from ebk import Library
 
-manager = LibraryManager("metadata.json")
+# Create or open a library
+lib = Library.create("/path/to/library")
+lib = Library.open("/existing/library")
 
-# List all books
-all_books = manager.list_books()
+# Add books with method chaining
+lib.add_entry(
+    title="Example Book",
+    creators=["Alice", "Bob"],
+    subjects=["Fiction", "Adventure"],
+    language="en"
+).save()
 
-# Add a book
-manager.add_book({
-    "Title": "Example Book",
-    "Author": "Alice",
-    "Tags": "fiction"
-})
+# Powerful queries
+results = (lib.query()
+    .where("language", "en")
+    .where("date", "2020", ">=")
+    .where("subjects", "Python", "contains")
+    .order_by("title")
+    .take(10)
+    .execute())
 
-# Delete or update
-manager.delete_book("Old Title")
-manager.update_book("Example Book", {"Tags": "fiction, fantasy"})
+# Simple search
+python_books = lib.search("Python")
+
+# Filter and export
+(lib.filter(lambda e: e.get("rating", 0) >= 4)
+    .tag_all("recommended")
+    .export_to_hugo("/path/to/site", organize_by="subject"))
+
+# Find similar books
+similar = lib.find_similar("book_id_123", threshold=0.7)
+
+# Get recommendations
+recommended = lib.recommend(based_on=["book_id_1", "book_id_2"])
+
+# Export as navigable directory structure
+lib.export_to_symlink_dag("/path/to/dag", tag_field="subjects")
+
+# Statistics and analysis
+stats = lib.stats()
+analysis = lib.analyze_reading_patterns()
 ```
 
----
-
-## LLM Integration
-
-The ebk library may be queried using a natural language interface using the
-streamlit dashboard's chat interface or the command line. For the comamnd line
-interface, the `llm` subcommand is used:
-
-```bash
-ebk llm <ebklib> "What are the books about Python and machine learning published after 2020?"
-```
-
-The `llm` subcommand uses the `ebk` library to answer questions about the library
-using a large language model. The configuration file should contain the endpoint
-of the LLM server, the API key, and the model to use. Either an Ollama compatible
-endpoint or an OpenAI compatible endpoint can be used.
+See the [CLAUDE.md](CLAUDE.md) file for architectural details and development guidelines.
 
 ---
 
@@ -392,20 +433,64 @@ Distributed under the [MIT License](https://github.com/queelius/ebk/blob/main/LI
 
 ---
 
-## Known Issues & TODOs
+## Integrations
 
-1. **Exporter Module**:
-   - Switch from `os.system` to `shutil` for safer file operations
-   - Expand supported eBook formats & metadata fields
-2. **Merger Module**:
-   - Resolve conflicts automatically or allow user-specified conflict resolution
-   - Performance optimization for large libraries
-3. **Consistent Entry Identification**:
-   - Support multiple eBook files per entry seamlessly
-   - Improve hash-based deduplication for large files
-4. **LLM-Based Metadata** _(Planned)_:
-   - Summaries or tags automatically generated via language models
-   - Potential GPU/accelerator support for on-device inference
+ebk follows a modular architecture where the core library remains lightweight, with optional integrations available:
+
+### Streamlit Dashboard
+```bash
+pip install ebk[streamlit]
+streamlit run ebk/integrations/streamlit/app.py
+```
+
+### MCP Server (AI Assistants)
+```bash
+pip install ebk[mcp]
+# Configure your AI assistant to use the MCP server
+```
+
+### Visualizations
+```bash
+pip install ebk[viz]
+ebk visualize /path/to/library --output-file graph.png
+```
+
+See the [Integrations Guide](integrations/README.md) for detailed setup instructions.
+
+---
+
+## Architecture
+
+ebk is designed with a clean, layered architecture:
+
+1. **Core Library** (`ebk.library`): Fluent API for all operations
+2. **CLI** (`ebk.cli`): Typer-based commands using the fluent API
+3. **Import/Export** (`ebk.imports`, `ebk.exports`): Modular format support
+4. **Integrations** (`integrations/`): Optional add-ons (web UI, AI, viz)
+
+This design ensures the core remains lightweight while supporting powerful extensions.
+
+---
+
+## Development
+
+```bash
+# Clone the repository
+git clone https://github.com/queelius/ebk.git
+cd ebk
+
+# Create virtual environment
+make venv
+
+# Install in development mode
+make setup
+
+# Run tests
+make test
+
+# Check coverage
+make coverage
+```
 
 ---
 

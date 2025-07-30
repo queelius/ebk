@@ -1,0 +1,98 @@
+site_name: ebk - eBook Library Manager
+site_description: A lightweight and versatile tool for managing eBook metadata with a fluent API
+site_author: Alex Towell
+site_url: https://queelius.github.io/ebk/
+repo_name: queelius/ebk
+repo_url: https://github.com/queelius/ebk
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - Configuration: getting-started/configuration.md
+  - User Guide:
+      - CLI Reference: user-guide/cli.md
+      - Python API: user-guide/api.md
+      - Import/Export: user-guide/import-export.md
+      - Search & Query: user-guide/search.md
+      - Library Management: user-guide/library-management.md
+  - Advanced:
+      - Hugo Export: advanced/hugo-export.md
+      - Symlink DAG: advanced/symlink-dag.md
+      - Recommendations: advanced/recommendations.md
+      - Batch Operations: advanced/batch-operations.md
+  - Integrations:
+      - Overview: integrations/index.md
+      - Streamlit Dashboard: integrations/streamlit.md
+      - MCP Server: integrations/mcp.md
+      - Visualizations: integrations/visualizations.md
+  - Development:
+      - Architecture: development/architecture.md
+      - Contributing: development/contributing.md
+      - API Reference: development/api-reference.md
+  - About:
+      - Changelog: about/changelog.md
+      - License: about/license.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/queelius/ebk
+    - icon: fontawesome/solid/globe
+      link: https://metafunctor.com

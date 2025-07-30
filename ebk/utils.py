@@ -29,27 +29,34 @@ def search_jmes(lib_dir: str, expression: str):
     Returns:
         Any: Result of the JMESPath search
     """
-    library = load_library(lib_dir)
-    if not library:
-        logger.error(f"Failed to load the library at {lib_dir}")
+    from .library import Library
+    try:
+        lib = Library.open(lib_dir)
+        return lib.query().jmespath(expression).execute()
+    except Exception as e:
+        logger.error(f"Failed to search library at {lib_dir}: {e}")
         return []
-    
-    result = jmes_search(expression, library)
- 
-    return result
 
 def search_regex(lib_dir: str, expression: str, fields: List[str] = ["title"]):
-
-    library = load_library(lib_dir)
-    results = []
-    for entry in library:
-        for key, value in entry.items():
-            if key in fields and value:
-                if isinstance(value, str) and re.search(expression, value):
-                    results.append(entry)
-                    break
-
-    return results
+    """
+    Search entries using regex on specified fields.
+    
+    Args:
+        lib_dir (str): Path to the ebk library directory
+        expression (str): Regular expression to search for
+        fields (List[str]): Fields to search in
+        
+    Returns:
+        List[Dict]: Matching entries
+    """
+    from .library import Library
+    try:
+        lib = Library.open(lib_dir)
+        results = lib.search(expression, fields=fields)
+        return [entry._data for entry in results]
+    except Exception as e:
+        logger.error(f"Failed to search library at {lib_dir}: {e}")
+        return []
 
 
 def load_library(lib_dir: str) -> List[Dict]:
@@ -88,81 +95,78 @@ def get_library_statistics(lib_dir: str,
     Returns:
         dict: A dictionary or markdown with statistics about the library.
     """
-
-    # Load the library
-    library = load_library(lib_dir)
-    if not library:
-        logger.error(f"Failed to load the library at {lib_dir}")
+    from .library import Library
+    
+    if keywords is None:
+        keywords = []
+        
+    try:
+        lib = Library.open(lib_dir)
+        # Get basic stats from fluent API
+        basic_stats = lib.stats()
+        
+        # Initialize enhanced statistics
+        stats = {
+            "total_entries": basic_stats["total_entries"],
+            "languages": dict(basic_stats["languages"]),
+            "creators_count": sum(basic_stats["creators"].values()),
+            "average_creators_per_entry": 0,
+            "most_creators_in_entry": 0,
+            "least_creators_in_entry": 0,
+            "top_creators": dict(Counter(basic_stats["creators"]).most_common(5)),
+            "subjects": dict(basic_stats["subjects"]),
+            "most_common_subjects": list(Counter(basic_stats["subjects"]).most_common(5)),
+            "average_title_length": 0,
+            "longest_title": "",
+            "shortest_title": "",
+            "virtual_libs": {},
+            "titles_with_keywords": Counter(),
+        }
+        
+        # Calculate additional statistics not provided by basic stats
+        title_lengths = []
+        creators_per_entry = []
+        
+        for entry in lib:
+            # Title statistics
+            title = entry.title
+            if title:
+                title_lengths.append(len(title))
+                if not stats["longest_title"] or len(title) > len(stats["longest_title"]):
+                    stats["longest_title"] = title
+                if not stats["shortest_title"] or len(title) < len(stats["shortest_title"]):
+                    stats["shortest_title"] = title
+                    
+                # Keywords
+                for keyword in keywords:
+                    if keyword.lower() in title.lower():
+                        stats["titles_with_keywords"][keyword] += 1
+            
+            # Creator statistics
+            creators = entry.creators
+            creators_per_entry.append(len(creators))
+            
+            # Virtual libraries
+            virtual_libs = entry.get("virtual_libs", [])
+            for vlib in virtual_libs:
+                stats["virtual_libs"][vlib] = stats["virtual_libs"].get(vlib, 0) + 1
+        
+        # Calculate averages
+        if creators_per_entry:
+            stats["average_creators_per_entry"] = round(sum(creators_per_entry) / len(creators_per_entry), 2)
+            stats["most_creators_in_entry"] = max(creators_per_entry)
+            stats["least_creators_in_entry"] = min(creators_per_entry)
+            
+        if title_lengths:
+            stats["average_title_length"] = round(sum(title_lengths) / len(title_lengths), 2)
+            
+        stats["titles_with_keywords"] = dict(stats["titles_with_keywords"])
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Failed to load the library at {lib_dir}: {e}")
         return {}
-
-    # Initialize counters and statistics
-    stats = {
-        "total_entries": 0,
-        "languages": Counter(),
-        "creators_count": 0,
-        "average_creators_per_entry": 0,
-        "most_creators_in_entry": 0,
-        "least_creators_in_entry": 0,
-        "top_creators": Counter(),
-        "subjects": Counter(),
-        "most_common_subjects": [],
-        "average_title_length": 0,
-        "longest_title": "",
-        "shortest_title": "",
-        "virtual_libs": Counter(),
-        "titles_with_keywords": Counter(),
-    }
-
-    title_lengths = []
-
-    for entry in library:
-        # Total entries
-        stats["total_entries"] += 1
-
-        # Languages
-        language = entry.get("language", "unknown")
-        stats["languages"][language] += 1
-
-        # Creators
-        creators = entry.get("creators", [])
-        stats["creators_count"] += len(creators)
-        stats["top_creators"].update(creators)
-        stats["most_creators_in_entry"] = max(stats["most_creators_in_entry"], len(creators))
-        if stats["least_creators_in_entry"] == 0 or len(creators) < stats["least_creators_in_entry"]:
-            stats["least_creators_in_entry"] = len(creators)
-
-        # Subjects
-        subjects = entry.get("subjects", [])
-        stats["subjects"].update(subjects)
-
-        # Titles
-        title = entry.get("title", "")
-        if title:
-            title_lengths.append(len(title))
-            if len(title) > len(stats["longest_title"]):
-                stats["longest_title"] = title
-            if not stats["shortest_title"] or len(title) < len(stats["shortest_title"]):
-                stats["shortest_title"] = title
-
-        # Keywords
-        for keyword in keywords:
-            if keyword.lower() in title.lower():
-                stats["titles_with_keywords"][keyword] += 1
-
-        # Virtual Libraries
-        virtual_libs = entry.get("virtual_libs", [])
-        stats["virtual_libs"].update(virtual_libs)
-
-    # Post-process statistics
-    stats["average_creators_per_entry"] = round(stats["creators_count"] / stats["total_entries"], 2)
-    stats["average_title_length"] = round(sum(title_lengths) / len(title_lengths), 2) if title_lengths else 0
-    stats["most_common_subjects"] = stats["subjects"].most_common(5)
-    stats["languages"] = dict(stats["languages"])
-    stats["top_creators"] = dict(stats["top_creators"].most_common(5))
-    stats["titles_with_keywords"] = dict(stats["titles_with_keywords"])
-    stats["virtual_libs"] = dict(stats["virtual_libs"])
-
-    return stats
 
 def get_unique_filename(target_path: str) -> str:
     """
@@ -276,16 +280,16 @@ def get_index_by_unique_id(lib_dir: str, id: str) -> int:
     Raises:
         ValueError: If the library cannot be loaded.
     """
-
-    library = load_library(lib_dir)
-    if not library:
-       raise ValueError("Failed to load the library.")
-
-    for i, entry in enumerate(library):
-        if entry.get('unique_id') == id:
-            return i
-
-    return -1
+    from .library import Library
+    
+    try:
+        lib = Library.open(lib_dir)
+        for i, entry in enumerate(lib):
+            if entry.id == id:
+                return i
+        return -1
+    except Exception as e:
+        raise ValueError(f"Failed to load the library: {e}")
 
 def print_json_as_table(data):
     """

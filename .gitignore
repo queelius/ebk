@@ -1,20 +1,84 @@
 
-# ignore ./dev
-/dev
-
-# ignore files generated from pypi package
-/dist
-/build
-*.egg-info
-
-# ignore other approriate files
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 *.pyo
+
+# Development
+/dev
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# IDEs
+.idea/
+.vscode/
 *.swp
-*.bak
-*.orig
-*.rej
-*.~*
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
 *.log
 *.tmp
 *.tmp.*
+*.bak
+*.orig
+*.rej
+
+# ebk specific
+test_library/
+temp_library/
+output/
+*.ebk
