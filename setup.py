@@ -32,7 +32,6 @@ setup(
         "ebooklib>=0.18",
         "Pillow>=10.0.0",
         "jmespath>=1.0.0",
-        "networkx>=3.0",
         "jinja2>=3.0.0",
         "pypdf>=3.0.0",  # Updated from PyPDF2
         "python-slugify>=8.0.0",
@@ -47,8 +46,10 @@ setup(
         ],
         "viz": [
             "matplotlib>=3.5.0",
+            "networkx>=3.0",
             "pyvis>=0.3.0",
-            "plotly>=5.0.0"
+            "plotly>=5.0.0",
+            "seaborn>=0.12.0"
         ],
         "mcp": [
             "mcp>=0.1.0"
@@ -59,8 +60,10 @@ setup(
             "pandas>=2.0.0", 
             "altair>=5.0.0",
             "matplotlib>=3.5.0",
+            "networkx>=3.0",
             "pyvis>=0.3.0",
             "plotly>=5.0.0",
+            "seaborn>=0.12.0",
             "mcp>=0.1.0"
         ],
         "dev": [

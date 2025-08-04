@@ -25,8 +25,10 @@ class SymlinkDAGExporter:
         
     def export(self, lib_dir: str, output_dir: str, 
                tag_field: str = "subjects",
-               include_files: bool = True,
-               create_index: bool = True):
+               include_files: bool = False,  # Changed default to False
+               create_index: bool = True,
+               flatten: bool = False,
+               min_books: int = 0):
         """
         Export library as symlink-based directory structure.
         
@@ -34,8 +36,10 @@ class SymlinkDAGExporter:
             lib_dir: Path to the ebk library
             output_dir: Output directory for the symlink structure
             tag_field: Field to use for tags (default: "subjects")
-            include_files: Whether to copy actual ebook files
+            include_files: Whether to copy actual ebook files (default: False)
             create_index: Whether to create index.html files in directories
+            flatten: Whether to create direct symlinks to files instead of _books structure
+            min_books: Minimum books per tag folder; smaller folders go to _misc (default: 0)
         """
         lib_path = Path(lib_dir)
         output_path = Path(output_dir)
@@ -48,9 +52,10 @@ class SymlinkDAGExporter:
         # Create output directory
         output_path.mkdir(parents=True, exist_ok=True)
         
-        # Create books directory for actual files
-        books_path = output_path / self.books_dir_name
-        books_path.mkdir(exist_ok=True)
+        # Create books directory for actual files (unless flattening)
+        if not flatten:
+            books_path = output_path / self.books_dir_name
+            books_path.mkdir(exist_ok=True)
         
         # Process each entry
         entry_paths = {}  # Map entry ID to its path in _books
@@ -59,18 +64,25 @@ class SymlinkDAGExporter:
         for i, entry in enumerate(entries):
             entry_id = entry.get("unique_id", f"entry_{i}")
             
-            # Create entry directory in _books
-            entry_dir = books_path / self._sanitize_filename(entry_id)
-            entry_dir.mkdir(exist_ok=True)
-            entry_paths[entry_id] = entry_dir
-            
-            # Save metadata
-            with open(entry_dir / "metadata.json", "w") as f:
-                json.dump(entry, f, indent=2)
-            
-            # Copy files if requested
-            if include_files:
-                self._copy_entry_files(entry, lib_path, entry_dir)
+            if not flatten:
+                # Create entry directory in _books
+                entry_dir = books_path / self._sanitize_filename(entry_id)
+                entry_dir.mkdir(exist_ok=True)
+                entry_paths[entry_id] = entry_dir
+                
+                # Save metadata
+                with open(entry_dir / "metadata.json", "w") as f:
+                    json.dump(entry, f, indent=2)
+                
+                # Handle files - either copy or symlink
+                if include_files:
+                    self._copy_entry_files(entry, lib_path, entry_dir)
+                else:
+                    # Create symlinks to original files
+                    self._symlink_entry_files(entry, lib_path, entry_dir)
+            else:
+                # For flatten mode, store original file paths
+                entry_paths[entry_id] = entry.get("file_paths", [])
             
             # Create a readable symlink name
             title = entry.get("title", "Unknown Title")
@@ -96,8 +108,12 @@ class SymlinkDAGExporter:
                     parent_tag = self.tag_separator.join(tag_parts[:i+1])
                     tag_entries[parent_tag].append(entry)
         
+        # Consolidate small tag folders if min_books is set
+        if min_books > 0:
+            tag_entries = self._consolidate_small_tags(tag_entries, min_books)
+        
         # Create tag directory structure with symlinks
-        self._create_tag_structure(output_path, tag_entries, entry_paths)
+        self._create_tag_structure(output_path, tag_entries, entry_paths, flatten, lib_path)
         
         # Create root index if requested
         if create_index:
@@ -106,15 +122,61 @@ class SymlinkDAGExporter:
         # Create a README
         self._create_readme(output_path, len(entries), len(tag_entries))
     
+    def _consolidate_small_tags(self, tag_entries: Dict[str, List[Dict]], 
+                               min_books: int) -> Dict[str, List[Dict]]:
+        """Consolidate tags with fewer than min_books into a _misc folder."""
+        consolidated = defaultdict(list)
+        misc_entries = []
+        
+        for tag, entries in tag_entries.items():
+            # Get unique entries for this tag
+            seen_ids = set()
+            unique_entries = []
+            for entry in entries:
+                entry_id = entry.get("_entry_id", entry.get("unique_id"))
+                if entry_id not in seen_ids:
+                    seen_ids.add(entry_id)
+                    unique_entries.append(entry)
+            
+            # Check if this tag has enough unique books
+            if len(unique_entries) < min_books:
+                # Check if it's a leaf tag (no children with enough books)
+                tag_prefix = tag + self.tag_separator
+                has_large_children = any(
+                    other_tag.startswith(tag_prefix) and 
+                    len(set(e.get("_entry_id", e.get("unique_id")) for e in tag_entries[other_tag])) >= min_books
+                    for other_tag in tag_entries.keys()
+                )
+                
+                if not has_large_children:
+                    # Add to misc folder with tag prefix
+                    for entry in unique_entries:
+                        misc_entry = entry.copy()
+                        # Store original tag for display in misc folder
+                        misc_entry["_original_tag"] = tag
+                        misc_entries.append(misc_entry)
+                else:
+                    # Keep it as is because it has large children
+                    consolidated[tag] = entries
+            else:
+                # Keep tags with enough books
+                consolidated[tag] = entries
+        
+        # Add misc entries if any
+        if misc_entries:
+            consolidated["_misc"] = misc_entries
+        
+        return dict(consolidated)
+    
     def _sanitize_filename(self, name: str) -> str:
         """Sanitize a string to be safe as a filename."""
         # Replace problematic characters
         name = re.sub(r'[<>:"/\\|?*]', '-', str(name))
         # Remove leading/trailing spaces and dots
         name = name.strip('. ')
-        # Limit length
-        if len(name) > 200:
-            name = name[:200]
+        # Limit length (being more conservative)
+        if len(name) > 150:
+            name = name[:147] + "..."
         return name or "unnamed"
     
     def _copy_entry_files(self, entry: Dict, lib_path: Path, entry_dir: Path):
@@ -134,9 +196,49 @@ class SymlinkDAGExporter:
                 dest_cover = entry_dir / src_cover.name
                 shutil.copy2(src_cover, dest_cover)
     
+    def _symlink_entry_files(self, entry: Dict, lib_path: Path, entry_dir: Path):
+        """Create symlinks to ebook and cover files for an entry."""
+        # Symlink ebook files
+        for file_path in entry.get("file_paths", []):
+            src_file = lib_path / file_path
+            if src_file.exists():
+                # Get absolute path of source file
+                abs_src = src_file.resolve()
+                dest_link = entry_dir / src_file.name
+                
+                # Remove existing symlink if it exists
+                if dest_link.exists() or dest_link.is_symlink():
+                    dest_link.unlink()
+                
+                try:
+                    # Create symlink using absolute path
+                    dest_link.symlink_to(abs_src)
+                except OSError as e:
+                    print(f"Warning: Could not create symlink for '{file_path}': {e}")
+        
+        # Symlink cover file
+        cover_path = entry.get("cover_path")
+        if cover_path:
+            src_cover = lib_path / cover_path
+            if src_cover.exists():
+                # Get absolute path of source cover
+                abs_cover = src_cover.resolve()
+                dest_link = entry_dir / src_cover.name
+                
+                if dest_link.exists() or dest_link.is_symlink():
+                    dest_link.unlink()
+                
+                try:
+                    # Create symlink using absolute path
+                    dest_link.symlink_to(abs_cover)
+                except OSError as e:
+                    print(f"Warning: Could not create symlink for cover '{cover_path}': {e}")
+    
     def _create_tag_structure(self, output_path: Path, 
                             tag_entries: Dict[str, List[Dict]], 
-                            entry_paths: Dict[str, Path]):
+                            entry_paths: Dict[str, Path],
+                            flatten: bool = False,
+                            lib_path: Path = None):
         """Create the hierarchical tag directory structure with symlinks."""
         # Sort tags to ensure parents are created before children
         sorted_tags = sorted(tag_entries.keys())
@@ -163,11 +265,48 @@ class SymlinkDAGExporter:
                 entry_id = entry["_entry_id"]
                 readable_name = entry["_readable_name"]
                 
-                # Path to actual entry in _books
-                target_path = Path("..") / Path(*[".."] * len(tag_parts)) / self.books_dir_name / self._sanitize_filename(entry_id)
+                # For _misc folder, include original tag in the name
+                if tag == "_misc" and "_original_tag" in entry:
+                    original_tag = entry["_original_tag"]
+                    # Shorten the tag to avoid filesystem limits
+                    tag_parts = original_tag.split(self.tag_separator)
+                    if len(tag_parts) > 2:
+                        # Use only the last two parts of hierarchical tags
+                        short_tag = self.tag_separator.join(tag_parts[-2:])
+                    else:
+                        short_tag = original_tag
+                    
+                    # Further limit tag length
+                    if len(short_tag) > 50:
+                        short_tag = short_tag[:47] + "..."
+                    
+                    tag_prefix = f"[{short_tag.replace(self.tag_separator, '-')}] "
+                    
+                    # Ensure the total name isn't too long
+                    max_name_length = 200  # Safe limit for most filesystems
+                    if len(tag_prefix + readable_name) > max_name_length:
+                        # Truncate the readable name to fit
+                        available_length = max_name_length - len(tag_prefix) - 3
+                        readable_name = readable_name[:available_length] + "..."
                 
-                # Create symlink
-                symlink_path = tag_dir / readable_name
+                if not flatten:
+                    # Path to actual entry in _books
+                    target_path = Path(*[".."] * len(tag_parts)) / self.books_dir_name / self._sanitize_filename(entry_id)
+                    # Create symlink
+                    symlink_path = tag_dir / readable_name
+                else:
+                    # For flatten mode, create direct symlinks to original files
+                    file_paths = entry_paths.get(entry_id, [])
+                    if file_paths:
+                        # Use the first file path (usually the main ebook file)
+                        original_file = file_paths[0]
+                        # Get absolute path to the original file
+                        abs_file_path = (lib_path / original_file).resolve()
+                        # Use original filename as symlink name
+                        symlink_path = tag_dir / Path(original_file).name
+                        target_path = abs_file_path
+                    else:
+                        continue  # Skip if no files
                 
                 # Remove existing symlink if it exists
                 if symlink_path.exists() or symlink_path.is_symlink():
@@ -184,8 +323,14 @@ class SymlinkDAGExporter:
                           tag_entries: Dict[str, List[Dict]], 
                           all_entries: List[Dict]):
         """Create index.html files in each directory for web browsing."""
-        # Create root index
-        self._write_index_file(output_path, "Library Root", all_entries, tag_entries.keys())
+        # Create root index with tag counts
+        root_child_tags = {}
+        for tag, entries in tag_entries.items():
+            if self.tag_separator not in tag:  # Top-level tags only
+                unique_count = len(set(e.get("_entry_id", e.get("unique_id")) 
+                                     for e in entries))
+                root_child_tags[tag] = unique_count
+        self._write_index_file(output_path, "Library Root", all_entries, root_child_tags, output_path)
         
         # Create index for each tag directory
         for tag, entries in tag_entries.items():
@@ -194,15 +339,18 @@ class SymlinkDAGExporter:
             for part in tag_parts:
                 tag_dir = tag_dir / self._sanitize_filename(part)
             
-            # Get child tags
-            child_tags = set()
+            # Get child tags with counts
+            child_tags = {}
             tag_prefix = tag + self.tag_separator
-            for other_tag in tag_entries.keys():
+            for other_tag, other_entries in tag_entries.items():
                 if other_tag.startswith(tag_prefix) and other_tag != tag:
                     # Check if it's a direct child
                     remaining = other_tag[len(tag_prefix):]
                     if self.tag_separator not in remaining:
-                        child_tags.add(other_tag)
+                        # Count unique entries for this tag
+                        unique_count = len(set(e.get("_entry_id", e.get("unique_id")) 
+                                             for e in other_entries))
+                        child_tags[other_tag] = unique_count
             
             # Get unique entries
             seen_ids = set()
@@ -213,89 +361,55 @@ class SymlinkDAGExporter:
                     seen_ids.add(entry_id)
                     unique_entries.append(entry)
             
-            self._write_index_file(tag_dir, tag, unique_entries, child_tags)
+            self._write_index_file(tag_dir, tag, unique_entries, child_tags, output_path)
     
     def _write_index_file(self, directory: Path, title: str, 
-                         entries: List[Dict], child_tags: Set[str]):
-        """Write an index.html file for a directory."""
-        html_content = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>{title} - EBK Library</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; }}
-        h1 {{ color: #333; }}
-        .section {{ margin: 20px 0; }}
-        .tag {{ 
-            display: inline-block; 
-            margin: 5px; 
-            padding: 5px 10px; 
-            background: #e0e0e0; 
-            border-radius: 3px;
-            text-decoration: none;
-            color: #333;
-        }}
-        .tag:hover {{ background: #d0d0d0; }}
-        .book {{ 
-            margin: 10px 0; 
-            padding: 10px; 
-            border: 1px solid #ddd; 
-            border-radius: 5px; 
-        }}
-        .book-title {{ font-weight: bold; color: #2c3e50; }}
-        .book-author {{ color: #7f8c8d; }}
-        .book-link {{ text-decoration: none; color: #3498db; }}
-        .book-link:hover {{ text-decoration: underline; }}
-    </style>
-</head>
-<body>
-    <h1>{title}</h1>
-    
-    <div class="section">
-        <a href="../index.html" class="tag">⬆ Parent</a>
-        <a href="/" class="tag">🏠 Root</a>
-    </div>
-"""
+                         entries: List[Dict], child_tags: Dict[str, int], output_path: Path):
+        """Write an index.html file for a directory using Jinja2 template."""
+        from jinja2 import Environment, FileSystemLoader
+        import json
+        import re
         
-        # Add child tags section
-        if child_tags:
-            html_content += """
-    <div class="section">
-        <h2>Subcategories</h2>
-"""
-            for child_tag in sorted(child_tags):
-                tag_name = child_tag.split(self.tag_separator)[-1]
-                safe_name = self._sanitize_filename(tag_name)
-                html_content += f'        <a href="{safe_name}/index.html" class="tag">📁 {tag_name}</a>\n'
-            
-            html_content += "    </div>\n"
+        # Prepare entries for JSON (clean and escape)
+        clean_entries = []
+        for entry in entries:
+            clean_entry = {}
+            for key, value in entry.items():
+                if isinstance(value, str):
+                    # Remove problematic HTML from descriptions
+                    if key == "description":
+                        # Strip HTML tags from description for JSON
+                        value = re.sub(r'<[^>]+>', '', value)
+                        # Limit description length
+                        if len(value) > 500:
+                            value = value[:500] + "..."
+                    clean_entry[key] = value
+                elif isinstance(value, list):
+                    clean_entry[key] = [str(v) for v in value]
+                else:
+                    clean_entry[key] = str(value)
+            clean_entries.append(clean_entry)
         
-        # Add books section
-        if entries:
-            html_content += f"""
-    <div class="section">
-        <h2>Books ({len(entries)})</h2>
-"""
-            for entry in sorted(entries, key=lambda e: e.get("title", "")):
-                title = entry.get("title", "Unknown Title")
-                creators = ", ".join(entry.get("creators", ["Unknown Author"]))
-                readable_name = entry.get("_readable_name", title)
-                
-                html_content += f"""
-        <div class="book">
-            <div class="book-title">{title}</div>
-            <div class="book-author">by {creators}</div>
-            <a href="{readable_name}" class="book-link">📂 Open</a>
-        </div>
-"""
+        # Convert to JSON for JavaScript
+        entries_json = json.dumps(clean_entries, ensure_ascii=True)
         
-            html_content += "    </div>\n"
+        # Set up Jinja2 environment
+        template_dir = Path(__file__).parent / "templates"
+        env = Environment(loader=FileSystemLoader(str(template_dir)))
+        template = env.get_template("advanced_index.html")
         
-        html_content += """
-</body>
-</html>
-"""
+        # Calculate if we're in a subdirectory (for proper _books path)
+        is_subdir = directory != output_path
+        
+        # Render template
+        html_content = template.render(
+            title=title,
+            entries=entries,
+            entries_json=entries_json,
+            child_tags=child_tags,
+            tag_separator=self.tag_separator,
+            is_subdir=is_subdir
+        )
         
         # Write the file
         index_path = directory / "index.html"

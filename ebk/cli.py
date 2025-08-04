@@ -1,5 +1,4 @@
 import os
-import networkx as nx
 import sys
 import json
 import shutil
@@ -970,124 +969,6 @@ def search(
         console.print(f"[bold red]Failed to search library: {e}[/bold red]")
         raise typer.Exit(code=1)
 
-@app.command()
-def visualize(lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to generate a complex network"),
-              output_file: str = typer.Option(None, "--output-file", "-o", help="Output file for the graph visualization"),
-              graph_type: str = typer.Option("coauthor", "--type", "-t", help="Graph type: 'coauthor' or 'subject'"),
-              min_connections: int = typer.Option(1, "--min-connections", "-m", help="Minimum connections to show edge"),
-              pretty_stats: bool = typer.Option(True, "--stats", "-s", help="Pretty print complex network statistics"),
-              json_stats: bool = typer.Option(False, "--json-stats", "-j", help="Output complex network statistics as JSON")):
-    """
-    Visualize the ebk library as a complex network.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to visualize
-        output_file (str): Output file for the graph visualization
-        graph_type (str): Type of graph to generate
-        min_connections (int): Minimum edge weight to include
-        stats (bool): Pretty print complex network statistics
-        json_stats (bool): Output complex network statistics as JSON
-
-    Raises:
-        typer.Exit: If the library directory is invalid
-    
-    Output:
-        Generates a complex network visualization of the library.
-    """
-    try:
-        lib = Library.open(lib_dir)
-        
-        if output_file:
-            # Export graph file
-            lib.export_graph(output_file, graph_type=graph_type, min_connections=min_connections)
-            console.print(f"[green]Saved graph to {output_file}[/green]")
-            
-            # If it's a visual format, also create an image
-            if output_file.endswith(('.png', '.jpg', '.pdf', '.svg')):
-                import networkx as nx
-                import matplotlib.pyplot as plt
-                
-                # Build the graph same way as export_graph
-                G = nx.Graph()
-                
-                if graph_type == "coauthor":
-                    # Build co-authorship network
-                    for i, entry in enumerate(lib._entries):
-                        creators = entry.get("creators", [])
-                        G.add_node(f"book_{i}", 
-                                  type="book", 
-                                  title=entry.get("title", "Unknown"),
-                                  id=entry.get("unique_id"))
-                        
-                        for creator in creators:
-                            if not G.has_node(creator):
-                                G.add_node(creator, type="author")
-                            G.add_edge(f"book_{i}", creator)
-                    
-                    # Create co-author edges
-                    authors = [n for n, d in G.nodes(data=True) if d.get("type") == "author"]
-                    for book_node in [n for n, d in G.nodes(data=True) if d.get("type") == "book"]:
-                        book_authors = list(G.neighbors(book_node))
-                        for i, author1 in enumerate(book_authors):
-                            for author2 in book_authors[i+1:]:
-                                if G.has_edge(author1, author2):
-                                    G[author1][author2]["weight"] += 1
-                                else:
-                                    G.add_edge(author1, author2, weight=1)
-                else:
-                    # Subject network
-                    for i, entry in enumerate(lib._entries):
-                        subjects = entry.get("subjects", [])
-                        for j, other_entry in enumerate(lib._entries[i+1:], i+1):
-                            other_subjects = other_entry.get("subjects", [])
-                            shared = set(subjects) & set(other_subjects)
-                            if len(shared) >= min_connections:
-                                G.add_edge(f"book_{i}", f"book_{j}", weight=len(shared))
-                
-                # Visualize
-                plt.figure(figsize=(12, 8))
-                pos = nx.spring_layout(G, k=2, iterations=50)
-                nx.draw(G, pos, 
-                       node_color='lightblue',
-                       node_size=300,
-                       with_labels=False,
-                       edge_color='gray',
-                       alpha=0.7)
-                plt.title(f"Library {graph_type.title()} Network")
-                plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        
-        # Calculate and show statistics
-        if pretty_stats or json_stats:
-            basic_stats = lib.stats()
-            analysis = lib.analyze_reading_patterns()
-            
-            stats = {
-                "total_books": basic_stats["total_entries"],
-                "unique_authors": len(basic_stats["creators"]),
-                "unique_subjects": len(basic_stats["subjects"]),
-                "languages": len(basic_stats["languages"]),
-                "subject_diversity": analysis["reading_diversity"].get("subject_entropy", 0),
-                "books_per_author": analysis["reading_diversity"].get("books_per_author", 0)
-            }
-            
-            if json_stats:
-                console.print_json(json.dumps(stats, indent=2))
-            else:
-                console.print("[bold]Library Statistics:[/bold]")
-                console.print(f"  Total books: {stats['total_books']}")
-                console.print(f"  Unique authors: {stats['unique_authors']}")
-                console.print(f"  Unique subjects: {stats['unique_subjects']}")
-                console.print(f"  Languages: {stats['languages']}")
-                console.print(f"  Subject diversity (entropy): {stats['subject_diversity']:.2f}")
-                console.print(f"  Books per author: {stats['books_per_author']:.2f}")
-    
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error visualizing library: {e}")
-        console.print(f"[bold red]Failed to visualize library: {e}[/bold red]")
-        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1095,8 +976,10 @@ def export_dag(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
     output_dir: str = typer.Argument(..., help="Output directory for the symlink DAG structure"),
     tag_field: str = typer.Option("subjects", "--tag-field", "-t", help="Field to use for tags (e.g., subjects, creators)"),
-    include_files: bool = typer.Option(True, "--include-files/--no-files", help="Copy actual ebook files"),
-    create_index: bool = typer.Option(True, "--create-index/--no-index", help="Create HTML index files")
+    include_files: bool = typer.Option(False, "--copy-files/--no-copy", help="Copy actual ebook files (default: no-copy)"),
+    create_index: bool = typer.Option(True, "--create-index/--no-index", help="Create HTML index files"),
+    flatten: bool = typer.Option(False, "--flatten", help="Create direct symlinks to files instead of _books structure"),
+    min_books: int = typer.Option(0, "--min-books", "-m", help="Minimum books per tag folder (smaller tags go to _misc)")
 ):
     """
     Export library as a navigable directory structure using symlinks.
@@ -1127,7 +1010,9 @@ def export_dag(
                 output_dir,
                 tag_field=tag_field,
                 include_files=include_files,
-                create_index=create_index
+                create_index=create_index,
+                flatten=flatten,
+                min_books=min_books
             )
             
             progress.update(task, description="[green]Symlink DAG created successfully!")

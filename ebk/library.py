@@ -510,8 +510,10 @@ class Library:
     
     def export_to_symlink_dag(self, output_dir: Union[str, Path], 
                              tag_field: str = "subjects",
-                             include_files: bool = True,
-                             create_index: bool = True) -> 'Library':
+                             include_files: bool = False,
+                             create_index: bool = True,
+                             flatten: bool = False,
+                             min_books: int = 0) -> 'Library':
         """Export library as navigable directory structure using symlinks."""
         from .exports.symlink_dag import export_symlink_dag
         
@@ -520,7 +522,9 @@ class Library:
             str(output_dir), 
             tag_field=tag_field,
             include_files=include_files,
-            create_index=create_index
+            create_index=create_index,
+            flatten=flatten,
+            min_books=min_books
         )
         return self
     
@@ -752,88 +756,6 @@ class Library:
         
         return analysis
     
-    def export_graph(self, output_file: Union[str, Path], 
-                    graph_type: str = "coauthor",
-                    min_connections: int = 1) -> 'Library':
-        """Export library as a graph (GraphML, GEXF, or JSON)."""
-        import networkx as nx
-        
-        G = nx.Graph()
-        
-        if graph_type == "coauthor":
-            # Build co-authorship network
-            for i, entry in enumerate(self._entries):
-                creators = entry.get("creators", [])
-                # Add book node
-                G.add_node(f"book_{i}", 
-                          type="book", 
-                          title=entry.get("title", "Unknown"),
-                          id=entry.get("unique_id"))
-                
-                # Add author nodes and edges
-                for creator in creators:
-                    if not G.has_node(creator):
-                        G.add_node(creator, type="author")
-                    G.add_edge(f"book_{i}", creator)
-            
-            # Create co-author edges
-            authors = [n for n, d in G.nodes(data=True) if d.get("type") == "author"]
-            for book_node in [n for n, d in G.nodes(data=True) if d.get("type") == "book"]:
-                book_authors = list(G.neighbors(book_node))
-                for i, author1 in enumerate(book_authors):
-                    for author2 in book_authors[i+1:]:
-                        if G.has_edge(author1, author2):
-                            G[author1][author2]["weight"] += 1
-                        else:
-                            G.add_edge(author1, author2, weight=1)
-        
-        elif graph_type == "subject":
-            # Build subject co-occurrence network
-            for i, entry in enumerate(self._entries):
-                subjects = entry.get("subjects", [])
-                # Add book node
-                G.add_node(f"book_{i}", 
-                          type="book", 
-                          title=entry.get("title", "Unknown"),
-                          id=entry.get("unique_id"))
-                
-                # Add subject nodes and edges
-                for subject in subjects:
-                    if not G.has_node(subject):
-                        G.add_node(subject, type="subject")
-                    G.add_edge(f"book_{i}", subject)
-            
-            # Create subject co-occurrence edges
-            subjects = [n for n, d in G.nodes(data=True) if d.get("type") == "subject"]
-            for book_node in [n for n, d in G.nodes(data=True) if d.get("type") == "book"]:
-                book_subjects = list(G.neighbors(book_node))
-                for i, subj1 in enumerate(book_subjects):
-                    for subj2 in book_subjects[i+1:]:
-                        if G.has_edge(subj1, subj2):
-                            G[subj1][subj2]["weight"] += 1
-                        else:
-                            G.add_edge(subj1, subj2, weight=1)
-        
-        # Filter edges by minimum connections
-        if min_connections > 1:
-            edges_to_remove = [(u, v) for u, v, d in G.edges(data=True) 
-                              if d.get("weight", 1) < min_connections]
-            G.remove_edges_from(edges_to_remove)
-        
-        # Export based on file extension
-        output_path = Path(output_file)
-        if output_path.suffix == ".graphml":
-            nx.write_graphml(G, str(output_file))
-        elif output_path.suffix == ".gexf":
-            nx.write_gexf(G, str(output_file))
-        else:
-            # Default to JSON
-            from networkx.readwrite import json_graph
-            data = json_graph.node_link_data(G)
-            with open(output_file, "w") as f:
-                json.dump(data, f, indent=2)
-        
-        return self
     
     # Batch operations
     

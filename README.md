@@ -172,7 +172,6 @@ The primary commands include:
 - `export-dag`
 - `recommend`
 - `similar`
-- `visualize`
 - …and more!
 
 ---
@@ -452,7 +451,8 @@ pip install ebk[mcp]
 ### Visualizations
 ```bash
 pip install ebk[viz]
-ebk visualize /path/to/library --output-file graph.png
+# Visualization tools will be available as a separate script
+# Documentation coming soon in integrations/viz/
 ```
 
 See the [Integrations Guide](integrations/README.md) for detailed setup instructions.
