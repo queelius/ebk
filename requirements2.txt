@@ -17,7 +17,7 @@ filelock==3.18.0
 fitz==0.0.1.dev2
 gitdb==4.0.12
 GitPython==3.1.44
-h11==0.14.0
+h11==0.16.0
 httplib2==0.22.0
 idna==3.10
 isodate==0.6.1
