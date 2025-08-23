@@ -136,6 +136,7 @@ def import_ebooks(
             raise typer.Exit(code=1)
 
 @app.command()
+@handle_library_errors
 def export(
     format: str = typer.Argument(..., help="Export format (e.g., 'hugo', 'zip')"),
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to export"),
@@ -163,85 +164,81 @@ def export(
     """
     format = format.lower()
     
-    try:
-        lib = Library.open(lib_dir)
-    except FileNotFoundError:
-        console.print(f"[red]Library directory '{lib_dir}' does not exist.[/red]")
-        raise typer.Exit(code=1)
+    lib = Library.open(lib_dir)
     
     if format == "zip":
         # Determine the destination filename
         if destination:
-            dest_path = Path(destination)
-            if dest_path.exists():
-                console.print(f"[yellow]Destination '{destination}' already exists. Finding an available filename...[/yellow]")
-                dest_str = get_unique_filename(destination)
-                dest_path = Path(dest_str)
-                console.print(f"[green]Using '{dest_path.name}' as the destination.[/green]")
+        dest_path = Path(destination)
+        if dest_path.exists():
+            console.print(f"[yellow]Destination '{destination}' already exists. Finding an available filename...[/yellow]")
+            dest_str = get_unique_filename(destination)
+            dest_path = Path(dest_str)
+            console.print(f"[green]Using '{dest_path.name}' as the destination.[/green]")
         else:
             dest_str = get_unique_filename(lib_dir + ".zip")
             dest_path = Path(dest_str)
             console.print(f"[bold]No destination provided[/bold]. Using default [bold green]{dest_path.name}.[/bold green]")
         
         with Progress(console=console) as progress:
-            task = progress.add_task("[cyan]Exporting to Zip...", total=None)
-            try:
-                lib.export_to_zip(str(dest_path))
-                progress.update(task, description="[green]Exported to Zip successfully!")
-                console.print(f"[bold green]Exported library to '{dest_path}'.[/bold green]")
-            except Exception as e:
-                progress.update(task, description="[red]Failed to export to Zip.")
-                logger.error(f"Error exporting to Zip: {e}")
-                console.print(f"[bold red]Failed to export to Zip: {e}[/bold red]")
-                raise typer.Exit(code=1)
+        task = progress.add_task("[cyan]Exporting to Zip...", total=None)
+        try:
+            lib.export_to_zip(str(dest_path))
+            progress.update(task, description="[green]Exported to Zip successfully!")
+            console.print(f"[bold green]Exported library to '{dest_path}'.[/bold green]")
+        except Exception as e:
+            progress.update(task, description="[red]Failed to export to Zip.")
+            logger.error(f"Error exporting to Zip: {e}")
+            console.print(f"[bold red]Failed to export to Zip: {e}[/bold red]")
+            raise typer.Exit(code=1)
     
     elif format == "hugo":
         if not destination:
-            console.print(f"[red]Destination directory is required for 'hugo' export format.[/red]")
+        console.print(f"[red]Destination directory is required for 'hugo' export format.[/red]")
             raise typer.Exit(code=1)
         
         dest_path = Path(destination)
         if not dest_path.exists():
-            try:
-                dest_path.mkdir(parents=True, exist_ok=True)
-                console.print(f"[green]Created destination directory '{destination}'.[/green]")
-            except Exception as e:
+        try:
+            dest_path.mkdir(parents=True, exist_ok=True)
+            console.print(f"[green]Created destination directory '{destination}'.[/green]")
+        except Exception as e:
                 console.print(f"[red]Failed to create destination directory '{destination}': {e}[/red]")
-                raise typer.Exit(code=1)
+            raise typer.Exit(code=1)
         elif not dest_path.is_dir():
             console.print(f"[red]Destination '{destination}' exists and is not a directory.[/red]")
             raise typer.Exit(code=1)
         
         with Progress(console=console) as progress:
-            if use_jinja:
-                task = progress.add_task(f"[cyan]Exporting to Hugo with Jinja (organize by {organize_by})...", total=None)
-                try:
-                    lib.export_to_hugo(str(dest_path), organize_by=organize_by)
-                    progress.update(task, description="[green]Exported to Hugo with Jinja successfully!")
-                    logger.info(f"Library exported to Hugo at {dest_path} (organized by {organize_by})")
-                    console.print(f"[bold green]Exported library to Hugo directory '{dest_path}' (organized by {organize_by}).[/bold green]")
-                except Exception as e:
-                    progress.update(task, description="[red]Failed to export to Hugo.")
-                    logger.error(f"Error exporting to Hugo with Jinja: {e}")
-                    console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
-                    raise typer.Exit(code=1)
-            else:
-                task = progress.add_task("[cyan]Exporting to Hugo (legacy)...", total=None)
-                try:
-                    # Use legacy export for non-jinja
-                    export_hugo(str(lib.path), str(dest_path))
-                    progress.update(task, description="[green]Exported to Hugo successfully!")
-                    logger.info(f"Library exported to Hugo at {dest_path}")
-                    console.print(f"[bold green]Exported library to Hugo directory '{dest_path}'.[/bold green]")
-                    console.print("[yellow]Tip: Use --jinja for more flexible export options![/yellow]")
-                except Exception as e:
-                    progress.update(task, description="[red]Failed to export to Hugo.")
-                    logger.error(f"Error exporting to Hugo: {e}")
-                    console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
-                    raise typer.Exit(code=1)
+        if use_jinja:
+            task = progress.add_task(f"[cyan]Exporting to Hugo with Jinja (organize by {organize_by})...", total=None)
+            try:
+                lib.export_to_hugo(str(dest_path), organize_by=organize_by)
+                progress.update(task, description="[green]Exported to Hugo with Jinja successfully!")
+                logger.info(f"Library exported to Hugo at {dest_path} (organized by {organize_by})")
+                console.print(f"[bold green]Exported library to Hugo directory '{dest_path}' (organized by {organize_by}).[/bold green]")
+            except Exception as e:
+                progress.update(task, description="[red]Failed to export to Hugo.")
+                logger.error(f"Error exporting to Hugo with Jinja: {e}")
+                console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
+        raise typer.Exit(code=1)
+        else:
+            task = progress.add_task("[cyan]Exporting to Hugo (legacy)...", total=None)
+            try:
+                # Use legacy export for non-jinja
+                export_hugo(str(lib.path), str(dest_path))
+                progress.update(task, description="[green]Exported to Hugo successfully!")
+                logger.info(f"Library exported to Hugo at {dest_path}")
+                console.print(f"[bold green]Exported library to Hugo directory '{dest_path}'.[/bold green]")
+                console.print("[yellow]Tip: Use --jinja for more flexible export options![/yellow]")
+            except Exception as e:
+                progress.update(task, description="[red]Failed to export to Hugo.")
+                logger.error(f"Error exporting to Hugo: {e}")
+                console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
+        raise typer.Exit(code=1)
     
     else:
-        console.print(f"[red]Unsupported export format: '{format}'. Supported formats are 'zip' and 'hugo'.[/red]")
+    console.print(f"[red]Unsupported export format: '{format}'. Supported formats are 'zip' and 'hugo'.[/red]")
         raise typer.Exit(code=1)
     
 @app.command()
@@ -254,12 +251,12 @@ def show_index(
     Display the index of the ebk library.
 
     Args:
-        lib_dir (str): Path to the ebk library directory to display
-        index (int): Index of the entry to display
+    lib_dir (str): Path to the ebk library directory to display
+    index (int): Index of the entry to display
 
 
     Raises:
-        typer.Exit: If the library directory is invalid or the index is out of range
+    typer.Exit: If the library directory is invalid or the index is out of range
     """
     try:
         lib = Library.open(lib_dir)
@@ -268,33 +265,27 @@ def show_index(
         entries = lib.get_by_indices(indices)
         
         for entry in entries:
-            if output_json:
-                console.print_json(json.dumps(entry.to_dict(), indent=2))
-            else:
-                # Create a table
-                table = Table(title="ebk Ebook Entry", show_lines=True)
+        if output_json:
+            console.print_json(json.dumps(entry.to_dict(), indent=2))
+        else:
+            # Create a table
+            table = Table(title="ebk Ebook Entry", show_lines=True)
 
-                # Add column headers dynamically based on JSON keys
-                data = entry.to_dict()
-                columns = data.keys()
-                for column in columns:
-                    table.add_column(column, justify="center", style="bold cyan")
+            # Add column headers dynamically based on JSON keys
+            data = entry.to_dict()
+            columns = data.keys()
+            for column in columns:
+                table.add_column(column, justify="center", style="bold cyan")
 
-                # Add single row for this entry
-                table.add_row(*(str(data[col]) for col in columns))
+            # Add single row for this entry
+            table.add_row(*(str(data[col]) for col in columns))
 
-                # Print the table
-                console.print(table)
+            # Print the table
+            console.print(table)
     except IndexError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
-        raise typer.Exit(code=1)
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error showing entry: {e}")
-        console.print(f"[bold red]Failed to show entry: {e}[/bold red]")
-        raise typer.Exit(code=1)
+            raise typer.Exit(code=1)
+
 
 
 @app.command()
@@ -385,6 +376,7 @@ def merge(
             raise typer.Exit(code=1)
 
 @app.command()
+@handle_library_errors
 def stats(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to get stats"),
     keywords: List[str] = typer.Option(
@@ -407,27 +399,20 @@ def stats(
     Output:
         Prints the statistics about the library.
     """
-    try:
-        lib = Library.open(lib_dir)
-        stats = lib.stats()
-        
-        # Add keyword counts
-        keyword_counts = {}
-        for keyword in keywords:
-            count = len(lib.search(keyword, fields=["title"]))
-            keyword_counts[keyword] = count
-        stats["keyword_counts"] = keyword_counts
-        
-        console.print_json(json.dumps(stats, indent=2))
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error generating statistics: {e}")
-        console.print(f"[bold red]Failed to generate statistics: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    lib = Library.open(lib_dir)
+    stats = lib.stats()
+    
+    # Add keyword counts
+    keyword_counts = {}
+    for keyword in keywords:
+        count = len(lib.search(keyword, fields=["title"]))
+        keyword_counts[keyword] = count
+    stats["keyword_counts"] = keyword_counts
+    
+    console.print_json(json.dumps(stats, indent=2))
     
 @app.command()
+@handle_library_errors
 def list_indices(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to list"),
     indices: List[int] = typer.Argument(..., help="Indices of entries to list"),
@@ -448,29 +433,22 @@ def list_indices(
     Output:
         Prints the list of entries in the library directory.
     """
-    try:
-        lib = Library.open(lib_dir)
-        
-        # Use library's get_by_indices method with validation
-        entries = lib.get_by_indices(indices)
-        
-        if output_json:
-            data = [e.to_dict() for e in entries]
-            console.print_json(json.dumps(data, indent=2))
-        else:
-            # Convert to legacy format for enumerate_ebooks
-            entry_data = [e._data for e in entries]
-            enumerate_ebooks(entry_data, lib.path, indices, detailed)
+    lib = Library.open(lib_dir)
+    
+    # Use library's get_by_indices method with validation
+    entries = lib.get_by_indices(indices)
+    
+    if output_json:
+        data = [e.to_dict() for e in entries]
+        console.print_json(json.dumps(data, indent=2))
+    else:
+        # Convert to legacy format for enumerate_ebooks
+        entry_data = [e._data for e in entries]
+        enumerate_ebooks(entry_data, lib.path, indices, detailed)
     except IndexError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
-        raise typer.Exit(code=1)
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error listing ebooks: {e}")
-        console.print(f"[bold red]Failed to list ebooks: {e}[/bold red]")
-        raise typer.Exit(code=1)
+            raise typer.Exit(code=1)
+
 
 @app.command()
 def list(
@@ -490,24 +468,18 @@ def list(
         Prints the list of entries in the library directory.
     """
     
-    try:
-        lib = Library.open(lib_dir)
-        if output_json:
-            # Use to_dict() for proper serialization
-            data = [entry.to_dict() for entry in lib]
-            console.print_json(json.dumps(data, indent=2))
-        else:
-            # Use internal _entries for legacy enumerate_ebooks function
-            enumerate_ebooks(lib._entries, lib.path)
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error listing ebooks: {e}")
-        console.print(f"[bold red]Failed to list ebooks: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    lib = Library.open(lib_dir)
+    if output_json:
+        # Use to_dict() for proper serialization
+        data = [entry.to_dict() for entry in lib]
+        console.print_json(json.dumps(data, indent=2))
+    else:
+        # Use internal _entries for legacy enumerate_ebooks function
+        enumerate_ebooks(lib._entries, lib.path)
+
 
 @app.command()
+@handle_library_errors
 def add(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
     json_file: str = typer.Option(None, "--json", help="JSON file containing entry info to add"),
@@ -533,64 +505,58 @@ def add(
     Output:
         Adds the specified entry to the library and updates the metadata file in-place.
     """
-    try:
-        lib = Library.open(lib_dir)
-        console.print(f"Loaded [bold]{len(lib)}[/bold] entries from [green]{lib_dir}[/green]")
-        
-        if json_file:
-            with open(json_file, "r") as f:
-                new_entries = json.load(f)
-            lib.add_entries(new_entries)
-            console.print(f"[green]Added {len(new_entries)} entries from {json_file}[/green]")
-        else:
-            if not title or not creators:
-                console.print("[red]Title and creators are required when not using a JSON file.[/red]")
-                raise typer.Exit(code=1)
-            
-            # Copy files first if provided
-            file_paths = []
-            cover_path = None
-            
-            with Progress(console=console) as progress:
-                if ebooks:
-                    task = progress.add_task("[cyan]Copying ebook files...", total=len(ebooks))
-                    for ebook in ebooks:
-                        filename = Path(ebook).name
-                        dest_path = Path(lib_dir) / filename
-                        shutil.copy(ebook, dest_path)
-                        file_paths.append(filename)
-                        progress.advance(task)
-                        logger.debug(f"Copied ebook file: {ebook}")
-                        
-                if cover:
-                    task = progress.add_task("[cyan]Copying cover image...", total=1)
-                    cover_filename = Path(cover).name
-                    cover_dest = Path(lib_dir) / cover_filename
-                    shutil.copy(cover, cover_dest)
-                    cover_path = cover_filename
-                    progress.advance(task)
-                    logger.debug(f"Copied cover image: {cover}")
-            
-            entry = lib.add_entry(
-                title=title,
-                creators=creators,
-                file_paths=file_paths,
-                cover_path=cover_path
-            )
-            console.print(f"Adding new entry: [bold]{entry.title}[/bold]")
-        
-        lib.save()
-        console.print(f"[bold green]Successfully added entries to the library.[/bold green]")
+    lib = Library.open(lib_dir)
+    console.print(f"Loaded [bold]{len(lib)}[/bold] entries from [green]{lib_dir}[/green]")
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error adding entry: {e}")
-        console.print(f"[bold red]Failed to add entry: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    if json_file:
+        with open(json_file, "r") as f:
+            new_entries = json.load(f)
+        lib.add_entries(new_entries)
+        console.print(f"[green]Added {len(new_entries)} entries from {json_file}[/green]")
+    else:
+        if not title or not creators:
+            console.print("[red]Title and creators are required when not using a JSON file.[/red]")
+            raise typer.Exit(code=1)
+        
+        # Copy files first if provided
+        file_paths = []
+        cover_path = None
+        
+        with Progress(console=console) as progress:
+            if ebooks:
+                task = progress.add_task("[cyan]Copying ebook files...", total=len(ebooks))
+                for ebook in ebooks:
+                    filename = Path(ebook).name
+                    dest_path = Path(lib_dir) / filename
+                    shutil.copy(ebook, dest_path)
+                    file_paths.append(filename)
+                    progress.advance(task)
+                    logger.debug(f"Copied ebook file: {ebook}")
+                    
+            if cover:
+                task = progress.add_task("[cyan]Copying cover image...", total=1)
+                cover_filename = Path(cover).name
+                cover_dest = Path(lib_dir) / cover_filename
+                shutil.copy(cover, cover_dest)
+                cover_path = cover_filename
+                progress.advance(task)
+                logger.debug(f"Copied cover image: {cover}")
+        
+        entry = lib.add_entry(
+            title=title,
+            creators=creators,
+            file_paths=file_paths,
+            cover_path=cover_path
+        )
+        console.print(f"Adding new entry: [bold]{entry.title}[/bold]")
+    
+    lib.save()
+    console.print(f"[bold green]Successfully added entries to the library.[/bold green]")
+    
+
 
 @app.command()
+@handle_library_errors
 def remove(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
     regex: str = typer.Argument(..., help="Regex search expression to remove entries"),
@@ -617,68 +583,62 @@ def remove(
     Output:
         Removed entries from the library directory and associated files in-place.
     """
-    try:
-        lib = Library.open(lib_dir)
-        console.print(f"Loaded [bold]{len(lib)}[/bold] entries from [green]{lib_dir}[/green]")
+    lib = Library.open(lib_dir)
+    console.print(f"Loaded [bold]{len(lib)}[/bold] entries from [green]{lib_dir}[/green]")
     
-        # Find matching entries
-        matches = []
-        for field in apply_to:
-            results = lib.search(regex, fields=[field])
-            matches.extend(results)
-        
-        # Remove duplicates by unique_id
-        seen_ids = set()
-        unique_matches = []
-        for entry in matches:
-            if entry.id not in seen_ids:
-                seen_ids.add(entry.id)
-                unique_matches.append(entry)
-        
-        if not unique_matches:
-            console.print("[yellow]No matching entries found for removal.[/yellow]")
+    # Find matching entries
+    matches = []
+    for field in apply_to:
+        results = lib.search(regex, fields=[field])
+        matches.extend(results)
+    
+    # Remove duplicates by unique_id
+    seen_ids = set()
+    unique_matches = []
+    for entry in matches:
+        if entry.id not in seen_ids:
+            seen_ids.add(entry.id)
+            unique_matches.append(entry)
+    
+    if not unique_matches:
+        console.print("[yellow]No matching entries found for removal.[/yellow]")
+        return
+    
+    console.print(f"[yellow]Found {len(unique_matches)} entries matching the regex '{regex}':[/yellow]")
+    enumerate_ebooks([e._data for e in unique_matches], lib.path)
+    
+    if not force:
+        confirm = Confirm.ask(f"[bold red]Are you sure you want to remove {len(unique_matches)} entries?[/bold red]")
+        if not confirm:
+            console.print("[green]Removal cancelled.[/green]")
             return
     
-        console.print(f"[yellow]Found {len(unique_matches)} entries matching the regex '{regex}':[/yellow]")
-        enumerate_ebooks([e._data for e in unique_matches], lib.path)
+    # Remove associated files and entries
+    for entry in unique_matches:
+        # Remove ebook files
+        for file_path in entry.get('file_paths', []):
+            full_path = lib.path / file_path
+            if full_path.exists():
+                full_path.unlink()
+                logger.info(f"Removed ebook file: {full_path}")
+        
+        # Remove cover image
+        if entry.get('cover_path'):
+            cover_path = lib.path / entry.get('cover_path')
+            if cover_path.exists():
+                cover_path.unlink()
+                logger.info(f"Removed cover image: {cover_path}")
+        
+        # Remove from library
+        lib.remove(entry.id)
     
-        if not force:
-            confirm = Confirm.ask(f"[bold red]Are you sure you want to remove {len(unique_matches)} entries?[/bold red]")
-            if not confirm:
-                console.print("[green]Removal cancelled.[/green]")
-                return
+    lib.save()
+    console.print(f"[bold green]Removed {len(unique_matches)} entries from the library.[/bold green]")
     
-        # Remove associated files and entries
-        for entry in unique_matches:
-            # Remove ebook files
-            for file_path in entry.get('file_paths', []):
-                full_path = lib.path / file_path
-                if full_path.exists():
-                    full_path.unlink()
-                    logger.info(f"Removed ebook file: {full_path}")
-            
-            # Remove cover image
-            if entry.get('cover_path'):
-                cover_path = lib.path / entry.get('cover_path')
-                if cover_path.exists():
-                    cover_path.unlink()
-                    logger.info(f"Removed cover image: {cover_path}")
-            
-            # Remove from library
-            lib.remove(entry.id)
-    
-        lib.save()
-        console.print(f"[bold green]Removed {len(unique_matches)} entries from the library.[/bold green]")
-    
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error removing entries: {e}")
-        console.print(f"[bold red]Failed to remove entries: {e}[/bold red]")
-        raise typer.Exit(code=1)
+
 
 @app.command()
+@handle_library_errors
 def remove_index(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
     indices: List[int] = typer.Argument(..., help="Indices of entries to remove")
@@ -696,52 +656,46 @@ def remove_index(
     Output:
         Removes the specified entries from the library.
     """
-    try:
-        lib = Library.open(lib_dir)
-        
-        # Validate indices
-        total_books = len(lib)
-        for index in indices:
-            if index < 0 or index >= total_books:
-                console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
-                raise typer.Exit(code=1)
-        
-        # Get entries to remove
-        entries_to_remove = [lib[i] for i in indices]
-        
-        console.print(f"[yellow]Removing {len(entries_to_remove)} entries:[/yellow]")
-        for entry in entries_to_remove:
-            console.print(f"  - {entry.title}")
-        
-        # Remove files and entries
-        for entry in entries_to_remove:
-            # Remove ebook files
-            for file_path in entry.get('file_paths', []):
-                full_path = lib.path / file_path
-                if full_path.exists():
-                    full_path.unlink()
-            
-            # Remove cover image
-            if entry.get('cover_path'):
-                cover_path = lib.path / entry.get('cover_path')
-                if cover_path.exists():
-                    cover_path.unlink()
-            
-            # Remove from library
-            lib.remove(entry.id)
-        
-        lib.save()
-        console.print(f"[bold green]Removed {len(entries_to_remove)} entries.[/bold green]")
+    lib = Library.open(lib_dir)
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error removing entries by index: {e}")
-        console.print(f"[bold red]Failed to remove entries: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    # Validate indices
+    total_books = len(lib)
+    for index in indices:
+        if index < 0 or index >= total_books:
+            console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
+            raise typer.Exit(code=1)
+    
+    # Get entries to remove
+    entries_to_remove = [lib[i] for i in indices]
+    
+    console.print(f"[yellow]Removing {len(entries_to_remove)} entries:[/yellow]")
+    for entry in entries_to_remove:
+        console.print(f"  - {entry.title}")
+    
+    # Remove files and entries
+    for entry in entries_to_remove:
+        # Remove ebook files
+        for file_path in entry.get('file_paths', []):
+            full_path = lib.path / file_path
+            if full_path.exists():
+                full_path.unlink()
+        
+        # Remove cover image
+        if entry.get('cover_path'):
+            cover_path = lib.path / entry.get('cover_path')
+            if cover_path.exists():
+                cover_path.unlink()
+        
+        # Remove from library
+        lib.remove(entry.id)
+    
+    lib.save()
+    console.print(f"[bold green]Removed {len(entries_to_remove)} entries.[/bold green]")
+    
+
 
 @app.command()
+@handle_library_errors
 def remove_id(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
     unique_id: str = typer.Argument(..., help="Unique ID of the entry to remove")
@@ -759,44 +713,38 @@ def remove_id(
     Output:
         Removes the specified entry from the library.
     """
-    try:
-        lib = Library.open(lib_dir)
-        
-        # Find entry with unique ID
-        entry_to_remove = lib.find(unique_id)
-        
-        if not entry_to_remove:
-            console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
-            raise typer.Exit(code=1)
-        
-        console.print(f"[yellow]Removing entry: {entry_to_remove.title}[/yellow]")
-        
-        # Remove files
-        for file_path in entry_to_remove.get('file_paths', []):
-            full_path = lib.path / file_path
-            if full_path.exists():
-                full_path.unlink()
-        
-        if entry_to_remove.get('cover_path'):
-            cover_path = lib.path / entry_to_remove.get('cover_path')
-            if cover_path.exists():
-                cover_path.unlink()
-        
-        # Remove from library
-        lib.remove(unique_id)
-        lib.save()
-        
-        console.print(f"[bold green]Removed entry with ID: {unique_id}[/bold green]")
+    lib = Library.open(lib_dir)
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error removing entry by ID: {e}")
-        console.print(f"[bold red]Failed to remove entry: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    # Find entry with unique ID
+    entry_to_remove = lib.find(unique_id)
+    
+    if not entry_to_remove:
+        console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
+            raise typer.Exit(code=1)
+    
+    console.print(f"[yellow]Removing entry: {entry_to_remove.title}[/yellow]")
+    
+    # Remove files
+    for file_path in entry_to_remove.get('file_paths', []):
+        full_path = lib.path / file_path
+        if full_path.exists():
+            full_path.unlink()
+    
+    if entry_to_remove.get('cover_path'):
+        cover_path = lib.path / entry_to_remove.get('cover_path')
+        if cover_path.exists():
+            cover_path.unlink()
+    
+    # Remove from library
+    lib.remove(unique_id)
+    lib.save()
+    
+    console.print(f"[bold green]Removed entry with ID: {unique_id}[/bold green]")
+    
+
 
 @app.command()
+@handle_library_errors
 def update_index(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
     index: int = typer.Argument(..., help="Index of the entry to update"),
@@ -822,38 +770,32 @@ def update_index(
     Output:
         Updates the specified entry in the library.
     """
-    try:
-        lib = Library.open(lib_dir)
-        
-        total_books = len(lib)
-        if index < 0 or index >= total_books:
-            console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
-            raise typer.Exit(code=1)
-        
-        entry = lib[index]
-        
-        # Update fields if provided
-        if title:
-            entry.title = title
-        if creators:
-            entry.creators = creators
-        if ebooks:
-            entry.set("file_paths", ebooks)
-        if cover:
-            entry.set("cover_path", cover)
-        
-        lib.save()
-        console.print(f"[bold green]Updated entry at index {index}.[/bold green]")
+    lib = Library.open(lib_dir)
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error updating entry: {e}")
-        console.print(f"[bold red]Failed to update entry: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    total_books = len(lib)
+    if index < 0 or index >= total_books:
+        console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
+            raise typer.Exit(code=1)
+    
+    entry = lib[index]
+    
+    # Update fields if provided
+    if title:
+        entry.title = title
+    if creators:
+        entry.creators = creators
+    if ebooks:
+        entry.set("file_paths", ebooks)
+    if cover:
+        entry.set("cover_path", cover)
+    
+    lib.save()
+    console.print(f"[bold green]Updated entry at index {index}.[/bold green]")
+    
+
 
 @app.command()
+@handle_library_errors
 def update_id(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
     unique_id: str = typer.Argument(..., help="Unique ID of the entry to update"),
@@ -879,37 +821,31 @@ def update_id(
     Output:
         Updates the specified entry in the library.
     """
-    try:
-        lib = Library.open(lib_dir)
-        
-        # Find entry
-        entry = lib.find(unique_id)
-        if not entry:
-            console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
-            raise typer.Exit(code=1)
-        
-        # Update fields if provided
-        if title:
-            entry.title = title
-        if creators:
-            entry.creators = creators
-        if ebooks:
-            entry.set("file_paths", ebooks)
-        if cover:
-            entry.set("cover_path", cover)
-        
-        lib.save()
-        console.print(f"[bold green]Updated entry with ID: {unique_id}[/bold green]")
+    lib = Library.open(lib_dir)
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error updating entry by ID: {e}")
-        console.print(f"[bold red]Failed to update entry: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    # Find entry
+    entry = lib.find(unique_id)
+    if not entry:
+        console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
+            raise typer.Exit(code=1)
+    
+    # Update fields if provided
+    if title:
+        entry.title = title
+    if creators:
+        entry.creators = creators
+    if ebooks:
+        entry.set("file_paths", ebooks)
+    if cover:
+        entry.set("cover_path", cover)
+    
+    lib.save()
+    console.print(f"[bold green]Updated entry with ID: {unique_id}[/bold green]")
+    
+
 
 @app.command()
+@handle_library_errors
 def search(
     expression: str = typer.Argument(..., help="Search expression (regex or JMESPath)"),
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to search"),
@@ -938,40 +874,34 @@ def search(
     Output:
         Displays matching entries from the library.
     """
-    try:
-        lib = Library.open(lib_dir)
-        
-        if jmespath:
-            # Use JMESPath query
-            results = lib.query().jmespath(expression).execute()
-        else:
-            # Use simple search for regex across fields
-            results = lib.search(expression, fields=regex_fields)
-            # Convert Entry objects to dicts for compatibility
-            results = [entry._data for entry in results]
-        
-        if not results:
-            console.print(f"[yellow]No entries found matching '{expression}'.[/yellow]")
-            return
-        
-        console.print(f"[green]Found {len(results)} matching entries.[/green]")
-        
-        if output_json:
-            console.print_json(json.dumps(results, indent=2))
-        else:
-            enumerate_ebooks(results, lib.path)
+    lib = Library.open(lib_dir)
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error searching library: {e}")
-        console.print(f"[bold red]Failed to search library: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    if jmespath:
+        # Use JMESPath query
+        results = lib.query().jmespath(expression).execute()
+    else:
+        # Use simple search for regex across fields
+        results = lib.search(expression, fields=regex_fields)
+        # Convert Entry objects to dicts for compatibility
+        results = [entry._data for entry in results]
+    
+    if not results:
+        console.print(f"[yellow]No entries found matching '{expression}'.[/yellow]")
+        return
+    
+    console.print(f"[green]Found {len(results)} matching entries.[/green]")
+    
+    if output_json:
+        console.print_json(json.dumps(results, indent=2))
+    else:
+        enumerate_ebooks(results, lib.path)
+    
+
 
 
 
 @app.command()
+@handle_library_errors
 def export_dag(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
     output_dir: str = typer.Argument(..., help="Output directory for the symlink DAG structure"),
@@ -1000,42 +930,268 @@ def export_dag(
             (books tagged with Programming/Python)
           (books tagged with Programming)
     """
+    lib = Library.open(lib_dir)
+    
+    with Progress(console=console) as progress:
+        task = progress.add_task("[cyan]Creating symlink DAG structure...", total=None)
+        
+        lib.export_to_symlink_dag(
+            output_dir,
+            tag_field=tag_field,
+            include_files=include_files,
+            create_index=create_index,
+            flatten=flatten,
+            min_books=min_books
+        )
+        
+        progress.update(task, description="[green]Symlink DAG created successfully!")
+        
+    console.print(f"[bold green]Created navigable library structure at: {output_dir}[/bold green]")
+    console.print(f"\n[yellow]You can now:[/yellow]")
+    console.print(f"  • Navigate with your file explorer")
+    console.print(f"  • Use command line: cd {output_dir}")
+    if create_index:
+        console.print(f"  • Open in browser: file://{Path(output_dir).absolute()}/index.html")
+    
+
+
+
+@app.command()
+@handle_library_errors
+def export_multi(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    output_dir: str = typer.Argument(..., help="Output directory for the multi-faceted view"),
+    facets: Optional[List[str]] = typer.Option(
+        None, "--facet", "-f", 
+        help="Facets to include (format: 'DisplayName:field'), e.g., 'Authors:creators'"
+    ),
+    include_files: bool = typer.Option(False, "--copy-files/--no-copy", help="Copy actual ebook files (default: no-copy)"),
+    create_index: bool = typer.Option(True, "--create-index/--no-index", help="Create HTML index file")
+):
+    """
+    Export library with multi-faceted navigation interface.
+    
+    Creates a modern web interface with:
+    - Sidebar navigation for multiple facets (subjects, authors, etc.)
+    - Real-time search and filtering
+    - Pagination for large libraries
+    - Grid and list views
+    
+    Example:
+        ebk export-multi /path/to/library /path/to/output
+        
+        # Custom facets
+        ebk export-multi library/ output/ -f "Topics:subjects" -f "Writers:creators" -f "Years:date"
+    """
     try:
+        # Parse custom facets if provided
+        custom_facets = None
+        if facets:
+            custom_facets = {}
+            for facet in facets:
+                if ':' in facet:
+                    display_name, field_name = facet.split(':', 1)
+                    custom_facets[display_name] = field_name
+                else:
+                    console.print(f"[yellow]Warning: Invalid facet format '{facet}', skipping[/yellow]")
+        
+        # Import here to avoid circular imports
+        from ebk.exports.multi_facet_export import MultiFacetExporter
+        
         lib = Library.open(lib_dir)
         
         with Progress(console=console) as progress:
-            task = progress.add_task("[cyan]Creating symlink DAG structure...", total=None)
+            task = progress.add_task("[cyan]Creating multi-faceted export...", total=None)
             
-            lib.export_to_symlink_dag(
-                output_dir,
-                tag_field=tag_field,
+            exporter = MultiFacetExporter(facets=custom_facets)
+            exporter.export(
+                Path(lib_dir),
+                Path(output_dir),
                 include_files=include_files,
-                create_index=create_index,
-                flatten=flatten,
-                min_books=min_books
+                create_index=create_index
             )
             
-            progress.update(task, description="[green]Symlink DAG created successfully!")
+            progress.update(task, description="[green]Multi-faceted export created successfully!")
             
-        console.print(f"[bold green]Created navigable library structure at: {output_dir}[/bold green]")
+        console.print(f"[bold green]Created multi-faceted view at: {output_dir}[/bold green]")
         console.print(f"\n[yellow]You can now:[/yellow]")
-        console.print(f"  • Navigate with your file explorer")
-        console.print(f"  • Use command line: cd {output_dir}")
-        if create_index:
-            console.print(f"  • Open in browser: file://{Path(output_dir).absolute()}/index.html")
+        console.print(f"  • Open in browser: file://{Path(output_dir).absolute()}/index.html")
+        console.print(f"  • Navigate by subjects, authors, and more")
+        console.print(f"  • Search and filter in real-time")
     
     except FileNotFoundError:
         console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
+            raise typer.Exit(code=1)
     except Exception as e:
-        logger.error(f"Error creating symlink DAG: {e}")
-        console.print(f"[bold red]Failed to create symlink DAG: {e}[/bold red]")
-        if "symlink" in str(e).lower():
-            console.print("[yellow]Note: On Windows, creating symlinks may require administrator privileges.[/yellow]")
+        logger.error(f"Error creating multi-faceted export: {e}")
+        console.print(f"[bold red]Failed to create export: {e}[/bold red]")
+            raise typer.Exit(code=1)
+
+
+@app.command()
+@handle_library_errors
+def rate(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    entry_id: str = typer.Argument(..., help="Entry ID or title pattern to rate"),
+    rating: float = typer.Argument(..., help="Rating (0-5 stars)"),
+):
+    """Rate a book in your library."""
+    lib = Library.open(lib_dir)
+    
+    # Find entry by ID or title
+    entry = lib.get(entry_id)
+    if not entry:
+        # Try to find by title pattern
+        results = lib.query().where_title_contains(entry_id).execute()
+        if not results:
+            console.print(f"[red]No entry found matching '{entry_id}'[/red]")
+            raise typer.Exit(code=1)
+        elif len(results) > 1:
+            console.print(f"[yellow]Multiple entries found:[/yellow]")
+            for e in results[:5]:
+                console.print(f"  • {e['unique_id']}: {e.get('title', 'Unknown')}")
+            console.print("[yellow]Please use a more specific ID[/yellow]")
+            raise typer.Exit(code=1)
+        entry = Entry(results[0], lib)
+    
+    entry.rate(rating)
+    console.print(f"[green]✓[/green] Rated '{entry.title}' with {rating} stars")
+    
+    except Exception as e:
+        logger.error(f"Error rating entry: {e}")
+        console.print(f"[red]Failed to rate entry: {e}[/red]")
         raise typer.Exit(code=1)
 
 
 @app.command()
+@handle_library_errors
+def comment(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    entry_id: str = typer.Argument(..., help="Entry ID or title pattern"),
+    text: str = typer.Argument(..., help="Comment text"),
+):
+    """Add a comment to a book."""
+    try:
+        lib = Library.open(lib_dir)
+    
+    # Find entry
+    entry = lib.get(entry_id)
+    if not entry:
+        results = lib.query().where_title_contains(entry_id).execute()
+        if not results:
+            console.print(f"[red]No entry found matching '{entry_id}'[/red]")
+            raise typer.Exit(code=1)
+        elif len(results) > 1:
+            console.print(f"[yellow]Multiple entries found. Please be more specific.[/yellow]")
+            raise typer.Exit(code=1)
+        entry = Entry(results[0], lib)
+    
+    entry.comment(text)
+    console.print(f"[green]✓[/green] Added comment to '{entry.title}'")
+    
+    except Exception as e:
+        logger.error(f"Error adding comment: {e}")
+        console.print(f"[red]Failed to add comment: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+@handle_library_errors
+def mark(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    entry_id: str = typer.Argument(..., help="Entry ID or title pattern"),
+    status: str = typer.Argument(..., help="Status: read, reading, unread, abandoned"),
+    progress: Optional[int] = typer.Option(None, "--progress", "-p", help="Reading progress (0-100)"),
+):
+    """Mark reading status of a book."""
+    try:
+        lib = Library.open(lib_dir)
+    
+    # Find entry
+    entry = lib.get(entry_id)
+    if not entry:
+        results = lib.query().where_title_contains(entry_id).execute()
+        if not results:
+            console.print(f"[red]No entry found matching '{entry_id}'[/red]")
+            raise typer.Exit(code=1)
+        elif len(results) > 1:
+            console.print(f"[yellow]Multiple entries found. Please be more specific.[/yellow]")
+            raise typer.Exit(code=1)
+        entry = Entry(results[0], lib)
+    
+    # Apply status
+    if status == "read":
+        entry.mark_read(progress)
+    elif status == "reading":
+        entry.mark_reading(progress)
+    elif status == "unread":
+        entry.mark_unread()
+    elif status == "abandoned":
+        entry.mark_abandoned(progress)
+    else:
+        console.print(f"[red]Invalid status: {status}[/red]")
+        console.print("Valid statuses: read, reading, unread, abandoned")
+            raise typer.Exit(code=1)
+    
+    progress_str = f" ({progress}%)" if progress is not None else ""
+    console.print(f"[green]✓[/green] Marked '{entry.title}' as {status}{progress_str}")
+    
+    except Exception as e:
+        logger.error(f"Error marking status: {e}")
+        console.print(f"[red]Failed to mark status: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+@handle_library_errors
+def personal_stats(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+):
+    """Show personal library statistics."""
+    try:
+        lib = Library.open(lib_dir)
+    stats = lib.personal.get_statistics()
+    
+    console.print("[bold]Personal Library Statistics[/bold]\n")
+    
+    # Reading status
+    total_tracked = (stats["total_read"] + stats["total_reading"] + 
+                    stats["total_unread"] + stats["total_abandoned"])
+    
+    if total_tracked > 0:
+        console.print("[cyan]Reading Status:[/cyan]")
+        console.print(f"  📚 Read: {stats['total_read']}")
+        console.print(f"  📖 Currently Reading: {stats['total_reading']}")
+        console.print(f"  📘 Unread: {stats['total_unread']}")
+        console.print(f"  ❌ Abandoned: {stats['total_abandoned']}")
+        console.print()
+    
+    # Ratings
+    if stats["total_rated"] > 0:
+        console.print("[cyan]Ratings:[/cyan]")
+        console.print(f"  ⭐ Average Rating: {stats['average_rating']:.1f}")
+        console.print(f"  📊 Total Rated: {stats['total_rated']}")
+        console.print("  Distribution:")
+        for stars in range(5, 0, -1):
+            count = stats["rating_distribution"].get(stars, 0)
+            bar = "█" * (count // 5) if count > 0 else ""
+            console.print(f"    {stars}⭐ {count:3d} {bar}")
+        console.print()
+    
+    # Other metadata
+    console.print("[cyan]Other:[/cyan]")
+    console.print(f"  ❤️  Favorites: {stats['total_favorites']}")
+    console.print(f"  💬 With Comments: {stats['total_with_comments']}")
+    console.print(f"  🏷️  With Personal Tags: {stats['total_with_tags']}")
+    
+    except Exception as e:
+        logger.error(f"Error getting personal stats: {e}")
+        console.print(f"[red]Failed to get statistics: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+@handle_library_errors
 def recommend(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
     based_on: Optional[List[str]] = typer.Option(None, "--based-on", "-b", help="Book IDs to base recommendations on"),
@@ -1046,45 +1202,40 @@ def recommend(
     Get book recommendations based on similarity.
     
     Examples:
-        # Random recommendations from highly-rated books
-        ebk recommend /path/to/library
-        
-        # Recommendations based on specific books
-        ebk recommend /path/to/library --based-on book_id_1 --based-on book_id_2
+    # Random recommendations from highly-rated books
+    ebk recommend /path/to/library
+    
+    # Recommendations based on specific books
+    ebk recommend /path/to/library --based-on book_id_1 --based-on book_id_2
     """
     try:
         lib = Library.open(lib_dir)
-        
-        recommendations = lib.recommend(based_on=based_on, limit=limit)
-        
-        if not recommendations:
-            console.print("[yellow]No recommendations found.[/yellow]")
-            return
-        
-        console.print(f"[green]Found {len(recommendations)} recommendations:[/green]\n")
-        
-        if output_json:
-            data = [r.to_dict() for r in recommendations]
-            console.print_json(json.dumps(data, indent=2))
-        else:
-            for i, entry in enumerate(recommendations, 1):
-                console.print(f"[bold]{i}. {entry.title}[/bold]")
-                if entry.creators:
-                    console.print(f"   by {', '.join(entry.creators)}")
-                if entry.subjects:
-                    console.print(f"   Tags: {', '.join(entry.subjects[:5])}")
-                console.print()
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error getting recommendations: {e}")
-        console.print(f"[bold red]Failed to get recommendations: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    recommendations = lib.recommend(based_on=based_on, limit=limit)
+    
+    if not recommendations:
+        console.print("[yellow]No recommendations found.[/yellow]")
+        return
+    
+    console.print(f"[green]Found {len(recommendations)} recommendations:[/green]\n")
+    
+    if output_json:
+        data = [r.to_dict() for r in recommendations]
+        console.print_json(json.dumps(data, indent=2))
+    else:
+        for i, entry in enumerate(recommendations, 1):
+            console.print(f"[bold]{i}. {entry.title}[/bold]")
+            if entry.creators:
+                console.print(f"   by {', '.join(entry.creators)}")
+            if entry.subjects:
+                console.print(f"   Tags: {', '.join(entry.subjects[:5])}")
+            console.print()
+    
+
 
 
 @app.command()
+@handle_library_errors
 def similar(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
     entry_id: str = typer.Argument(..., help="Entry ID to find similar books for"),
@@ -1101,47 +1252,40 @@ def similar(
     - Same language (20% weight)
     - Title similarity (10% weight)
     """
-    try:
-        lib = Library.open(lib_dir)
-        
-        # Find the reference entry
-        ref_entry = lib.find(entry_id)
-        if not ref_entry:
-            console.print(f"[red]No entry found with ID: {entry_id}[/red]")
-            raise typer.Exit(code=1)
-        
-        console.print(f"[cyan]Finding books similar to:[/cyan] {ref_entry.title}\n")
-        
-        similar_entries = lib.find_similar(entry_id, threshold=threshold)
-        similar_entries = similar_entries[:limit]
-        
-        if not similar_entries:
-            console.print(f"[yellow]No similar entries found with threshold {threshold}.[/yellow]")
-            console.print("Try lowering the threshold with --threshold 0.5")
-            return
-        
-        console.print(f"[green]Found {len(similar_entries)} similar books:[/green]\n")
-        
-        if output_json:
-            data = [e.to_dict() for e in similar_entries]
-            console.print_json(json.dumps(data, indent=2))
-        else:
-            for i, entry in enumerate(similar_entries, 1):
-                console.print(f"[bold]{i}. {entry.title}[/bold]")
-                if entry.creators:
-                    console.print(f"   by {', '.join(entry.creators)}")
-                if entry.subjects:
-                    console.print(f"   Tags: {', '.join(entry.subjects[:5])}")
-                console.print()
+    lib = Library.open(lib_dir)
     
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error finding similar entries: {e}")
-        console.print(f"[bold red]Failed to find similar entries: {e}[/bold red]")
-        raise typer.Exit(code=1)
+    # Find the reference entry
+    ref_entry = lib.find(entry_id)
+    if not ref_entry:
+        console.print(f"[red]No entry found with ID: {entry_id}[/red]")
+            raise typer.Exit(code=1)
+    
+    console.print(f"[cyan]Finding books similar to:[/cyan] {ref_entry.title}\n")
+    
+    similar_entries = lib.find_similar(entry_id, threshold=threshold)
+    similar_entries = similar_entries[:limit]
+    
+    if not similar_entries:
+        console.print(f"[yellow]No similar entries found with threshold {threshold}.[/yellow]")
+        console.print("Try lowering the threshold with --threshold 0.5")
+        return
+    
+    console.print(f"[green]Found {len(similar_entries)} similar books:[/green]\n")
+    
+    if output_json:
+        data = [e.to_dict() for e in similar_entries]
+        console.print_json(json.dumps(data, indent=2))
+    else:
+        for i, entry in enumerate(similar_entries, 1):
+            console.print(f"[bold]{i}. {entry.title}[/bold]")
+            if entry.creators:
+                console.print(f"   by {', '.join(entry.creators)}")
+            if entry.subjects:
+                console.print(f"   Tags: {', '.join(entry.subjects[:5])}")
+            console.print()
+    
 
 
-if __name__ == "__main__":
+
+    if __name__ == "__main__":
     app()

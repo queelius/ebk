@@ -119,8 +119,8 @@ class JinjaExporter:
             if norm['date']:
                 try:
                     norm['year'] = norm['date'][:4]
-                except:
-                    norm['year'] = ''
+                except (IndexError, TypeError, AttributeError):
+                    norm['year'] = ''  # Invalid date format
             else:
                 norm['year'] = ''
             

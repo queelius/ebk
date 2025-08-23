@@ -77,6 +77,28 @@ class QueryBuilder:
         self._filters.append(filter_func)
         return self
     
+    def where_title_contains(self, pattern: str) -> 'QueryBuilder':
+        """Filter entries where title contains the pattern (case-insensitive)."""
+        def filter_func(entry):
+            title = str(entry.get('title', '')).lower()
+            return pattern.lower() in title
+        
+        self._filters.append(filter_func)
+        return self
+    
+    def where_author_contains(self, pattern: str) -> 'QueryBuilder':
+        """Filter entries where any author contains the pattern (case-insensitive)."""
+        def filter_func(entry):
+            creators = entry.get('creators', [])
+            pattern_lower = pattern.lower()
+            for creator in creators:
+                if pattern_lower in str(creator).lower():
+                    return True
+            return False
+        
+        self._filters.append(filter_func)
+        return self
+    
     def where_lambda(self, func: Callable[[Dict], bool]) -> 'QueryBuilder':
         """Add a custom filter function."""
         self._filters.append(func)
@@ -243,6 +265,73 @@ class Entry:
         if self._library:
             self._library.save()
         return self
+    
+    # Personal metadata methods
+    def rate(self, rating: float) -> 'Entry':
+        """Rate this entry (0-5 stars)."""
+        if self._library:
+            self._library.personal.set_rating(self.unique_id, rating)
+        return self
+    
+    def comment(self, text: str) -> 'Entry':
+        """Add a comment to this entry."""
+        if self._library:
+            self._library.personal.add_comment(self.unique_id, text)
+        return self
+    
+    def mark_read(self, progress: Optional[int] = None) -> 'Entry':
+        """Mark entry as read."""
+        if self._library:
+            self._library.personal.set_read_status(self.unique_id, "read", progress)
+        return self
+    
+    def mark_reading(self, progress: Optional[int] = None) -> 'Entry':
+        """Mark entry as currently reading."""
+        if self._library:
+            self._library.personal.set_read_status(self.unique_id, "reading", progress)
+        return self
+    
+    def mark_unread(self) -> 'Entry':
+        """Mark entry as unread."""
+        if self._library:
+            self._library.personal.set_read_status(self.unique_id, "unread")
+        return self
+    
+    def mark_abandoned(self, progress: Optional[int] = None) -> 'Entry':
+        """Mark entry as abandoned."""
+        if self._library:
+            self._library.personal.set_read_status(self.unique_id, "abandoned", progress)
+        return self
+    
+    def tag_personal(self, *tags: str) -> 'Entry':
+        """Add personal tags to this entry."""
+        if self._library:
+            self._library.personal.add_personal_tags(self.unique_id, list(tags))
+        return self
+    
+    def untag_personal(self, *tags: str) -> 'Entry':
+        """Remove personal tags from this entry."""
+        if self._library:
+            self._library.personal.remove_personal_tags(self.unique_id, list(tags))
+        return self
+    
+    def favorite(self) -> 'Entry':
+        """Mark as favorite."""
+        if self._library:
+            self._library.personal.set_favorite(self.unique_id, True)
+        return self
+    
+    def unfavorite(self) -> 'Entry':
+        """Unmark as favorite."""
+        if self._library:
+            self._library.personal.set_favorite(self.unique_id, False)
+        return self
+    
+    def get_personal_metadata(self) -> Dict[str, Any]:
+        """Get all personal metadata for this entry."""
+        if self._library:
+            return self._library.personal.get_entry_metadata(self.unique_id)
+        return {}
 
 
 class Library:
@@ -277,6 +366,10 @@ class Library:
         self.path = Path(path)
         self._entries = []
         self._load()
+        
+        # Initialize personal metadata
+        from .personal import PersonalMetadata
+        self.personal = PersonalMetadata(self.path)
     
     @classmethod
     def create(cls, path: Union[str, Path]) -> 'Library':
@@ -363,6 +456,13 @@ class Library:
         """Start a new query."""
         return QueryBuilder(deepcopy(self._entries))
     
+    def get(self, unique_id: str) -> Optional[Entry]:
+        """Get an entry by unique ID."""
+        for entry_data in self._entries:
+            if entry_data.get("unique_id") == unique_id:
+                return Entry(entry_data, self)
+        return None
+    
     def find(self, unique_id: str) -> Optional[Entry]:
         """Find entry by unique ID."""
         for entry_data in self._entries:
@@ -403,7 +503,7 @@ class Library:
         filtered._entries = []
         
         for entry_data in self._entries:
-            entry = Entry(entry_data)
+            entry = Entry(entry_data, self)
             if predicate(entry):
                 filtered._entries.append(deepcopy(entry_data))
         
@@ -439,7 +539,7 @@ class Library:
         """Remove entries matching predicate (chainable)."""
         to_remove = []
         for entry_data in self._entries:
-            entry = Entry(entry_data)
+            entry = Entry(entry_data, self)
             if predicate(entry):
                 to_remove.append(entry_data.get('unique_id'))
         
@@ -621,7 +721,7 @@ class Library:
         elif isinstance(entry_or_id, Entry):
             ref_entry = entry_or_id
         else:
-            ref_entry = Entry(entry_or_id)
+            ref_entry = Entry(entry_or_id, self)
         
         # Calculate similarity scores
         scores = []
@@ -633,7 +733,7 @@ class Library:
             if entry_data.get("unique_id") == ref_entry.id:
                 continue  # Skip self
             
-            entry = Entry(entry_data)
+            entry = Entry(entry_data, self)
             score = 0.0
             weight_total = 0.0
             
