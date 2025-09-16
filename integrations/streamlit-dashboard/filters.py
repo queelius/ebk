@@ -13,9 +13,9 @@ def sanitize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     
     def ensure_list(column):
         """
-        Ensures that each entry in the column is a list. If not, replaces it with an empty list.
+        Ensures that each entry in the column is a list. If not, wraps it in a list.
         """
-        return column.apply(lambda x: x if isinstance(x, list) else [])
+        return column.apply(lambda x: x if isinstance(x, list) else [x] if pd.notna(x) and x != '' else [])
     
     for col in list_columns:
         if col in df.columns:

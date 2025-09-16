@@ -30,7 +30,7 @@ class TestFilters(unittest.TestCase):
         sanitized_df = sanitize_dataframe(df)
         
         self.assertEqual(sanitized_df['creators'][1], ['Author B'])
-        self.assertEqual(sanitized_df['subjects'][0], [])
+        self.assertEqual(sanitized_df['subjects'][0], ['Subject X'])  # String should be wrapped in list
         self.assertEqual(sanitized_df['file_paths'][1], ['path2.epub'])
         self.assertEqual(sanitized_df['identifiers'][1], {})
         self.assertEqual(sanitized_df['language'][1], '')

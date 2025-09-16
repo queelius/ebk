@@ -185,6 +185,10 @@ class Entry:
         return self._data.get('unique_id', '')
     
     @property
+    def unique_id(self) -> str:
+        return self._data.get('unique_id', '')
+    
+    @property
     def title(self) -> str:
         return self._data.get('title', '')
     
@@ -715,7 +719,7 @@ class Library:
         """Find entries similar to the given entry based on metadata."""
         # Get the reference entry
         if isinstance(entry_or_id, str):
-            ref_entry = self.find(entry_or_id)
+            ref_entry = self.get(entry_or_id)
             if not ref_entry:
                 return []
         elif isinstance(entry_or_id, Entry):
@@ -739,17 +743,21 @@ class Library:
             
             # Subject similarity (weight: 0.4)
             subjects = set(entry.get("subjects", []))
-            if ref_subjects or subjects:
-                subject_sim = len(ref_subjects & subjects) / len(ref_subjects | subjects)
-                score += subject_sim * 0.4
-                weight_total += 0.4
+            if ref_subjects and subjects:
+                overlap = ref_subjects & subjects
+                if overlap:  # Only count if there's actual overlap
+                    subject_sim = len(overlap) / max(len(ref_subjects), len(subjects))
+                    score += subject_sim * 0.4
+                    weight_total += 0.4
             
             # Creator similarity (weight: 0.3)
             creators = set(entry.get("creators", []))
-            if ref_creators or creators:
-                creator_sim = len(ref_creators & creators) / len(ref_creators | creators)
-                score += creator_sim * 0.3
-                weight_total += 0.3
+            if ref_creators and creators:
+                overlap = ref_creators & creators
+                if overlap:  # Only count if there's actual overlap
+                    creator_sim = len(overlap) / max(len(ref_creators), len(creators))
+                    score += creator_sim * 0.3
+                    weight_total += 0.3
             
             # Language match (weight: 0.2)
             if ref_lang:
@@ -785,7 +793,7 @@ class Library:
             ).execute()
             
             import random
-            return [Entry(e) for e in random.sample(candidates, min(limit, len(candidates)))]
+            return [Entry(e, self) for e in random.sample(candidates, min(limit, len(candidates)))]
         
         # Find similar books to the given entries
         all_similar = []

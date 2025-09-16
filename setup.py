@@ -18,6 +18,11 @@ setup(
     entry_points={
         "console_scripts": [
             "ebk=ebk.cli:app"
+        ],
+        # Plugin entry points for automatic discovery
+        "ebk.plugins": [
+            "google_books = integrations.metadata:GoogleBooksExtractor",
+            "network_analyzer = integrations.network:NetworkAnalyzer",
         ]
     },
     install_requires=[
@@ -38,12 +43,53 @@ setup(
         "xmltodict>=0.13.0"
     ],
     extras_require={
-        # Optional dependencies
+        # Optional dependencies for integrations
         "streamlit": [
             "streamlit>=1.28.0",
             "pandas>=2.0.0",
             "altair>=5.0.0"
         ],
+        # Metadata extractors
+        "metadata": [
+            "aiohttp>=3.8.0",  # For API calls
+        ],
+        "google-books": [
+            "aiohttp>=3.8.0",
+        ],
+        # Network analysis
+        "network": [
+            # Basic network analysis (no heavy deps)
+        ],
+        "network-advanced": [
+            "networkx>=3.0",
+            "matplotlib>=3.5.0",
+            "pyvis>=0.3.0",
+        ],
+        # AI integrations (future)
+        "ai": [
+            "openai>=1.0.0",
+            "anthropic>=0.7.0",
+            "transformers>=4.30.0",
+        ],
+        # Development dependencies
+        "dev": [
+            "pytest>=7.0.0",
+            "pytest-asyncio>=0.21.0",
+            "black>=23.0.0",
+            "mypy>=1.0.0",
+            "ruff>=0.1.0",
+        ],
+        # All integrations
+        "all": [
+            "streamlit>=1.28.0",
+            "pandas>=2.0.0",
+            "altair>=5.0.0",
+            "aiohttp>=3.8.0",
+            "networkx>=3.0",
+            "matplotlib>=3.5.0",
+            "pyvis>=0.3.0",
+        ],
+        # Legacy alias for viz -> network
         "viz": [
             "matplotlib>=3.5.0",
             "networkx>=3.0",

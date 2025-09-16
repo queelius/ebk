@@ -1,5 +1,5 @@
-import os
 import json
+import shutil
 from pathlib import Path
 from typing import List
 import logging
@@ -47,9 +47,13 @@ def export_hugo(lib_dir, hugo_dir):
 
         # Copy eBook and cover to static directory
         if book["File Path"]:
-            os.system(f"cp '{book['File Path']}' '{static_dir}'")
+            source_file = Path(book['File Path'])
+            if source_file.exists():
+                shutil.copy2(source_file, static_dir)
         if book["Cover Path"]:
-            os.system(f"cp '{book['Cover Path']}' '{static_dir}'")
+            cover_file = Path(book['Cover Path'])
+            if cover_file.exists():
+                shutil.copy2(cover_file, static_dir)
 
     logger.debug(f"Exported {len(books)} books to Hugo site at '{hugo_dir}'")
 

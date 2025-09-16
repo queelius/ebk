@@ -29,7 +29,7 @@
 - [Integrations](#integrations)
 - [Contributing](#contributing)
 - [License](#license)
-- [Known Issues & TODOs](#known-issues--todos)
+- [Roadmap & TODOs](ROADMAP.md)
 - [Stay Updated](#stay-updated)
 - [Support](#support)
 
