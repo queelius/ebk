@@ -62,6 +62,15 @@ google_books = "integrations.metadata:GoogleBooksExtractor"
 network_analyzer = "integrations.network:NetworkAnalyzer"
 
 [project.optional-dependencies]
+# AI-powered features (knowledge graph, semantic search, reading companion)
+ai = [
+    "sentence-transformers>=2.2.0",  # For semantic embeddings
+    "scikit-learn>=1.3.0",  # For TF-IDF fallback
+    "networkx>=3.0",  # For knowledge graph
+    "beautifulsoup4>=4.12.0",  # For HTML parsing in EPUBs
+    "numpy>=1.24.0",  # For vector operations
+]
+
 # Streamlit web dashboard
 streamlit = [
     "streamlit>=1.28.0",
@@ -125,6 +134,9 @@ docs = [
 
 # All optional dependencies
 all = [
+    # AI features
+    "sentence-transformers>=2.2.0",
+    "scikit-learn>=1.3.0",
     # Include all integration deps
     "streamlit>=1.28.0",
     "pandas>=2.0.0",
@@ -136,6 +148,7 @@ all = [
     "matplotlib>=3.5.0",
     "pyvis>=0.3.0",
     "plotly>=5.0.0",
+    "numpy>=1.24.0",
 ]
 
 # Legacy aliases for backward compatibility

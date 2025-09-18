@@ -1287,5 +1287,335 @@ def similar(
 
 
 
-    if __name__ == "__main__":
+@app.command()
+@handle_library_errors
+def build_knowledge(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    book_ids: Optional[List[str]] = typer.Option(None, "--book", "-b", help="Specific book IDs to process"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force rebuild even if graph exists"),
+    extract_concepts: bool = typer.Option(True, "--concepts/--no-concepts", help="Extract concepts from books"),
+    build_relations: bool = typer.Option(True, "--relations/--no-relations", help="Build concept relations"),
+):
+    """
+    Build a knowledge graph from your library.
+
+    Extracts concepts, ideas, and relationships from all books in your library
+    and builds a connected knowledge graph for intelligent searching.
+
+    Examples:
+    # Build knowledge graph for entire library
+    ebk build-knowledge /path/to/library
+
+    # Build for specific books only
+    ebk build-knowledge /path/to/library --book book_id_1 --book book_id_2
+
+    # Force rebuild
+    ebk build-knowledge /path/to/library --force
+    """
+    from .ai.knowledge_graph import KnowledgeGraph
+    from .ai.text_extractor import TextExtractor
+
+    console.print("[cyan]Building knowledge graph...[/cyan]")
+
+    # Initialize components
+    kg = KnowledgeGraph(Path(lib_dir))
+    extractor = TextExtractor()
+
+    # Check if graph exists
+    if kg.concepts and not force:
+        console.print(f"[yellow]Knowledge graph already exists with {len(kg.concepts)} concepts.[/yellow]")
+        if not Confirm.ask("Do you want to rebuild?"):
+            return
+
+    # Load library
+    lib = Library.open(lib_dir)
+    entries = lib.entries
+
+    # Filter by book IDs if specified
+    if book_ids:
+        entries = [e for e in entries if e.unique_id in book_ids]
+        console.print(f"Processing {len(entries)} specified books...")
+    else:
+        console.print(f"Processing {len(entries)} books in library...")
+
+    with Progress() as progress:
+        task = progress.add_task("[green]Extracting concepts...", total=len(entries))
+
+        for entry in entries:
+            # Get the first ebook file
+            if not entry.file_paths:
+                progress.advance(task)
+                continue
+
+            file_path = Path(lib_dir) / entry.file_paths[0]
+            if not file_path.exists():
+                progress.advance(task)
+                continue
+
+            try:
+                # Extract key passages and concepts
+                if extract_concepts:
+                    passages = extractor.extract_key_passages(file_path)
+                    for passage in passages[:20]:  # Top 20 passages per book
+                        kg.add_concept(
+                            name=f"Key idea from {entry.title[:30]}",
+                            description=passage['sentence'],
+                            book_id=entry.unique_id,
+                            page=passage.get('page'),
+                            quote=passage['context']
+                        )
+
+                # Extract definitions
+                definitions = extractor.extract_definitions(file_path)
+                for defn in definitions[:10]:  # Top 10 definitions per book
+                    kg.add_concept(
+                        name=defn['term'],
+                        description=defn['definition'],
+                        book_id=entry.unique_id
+                    )
+
+            except Exception as e:
+                logger.warning(f"Failed to process {entry.title}: {e}")
+
+            progress.advance(task)
+
+    # Calculate importance scores
+    kg.calculate_concept_importance()
+
+    # Save the graph
+    kg.save_graph()
+
+    console.print(f"[green]✓ Knowledge graph built successfully![/green]")
+    console.print(f"  - Total concepts: {len(kg.concepts)}")
+    console.print(f"  - Total relations: {kg.graph.number_of_edges()}")
+    console.print(f"  - Books indexed: {len(kg.book_concepts)}")
+
+
+@app.command()
+@handle_library_errors
+def ask(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    query: str = typer.Argument(..., help="Your question about the library"),
+    use_graph: bool = typer.Option(True, "--graph/--no-graph", help="Use knowledge graph"),
+    use_semantic: bool = typer.Option(True, "--semantic/--no-semantic", help="Use semantic search"),
+    max_results: int = typer.Option(5, "--max", "-n", help="Maximum number of results"),
+):
+    """
+    Ask questions about your library using AI.
+
+    Uses knowledge graph and semantic search to find answers from your books.
+
+    Examples:
+    # Ask about a topic
+    ebk ask /path/to/library "What do my books say about habit formation?"
+
+    # Ask for connections
+    ebk ask /path/to/library "How does stoicism relate to modern psychology?"
+
+    # Find specific information
+    ebk ask /path/to/library "What are the key principles of machine learning?"
+    """
+    from .ai.knowledge_graph import KnowledgeGraph
+    from .ai.semantic_search import SemanticSearch
+
+    results = []
+
+    # Use knowledge graph
+    if use_graph:
+        kg = KnowledgeGraph(Path(lib_dir))
+        if kg.concepts:
+            console.print("[cyan]Searching knowledge graph...[/cyan]")
+
+            # Find relevant concepts
+            keywords = query.lower().split()
+            relevant_concepts = []
+
+            for keyword in keywords:
+                for concept_id in kg.concept_index.get(keyword, []):
+                    concept = kg.concepts[concept_id]
+                    relevant_concepts.append(concept)
+
+            # Sort by importance
+            relevant_concepts.sort(key=lambda c: c.importance_score, reverse=True)
+
+            for concept in relevant_concepts[:max_results]:
+                results.append({
+                    'source': 'Knowledge Graph',
+                    'concept': concept.name,
+                    'description': concept.description,
+                    'books': concept.source_books[:3]
+                })
+
+    # Use semantic search
+    if use_semantic:
+        search = SemanticSearch(Path(lib_dir))
+        console.print("[cyan]Performing semantic search...[/cyan]")
+
+        semantic_results = search.search_library(query, top_k=max_results)
+
+        for result in semantic_results:
+            results.append({
+                'source': 'Semantic Search',
+                'text': result['text'][:200] + '...',
+                'similarity': f"{result['similarity']:.2f}",
+                'book_id': result['book_id']
+            })
+
+    # Display results
+    if not results:
+        console.print("[yellow]No relevant information found. Try building the knowledge graph first.[/yellow]")
+        console.print("Run: ebk build-knowledge /path/to/library")
+        return
+
+    console.print(f"\n[green]Found {len(results)} relevant results:[/green]\n")
+
+    for i, result in enumerate(results, 1):
+        console.print(f"[bold]{i}. [{result['source']}][/bold]")
+        if 'concept' in result:
+            console.print(f"   Concept: {result['concept']}")
+            console.print(f"   {result['description']}")
+        else:
+            console.print(f"   {result['text']}")
+        if 'book_id' in result:
+            console.print(f"   From: {result['book_id']}")
+        console.print()
+
+
+@app.command()
+@handle_library_errors
+def learning_path(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    start_topic: str = typer.Argument(..., help="Starting topic/concept"),
+    end_topic: str = typer.Argument(..., help="Goal topic/concept to understand"),
+    max_steps: int = typer.Option(10, "--max-steps", "-n", help="Maximum books in path"),
+):
+    """
+    Generate a personalized learning path between topics.
+
+    Creates a reading sequence that bridges from your current knowledge
+    to your learning goal using books in your library.
+
+    Examples:
+    # Learn quantum computing starting from basic math
+    ebk learning-path /path/to/library "linear algebra" "quantum computing"
+
+    # Bridge from psychology to neuroscience
+    ebk learning-path /path/to/library "cognitive psychology" "neuroscience"
+    """
+    from .ai.knowledge_graph import KnowledgeGraph
+
+    kg = KnowledgeGraph(Path(lib_dir))
+
+    if not kg.concepts:
+        console.print("[red]Knowledge graph not built. Run 'ebk build-knowledge' first.[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"[cyan]Finding learning path from '{start_topic}' to '{end_topic}'...[/cyan]\n")
+
+    # Get available books
+    lib = Library.open(lib_dir)
+    available_books = [e.unique_id for e in lib.entries]
+
+    # Generate path
+    path = kg.generate_reading_path(start_topic, end_topic, available_books)
+
+    if not path:
+        console.print(f"[yellow]No path found between '{start_topic}' and '{end_topic}'.[/yellow]")
+        console.print("Try more general terms or ensure your library covers both topics.")
+        return
+
+    # Limit path length
+    path = path[:max_steps]
+
+    console.print(f"[green]Generated learning path with {len(path)} steps:[/green]\n")
+
+    for i, step in enumerate(path, 1):
+        # Find book details
+        entry = lib.find(step['book_id'])
+        if entry:
+            console.print(f"[bold]Step {i}: {entry.title}[/bold]")
+            if entry.creators:
+                console.print(f"   by {', '.join(entry.creators)}")
+        else:
+            console.print(f"[bold]Step {i}: Book {step['book_id']}[/bold]")
+
+        console.print(f"   Concept: {step['concept']}")
+        console.print(f"   Why: {step['why']}")
+        console.print()
+
+
+@app.command()
+@handle_library_errors
+def index_semantic(
+    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
+    book_ids: Optional[List[str]] = typer.Option(None, "--book", "-b", help="Specific book IDs to index"),
+    chunk_size: int = typer.Option(500, "--chunk-size", help="Size of text chunks for indexing"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force reindex"),
+):
+    """
+    Build semantic search index for intelligent content discovery.
+
+    Creates vector embeddings for all books to enable semantic search
+    across your library.
+
+    Examples:
+    # Index entire library
+    ebk index-semantic /path/to/library
+
+    # Index specific books
+    ebk index-semantic /path/to/library --book id1 --book id2
+    """
+    from .ai.semantic_search import SemanticSearch
+    from .ai.text_extractor import TextExtractor
+
+    console.print("[cyan]Building semantic search index...[/cyan]")
+
+    search = SemanticSearch(Path(lib_dir))
+    extractor = TextExtractor()
+
+    # Check existing index
+    if search.book_chunks and not force:
+        console.print(f"[yellow]Semantic index exists for {len(search.book_chunks)} books.[/yellow]")
+        if not Confirm.ask("Do you want to rebuild?"):
+            return
+
+    # Load library
+    lib = Library.open(lib_dir)
+    entries = lib.entries
+
+    # Filter by book IDs if specified
+    if book_ids:
+        entries = [e for e in entries if e.unique_id in book_ids]
+
+    console.print(f"Indexing {len(entries)} books...")
+
+    with Progress() as progress:
+        task = progress.add_task("[green]Indexing books...", total=len(entries))
+
+        for entry in entries:
+            if not entry.file_paths:
+                progress.advance(task)
+                continue
+
+            file_path = Path(lib_dir) / entry.file_paths[0]
+            if not file_path.exists():
+                progress.advance(task)
+                continue
+
+            try:
+                # Extract text
+                text = extractor.extract_full_text(file_path)
+                if text:
+                    # Index the book
+                    search.index_book(entry.unique_id, text, chunk_size)
+            except Exception as e:
+                logger.warning(f"Failed to index {entry.title}: {e}")
+
+            progress.advance(task)
+
+    console.print(f"[green]✓ Semantic index built successfully![/green]")
+    console.print(f"  - Books indexed: {len(search.book_chunks)}")
+
+
+if __name__ == "__main__":
     app()
