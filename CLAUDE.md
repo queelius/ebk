@@ -191,7 +191,7 @@ results = (lib.query()
 ## Dependencies
 
 - **Python 3.10+** required
-- Core: typer, rich, lxml, PyPDF2/PyMuPDF, ebooklib, Pillow, jinja2
+- Core: typer, rich, lxml, pypdf/PyMuPDF, ebooklib, Pillow, jinja2
 - Optional: streamlit, pandas (web UI); networkx, matplotlib (visualizations)
 - Dev: pytest, black, ruff, mypy, pre-commit
 

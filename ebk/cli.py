@@ -24,6 +24,7 @@ from .merge import merge_libraries
 from .utils import enumerate_ebooks, load_library, get_unique_filename, search_regex, search_jmes, get_library_statistics, get_index_by_unique_id, print_json_as_table
 from .ident import add_unique_id
 from .library import Library
+from .decorators import handle_library_errors
 
 # Initialize Rich Traceback for better error messages
 install(show_locals=True)
@@ -75,7 +76,7 @@ def import_zip(
         except Exception as e:
             progress.update(task, description="[red]Failed to import Zip file.")
             logger.error(f"Error importing Zip file: {e}")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
         
 
 @app.command()
@@ -106,7 +107,7 @@ def import_calibre(
         except Exception as e:
             progress.update(task, description="[red]Failed to import Calibre library.")
             logger.error(f"Error importing Calibre library: {e}")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -133,7 +134,7 @@ def import_ebooks(
             ebooks.import_ebooks(ebooks_dir, output_dir, ebook_formats)
         except Exception as e:
             logger.error(f"Error importing raw ebooks: {e}")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
 
 @app.command()
 @handle_library_errors
@@ -169,76 +170,76 @@ def export(
     if format == "zip":
         # Determine the destination filename
         if destination:
-        dest_path = Path(destination)
-        if dest_path.exists():
-            console.print(f"[yellow]Destination '{destination}' already exists. Finding an available filename...[/yellow]")
-            dest_str = get_unique_filename(destination)
-            dest_path = Path(dest_str)
-            console.print(f"[green]Using '{dest_path.name}' as the destination.[/green]")
+            dest_path = Path(destination)
+            if dest_path.exists():
+                console.print(f"[yellow]Destination '{destination}' already exists. Finding an available filename...[/yellow]")
+                dest_str = get_unique_filename(destination)
+                dest_path = Path(dest_str)
+                console.print(f"[green]Using '{dest_path.name}' as the destination.[/green]")
         else:
             dest_str = get_unique_filename(lib_dir + ".zip")
             dest_path = Path(dest_str)
             console.print(f"[bold]No destination provided[/bold]. Using default [bold green]{dest_path.name}.[/bold green]")
-        
+
         with Progress(console=console) as progress:
-        task = progress.add_task("[cyan]Exporting to Zip...", total=None)
-        try:
-            lib.export_to_zip(str(dest_path))
-            progress.update(task, description="[green]Exported to Zip successfully!")
-            console.print(f"[bold green]Exported library to '{dest_path}'.[/bold green]")
-        except Exception as e:
-            progress.update(task, description="[red]Failed to export to Zip.")
-            logger.error(f"Error exporting to Zip: {e}")
-            console.print(f"[bold red]Failed to export to Zip: {e}[/bold red]")
+            task = progress.add_task("[cyan]Exporting to Zip...", total=None)
+            try:
+                lib.export_to_zip(str(dest_path))
+                progress.update(task, description="[green]Exported to Zip successfully!")
+                console.print(f"[bold green]Exported library to '{dest_path}'.[/bold green]")
+            except Exception as e:
+                progress.update(task, description="[red]Failed to export to Zip.")
+                logger.error(f"Error exporting to Zip: {e}")
+                console.print(f"[bold red]Failed to export to Zip: {e}[/bold red]")
             raise typer.Exit(code=1)
     
     elif format == "hugo":
         if not destination:
-        console.print(f"[red]Destination directory is required for 'hugo' export format.[/red]")
-            raise typer.Exit(code=1)
+            console.print(f"[red]Destination directory is required for 'hugo' export format.[/red]")
+        raise typer.Exit(code=1)
         
         dest_path = Path(destination)
         if not dest_path.exists():
-        try:
-            dest_path.mkdir(parents=True, exist_ok=True)
-            console.print(f"[green]Created destination directory '{destination}'.[/green]")
-        except Exception as e:
+            try:
+                dest_path.mkdir(parents=True, exist_ok=True)
+                console.print(f"[green]Created destination directory '{destination}'.[/green]")
+            except Exception as e:
                 console.print(f"[red]Failed to create destination directory '{destination}': {e}[/red]")
             raise typer.Exit(code=1)
         elif not dest_path.is_dir():
             console.print(f"[red]Destination '{destination}' exists and is not a directory.[/red]")
-            raise typer.Exit(code=1)
-        
+        raise typer.Exit(code=1)
+
         with Progress(console=console) as progress:
-        if use_jinja:
-            task = progress.add_task(f"[cyan]Exporting to Hugo with Jinja (organize by {organize_by})...", total=None)
-            try:
-                lib.export_to_hugo(str(dest_path), organize_by=organize_by)
-                progress.update(task, description="[green]Exported to Hugo with Jinja successfully!")
-                logger.info(f"Library exported to Hugo at {dest_path} (organized by {organize_by})")
-                console.print(f"[bold green]Exported library to Hugo directory '{dest_path}' (organized by {organize_by}).[/bold green]")
-            except Exception as e:
-                progress.update(task, description="[red]Failed to export to Hugo.")
-                logger.error(f"Error exporting to Hugo with Jinja: {e}")
-                console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
-        raise typer.Exit(code=1)
-        else:
-            task = progress.add_task("[cyan]Exporting to Hugo (legacy)...", total=None)
-            try:
-                # Use legacy export for non-jinja
-                export_hugo(str(lib.path), str(dest_path))
-                progress.update(task, description="[green]Exported to Hugo successfully!")
-                logger.info(f"Library exported to Hugo at {dest_path}")
-                console.print(f"[bold green]Exported library to Hugo directory '{dest_path}'.[/bold green]")
-                console.print("[yellow]Tip: Use --jinja for more flexible export options![/yellow]")
-            except Exception as e:
-                progress.update(task, description="[red]Failed to export to Hugo.")
-                logger.error(f"Error exporting to Hugo: {e}")
-                console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
-        raise typer.Exit(code=1)
-    
+            if use_jinja:
+                task = progress.add_task(f"[cyan]Exporting to Hugo with Jinja (organize by {organize_by})...", total=None)
+                try:
+                    lib.export_to_hugo(str(dest_path), organize_by=organize_by)
+                    progress.update(task, description="[green]Exported to Hugo with Jinja successfully!")
+                    logger.info(f"Library exported to Hugo at {dest_path} (organized by {organize_by})")
+                    console.print(f"[bold green]Exported library to Hugo directory '{dest_path}' (organized by {organize_by}).[/bold green]")
+                except Exception as e:
+                    progress.update(task, description="[red]Failed to export to Hugo.")
+                    logger.error(f"Error exporting to Hugo with Jinja: {e}")
+                    console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
+                raise typer.Exit(code=1)
+            else:
+                task = progress.add_task("[cyan]Exporting to Hugo (legacy)...", total=None)
+                try:
+                    # Use legacy export for non-jinja
+                    export_hugo(str(lib.path), str(dest_path))
+                    progress.update(task, description="[green]Exported to Hugo successfully!")
+                    logger.info(f"Library exported to Hugo at {dest_path}")
+                    console.print(f"[bold green]Exported library to Hugo directory '{dest_path}'.[/bold green]")
+                    console.print("[yellow]Tip: Use --jinja for more flexible export options![/yellow]")
+                except Exception as e:
+                    progress.update(task, description="[red]Failed to export to Hugo.")
+                    logger.error(f"Error exporting to Hugo: {e}")
+                    console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
+                raise typer.Exit(code=1)
+
     else:
-    console.print(f"[red]Unsupported export format: '{format}'. Supported formats are 'zip' and 'hugo'.[/red]")
+        console.print(f"[red]Unsupported export format: '{format}'. Supported formats are 'zip' and 'hugo'.[/red]")
         raise typer.Exit(code=1)
     
 @app.command()
@@ -265,26 +266,26 @@ def show_index(
         entries = lib.get_by_indices(indices)
         
         for entry in entries:
-        if output_json:
-            console.print_json(json.dumps(entry.to_dict(), indent=2))
-        else:
-            # Create a table
-            table = Table(title="ebk Ebook Entry", show_lines=True)
+            if output_json:
+                console.print_json(json.dumps(entry.to_dict(), indent=2))
+            else:
+                # Create a table
+                table = Table(title="ebk Ebook Entry", show_lines=True)
 
-            # Add column headers dynamically based on JSON keys
-            data = entry.to_dict()
-            columns = data.keys()
-            for column in columns:
-                table.add_column(column, justify="center", style="bold cyan")
+                # Add column headers dynamically based on JSON keys
+                data = entry.to_dict()
+                columns = data.keys()
+                for column in columns:
+                    table.add_column(column, justify="center", style="bold cyan")
 
-            # Add single row for this entry
-            table.add_row(*(str(data[col]) for col in columns))
+                # Add single row for this entry
+                table.add_row(*(str(data[col]) for col in columns))
 
-            # Print the table
-            console.print(table)
+                # Print the table
+                console.print(table)
     except IndexError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
 
 
 
@@ -373,7 +374,7 @@ def merge(
             progress.update(task, description="[red]Failed to merge libraries.")
             logger.error(f"Error merging libraries: {e}")
             console.print(f"[bold red]Failed to merge libraries: {e}[/bold red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
 
 @app.command()
 @handle_library_errors
@@ -434,20 +435,21 @@ def list_indices(
         Prints the list of entries in the library directory.
     """
     lib = Library.open(lib_dir)
-    
-    # Use library's get_by_indices method with validation
-    entries = lib.get_by_indices(indices)
-    
-    if output_json:
-        data = [e.to_dict() for e in entries]
-        console.print_json(json.dumps(data, indent=2))
-    else:
-        # Convert to legacy format for enumerate_ebooks
-        entry_data = [e._data for e in entries]
-        enumerate_ebooks(entry_data, lib.path, indices, detailed)
+
+    try:
+        # Use library's get_by_indices method with validation
+        entries = lib.get_by_indices(indices)
+
+        if output_json:
+            data = [e.to_dict() for e in entries]
+            console.print_json(json.dumps(data, indent=2))
+        else:
+            # Convert to legacy format for enumerate_ebooks
+            entry_data = [e._data for e in entries]
+            enumerate_ebooks(entry_data, lib.path, indices, detailed)
     except IndexError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -516,7 +518,7 @@ def add(
     else:
         if not title or not creators:
             console.print("[red]Title and creators are required when not using a JSON file.[/red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
         
         # Copy files first if provided
         file_paths = []
@@ -663,7 +665,7 @@ def remove_index(
     for index in indices:
         if index < 0 or index >= total_books:
             console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
     
     # Get entries to remove
     entries_to_remove = [lib[i] for i in indices]
@@ -720,7 +722,7 @@ def remove_id(
     
     if not entry_to_remove:
         console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
     
     console.print(f"[yellow]Removing entry: {entry_to_remove.title}[/yellow]")
     
@@ -775,7 +777,7 @@ def update_index(
     total_books = len(lib)
     if index < 0 or index >= total_books:
         console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
     
     entry = lib[index]
     
@@ -827,7 +829,7 @@ def update_id(
     entry = lib.find(unique_id)
     if not entry:
         console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
     
     # Update fields if provided
     if title:
@@ -1021,11 +1023,11 @@ def export_multi(
     
     except FileNotFoundError:
         console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
     except Exception as e:
         logger.error(f"Error creating multi-faceted export: {e}")
         console.print(f"[bold red]Failed to create export: {e}[/bold red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1056,11 +1058,6 @@ def rate(
     
     entry.rate(rating)
     console.print(f"[green]✓[/green] Rated '{entry.title}' with {rating} stars")
-    
-    except Exception as e:
-        logger.error(f"Error rating entry: {e}")
-        console.print(f"[red]Failed to rate entry: {e}[/red]")
-        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1071,9 +1068,8 @@ def comment(
     text: str = typer.Argument(..., help="Comment text"),
 ):
     """Add a comment to a book."""
-    try:
-        lib = Library.open(lib_dir)
-    
+    lib = Library.open(lib_dir)
+
     # Find entry
     entry = lib.get(entry_id)
     if not entry:
@@ -1085,14 +1081,9 @@ def comment(
             console.print(f"[yellow]Multiple entries found. Please be more specific.[/yellow]")
             raise typer.Exit(code=1)
         entry = Entry(results[0], lib)
-    
+
     entry.comment(text)
     console.print(f"[green]✓[/green] Added comment to '{entry.title}'")
-    
-    except Exception as e:
-        logger.error(f"Error adding comment: {e}")
-        console.print(f"[red]Failed to add comment: {e}[/red]")
-        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1104,9 +1095,8 @@ def mark(
     progress: Optional[int] = typer.Option(None, "--progress", "-p", help="Reading progress (0-100)"),
 ):
     """Mark reading status of a book."""
-    try:
-        lib = Library.open(lib_dir)
-    
+    lib = Library.open(lib_dir)
+
     # Find entry
     entry = lib.get(entry_id)
     if not entry:
@@ -1131,15 +1121,10 @@ def mark(
     else:
         console.print(f"[red]Invalid status: {status}[/red]")
         console.print("Valid statuses: read, reading, unread, abandoned")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
     
     progress_str = f" ({progress}%)" if progress is not None else ""
     console.print(f"[green]✓[/green] Marked '{entry.title}' as {status}{progress_str}")
-    
-    except Exception as e:
-        logger.error(f"Error marking status: {e}")
-        console.print(f"[red]Failed to mark status: {e}[/red]")
-        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1148,8 +1133,7 @@ def personal_stats(
     lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
 ):
     """Show personal library statistics."""
-    try:
-        lib = Library.open(lib_dir)
+    lib = Library.open(lib_dir)
     stats = lib.personal.get_statistics()
     
     console.print("[bold]Personal Library Statistics[/bold]\n")
@@ -1183,11 +1167,6 @@ def personal_stats(
     console.print(f"  ❤️  Favorites: {stats['total_favorites']}")
     console.print(f"  💬 With Comments: {stats['total_with_comments']}")
     console.print(f"  🏷️  With Personal Tags: {stats['total_with_tags']}")
-    
-    except Exception as e:
-        logger.error(f"Error getting personal stats: {e}")
-        console.print(f"[red]Failed to get statistics: {e}[/red]")
-        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -1208,9 +1187,8 @@ def recommend(
     # Recommendations based on specific books
     ebk recommend /path/to/library --based-on book_id_1 --based-on book_id_2
     """
-    try:
-        lib = Library.open(lib_dir)
-    
+    lib = Library.open(lib_dir)
+
     recommendations = lib.recommend(based_on=based_on, limit=limit)
     
     if not recommendations:
@@ -1258,7 +1236,7 @@ def similar(
     ref_entry = lib.find(entry_id)
     if not ref_entry:
         console.print(f"[red]No entry found with ID: {entry_id}[/red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
     
     console.print(f"[cyan]Finding books similar to:[/cyan] {ref_entry.title}\n")
     

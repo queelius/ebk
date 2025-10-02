@@ -208,7 +208,7 @@ Import a folder of eBooks (PDF, EPUB, etc.) by inferring minimal metadata:
 ebk import-ebooks /path/to/raw/ebooks --output-dir /path/to/output
 ```
 
-- Uses PyPDF2 for PDF metadata and attempts a best-effort cover extraction (first page → thumbnail).
+- Uses pypdf for PDF metadata and attempts a best-effort cover extraction (first page → thumbnail).
 - Creates `metadata.json` and copies files + covers to `/path/to/output`.
 
 ---

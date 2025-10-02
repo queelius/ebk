@@ -2,7 +2,7 @@ import os
 import xmltodict
 from typing import Dict, Optional
 from slugify import slugify
-import PyPDF2
+import pypdf
 from ebooklib import epub
 
 def extract_metadata_from_opf(opf_file: str) -> Dict:
@@ -80,7 +80,7 @@ def extract_metadata_from_opf(opf_file: str) -> Dict:
 
 def extract_metadata_from_pdf(pdf_path: str) -> Dict:
     """
-    Extract metadata from a PDF file using PyPDF2.
+    Extract metadata from a PDF file using pypdf.
     Returns a dictionary with the same keys as the OPF-based dict.
     """
 
@@ -98,10 +98,10 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
 
     try:
         with open(pdf_path, "rb") as f:
-            reader = PyPDF2.PdfReader(f)
+            reader = pypdf.PdfReader(f)
             info = reader.metadata or {}
 
-        # NOTE: Depending on PyPDF2 version, metadata keys can differ
+        # NOTE: Depending on pypdf version, metadata keys can differ
         # e.g. info.title vs info.get('/Title')
         pdf_title = info.get("/Title", None) or info.get("title", None)
         pdf_author = info.get("/Author", None) or info.get("author", None)

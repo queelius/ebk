@@ -32,14 +32,12 @@ setup(
         "lxml>=4.9.0",
         "python-slugify>=8.0.0",
         "pyyaml>=6.0",
-        "PyPDF2>=3.0.0",
-        "PyMuPDF>=1.23.0",  # For PDF processing (fitz)
+        "pypdf>=3.0.0",  # Modern PDF library
+        "PyMuPDF>=1.23.0",  # For advanced PDF processing (fitz)
         "ebooklib>=0.18",
         "Pillow>=10.0.0",
         "jmespath>=1.0.0",
         "jinja2>=3.0.0",
-        "pypdf>=3.0.0",  # Updated from PyPDF2
-        "python-slugify>=8.0.0",
         "xmltodict>=0.13.0"
     ],
     extras_require={
@@ -70,24 +68,6 @@ setup(
             "openai>=1.0.0",
             "anthropic>=0.7.0",
             "transformers>=4.30.0",
-        ],
-        # Development dependencies
-        "dev": [
-            "pytest>=7.0.0",
-            "pytest-asyncio>=0.21.0",
-            "black>=23.0.0",
-            "mypy>=1.0.0",
-            "ruff>=0.1.0",
-        ],
-        # All integrations
-        "all": [
-            "streamlit>=1.28.0",
-            "pandas>=2.0.0",
-            "altair>=5.0.0",
-            "aiohttp>=3.8.0",
-            "networkx>=3.0",
-            "matplotlib>=3.5.0",
-            "pyvis>=0.3.0",
         ],
         # Legacy alias for viz -> network
         "viz": [
