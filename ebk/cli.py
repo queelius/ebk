@@ -23,7 +23,7 @@ from .imports import ebooks, calibre
 from .merge import merge_libraries
 from .utils import enumerate_ebooks, load_library, get_unique_filename, search_regex, search_jmes, get_library_statistics, get_index_by_unique_id, print_json_as_table
 from .ident import add_unique_id
-from .library import Library
+# Legacy JSON-based Library removed - use db-* commands for database-backed library
 from .decorators import handle_library_errors
 
 # Initialize Rich Traceback for better error messages
@@ -1593,6 +1593,345 @@ def index_semantic(
 
     console.print(f"[green]✓ Semantic index built successfully![/green]")
     console.print(f"  - Books indexed: {len(search.book_chunks)}")
+
+
+# ============================================================================
+# Database-backed Library Commands (New Architecture)
+# ============================================================================
+
+@app.command()
+def db_init(
+    library_path: Path = typer.Argument(..., help="Path to create the library"),
+    echo_sql: bool = typer.Option(False, "--echo-sql", help="Echo SQL statements for debugging")
+):
+    """
+    Initialize a new database-backed library.
+
+    This creates a new library directory with SQLite database backend.
+    """
+    from .library_db import Library
+
+    library_path = Path(library_path)
+
+    if library_path.exists() and list(library_path.iterdir()):
+        console.print(f"[yellow]Warning: Directory {library_path} already exists and is not empty[/yellow]")
+        if not Confirm.ask("Continue anyway?"):
+            raise typer.Exit(code=0)
+
+    try:
+        lib = Library.open(library_path, echo=echo_sql)
+        lib.close()
+        console.print(f"[green]✓ Library initialized at {library_path}[/green]")
+        console.print(f"  Database: {library_path / 'library.db'}")
+    except Exception as e:
+        console.print(f"[red]Error initializing library: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def db_import(
+    file_path: Path = typer.Argument(..., help="Path to ebook file"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    title: Optional[str] = typer.Option(None, "--title", "-t", help="Book title"),
+    authors: Optional[str] = typer.Option(None, "--authors", "-a", help="Authors (comma-separated)"),
+    subjects: Optional[str] = typer.Option(None, "--subjects", "-s", help="Subjects/tags (comma-separated)"),
+    language: str = typer.Option("en", "--language", "-l", help="Language code"),
+    no_text: bool = typer.Option(False, "--no-text", help="Skip text extraction"),
+    no_cover: bool = typer.Option(False, "--no-cover", help="Skip cover extraction"),
+    auto_metadata: bool = typer.Option(True, "--auto-metadata/--no-auto-metadata", help="Extract metadata from file")
+):
+    """
+    Import an ebook file into a database-backed library.
+
+    Extracts metadata, text, and cover images automatically.
+    """
+    from .library_db import Library
+    from .extract_metadata import extract_metadata
+
+    if not file_path.exists():
+        console.print(f"[red]Error: File not found: {file_path}[/red]")
+        raise typer.Exit(code=1)
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        console.print(f"[yellow]Initialize a library first with: ebk db-init {library_path}[/yellow]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        # Build metadata dict
+        metadata = {}
+
+        # Auto-extract metadata from file if enabled
+        if auto_metadata:
+            extracted = extract_metadata(str(file_path))
+            metadata.update(extracted)
+
+        # Override with CLI arguments
+        if title:
+            metadata['title'] = title
+        if authors:
+            metadata['creators'] = [a.strip() for a in authors.split(',')]
+        if subjects:
+            metadata['subjects'] = [s.strip() for s in subjects.split(',')]
+        if language:
+            metadata['language'] = language
+
+        # Ensure title exists
+        if 'title' not in metadata:
+            metadata['title'] = file_path.stem
+
+        # Import book
+        book = lib.add_book(
+            file_path,
+            metadata,
+            extract_text=not no_text,
+            extract_cover=not no_cover
+        )
+
+        if book:
+            console.print(f"[green]✓ Imported: {book.title}[/green]")
+            console.print(f"  ID: {book.id}")
+            console.print(f"  Authors: {', '.join(a.name for a in book.authors)}")
+            console.print(f"  Files: {len(book.files)}")
+        else:
+            console.print("[yellow]Import failed or book already exists[/yellow]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error importing book: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def db_import_calibre(
+    calibre_path: Path = typer.Argument(..., help="Path to Calibre library"),
+    library_path: Path = typer.Argument(..., help="Path to ebk library"),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Limit number of books to import")
+):
+    """
+    Import books from a Calibre library into database-backed library.
+
+    Reads Calibre's metadata.opf files and imports ebooks with full metadata.
+    """
+    from .library_db import Library
+
+    if not calibre_path.exists():
+        console.print(f"[red]Error: Calibre library not found: {calibre_path}[/red]")
+        raise typer.Exit(code=1)
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        console.print(f"[yellow]Initialize a library first with: ebk db-init {library_path}[/yellow]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        # Find all metadata.opf files
+        opf_files = list(calibre_path.rglob("metadata.opf"))
+
+        if limit:
+            opf_files = opf_files[:limit]
+
+        console.print(f"Found {len(opf_files)} books in Calibre library")
+
+        imported = 0
+        with Progress() as progress:
+            task = progress.add_task("[green]Importing...", total=len(opf_files))
+
+            for opf_path in opf_files:
+                try:
+                    book = lib.add_calibre_book(opf_path)
+                    if book:
+                        imported += 1
+                except Exception as e:
+                    logger.warning(f"Failed to import {opf_path.parent.name}: {e}")
+
+                progress.advance(task)
+
+        console.print(f"[green]✓ Imported {imported} books[/green]")
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error importing Calibre library: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def db_search(
+    query: str = typer.Argument(..., help="Search query"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Maximum number of results")
+):
+    """
+    Search books in database-backed library using full-text search.
+
+    Searches across titles, descriptions, and extracted text content.
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        results = lib.search(query, limit=limit)
+
+        if not results:
+            console.print(f"[yellow]No results found for: {query}[/yellow]")
+        else:
+            table = Table(title=f"Search Results: '{query}'")
+            table.add_column("ID", style="cyan")
+            table.add_column("Title", style="green")
+            table.add_column("Authors", style="blue")
+            table.add_column("Language", style="magenta")
+
+            for book in results:
+                authors = ", ".join(a.name for a in book.authors[:2])
+                if len(book.authors) > 2:
+                    authors += f" +{len(book.authors) - 2} more"
+
+                table.add_row(
+                    str(book.id),
+                    book.title[:50],
+                    authors,
+                    book.language or "?"
+                )
+
+            console.print(table)
+            console.print(f"\n[dim]Showing {len(results)} results[/dim]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error searching library: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def db_stats(
+    library_path: Path = typer.Argument(..., help="Path to library")
+):
+    """
+    Show statistics for database-backed library.
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        stats = lib.stats()
+
+        table = Table(title="Library Statistics")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Count", style="green", justify="right")
+
+        table.add_row("Total Books", str(stats['total_books']))
+        table.add_row("Total Authors", str(stats['total_authors']))
+        table.add_row("Total Subjects", str(stats['total_subjects']))
+        table.add_row("Total Files", str(stats['total_files']))
+        table.add_row("Books Read", str(stats['read_count']))
+        table.add_row("Currently Reading", str(stats['reading_count']))
+
+        console.print(table)
+
+        # Language distribution
+        if stats['languages']:
+            console.print("\n[bold]Languages:[/bold]")
+            for lang, count in sorted(stats['languages'].items(), key=lambda x: x[1], reverse=True):
+                console.print(f"  {lang}: {count}")
+
+        # Format distribution
+        if stats['formats']:
+            console.print("\n[bold]Formats:[/bold]")
+            for fmt, count in sorted(stats['formats'].items(), key=lambda x: x[1], reverse=True):
+                console.print(f"  {fmt}: {count}")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error getting library stats: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def db_list(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    limit: int = typer.Option(50, "--limit", "-n", help="Maximum number of books to show"),
+    offset: int = typer.Option(0, "--offset", help="Starting offset"),
+    author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author"),
+    subject: Optional[str] = typer.Option(None, "--subject", "-s", help="Filter by subject"),
+    language: Optional[str] = typer.Option(None, "--language", "-l", help="Filter by language")
+):
+    """
+    List books in database-backed library with optional filtering.
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        # Build query with filters
+        query = lib.query()
+
+        if author:
+            query = query.filter_by_author(author)
+        if subject:
+            query = query.filter_by_subject(subject)
+        if language:
+            query = query.filter_by_language(language)
+
+        query = query.order_by('title').limit(limit).offset(offset)
+
+        books = query.all()
+        total = query.count()
+
+        if not books:
+            console.print("[yellow]No books found[/yellow]")
+        else:
+            table = Table(title="Books")
+            table.add_column("ID", style="cyan")
+            table.add_column("Title", style="green")
+            table.add_column("Authors", style="blue")
+            table.add_column("Language", style="magenta")
+            table.add_column("Formats", style="yellow")
+
+            for book in books:
+                authors = ", ".join(a.name for a in book.authors[:2])
+                if len(book.authors) > 2:
+                    authors += f" +{len(book.authors) - 2}"
+
+                formats = ", ".join(f.format for f in book.files)
+
+                table.add_row(
+                    str(book.id),
+                    book.title[:40],
+                    authors[:30],
+                    book.language or "?",
+                    formats
+                )
+
+            console.print(table)
+            console.print(f"\n[dim]Showing {len(books)} of {total} books (offset: {offset})[/dim]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error listing books: {e}[/red]")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

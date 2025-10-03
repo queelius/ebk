@@ -5,11 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 ebk is a Python-based eBook metadata management tool with a Typer CLI and optional integrations. It provides:
+- **SQLAlchemy + SQLite database backend** for robust storage and querying
 - Fluent API for programmatic library management
 - Rich CLI with colorized output
-- Import/export from multiple sources (Calibre, raw ebooks, ZIP archives)
-- Set-theoretic library merging operations
+- Full-text search with FTS5 indexing
+- Automatic text extraction and chunking for semantic search
+- Hash-based file deduplication
+- Import from multiple sources (Calibre, raw ebooks, metadata files)
+- Cover extraction and thumbnail generation
 - Plugin architecture for extensibility
+- AI-powered knowledge graph and semantic search (optional)
 
 ## Key Commands
 
@@ -62,11 +67,29 @@ make format-check
 ```
 
 ### CLI Usage
+
 ```bash
-# After installation, use the ebk command
+# Initialize a new library
+ebk db-init ~/my-library
+
+# Import a single ebook with auto-metadata extraction
+ebk db-import book.pdf ~/my-library
+
+# Import from Calibre library
+ebk db-import-calibre ~/Calibre/Library ~/my-library
+
+# Search using full-text search (searches title, description, extracted text)
+ebk db-search "python programming" ~/my-library
+
+# List books with filtering
+ebk db-list ~/my-library --author "Knuth" --limit 20
+
+# Show library statistics
+ebk db-stats ~/my-library
+
+# For help on any command
 ebk --help
-ebk import-calibre ~/Calibre/Library --output-dir ~/my-library
-ebk search "Python" ~/my-library
+ebk db-import --help
 ```
 
 ## Architecture Overview
@@ -74,25 +97,30 @@ ebk search "Python" ~/my-library
 ### Core Structure
 ```
 ebk/
-├── library.py          # Core Library class with fluent API
-├── library_enhanced.py # Enhanced Library with advanced features
+├── library_db.py       # Database-backed Library class (SQLAlchemy)
 ├── cli.py             # Typer CLI implementation (entry point: ebk)
-├── manager.py         # Simple LibraryManager for programmatic use
+├── db/                # Database layer (SQLAlchemy + SQLite)
+│   ├── models.py     # SQLAlchemy ORM models (Book, Author, File, etc.)
+│   ├── session.py    # Session management and DB initialization
+│   └── __init__.py   # Database module exports
+├── services/          # Business logic services
+│   ├── import_service.py    # Import books with deduplication
+│   ├── text_extraction.py   # Extract text from ebooks
+│   └── __init__.py          # Services exports
+├── ai/               # AI-powered features (optional)
+│   ├── knowledge_graph.py   # NetworkX-based concept graph
+│   ├── semantic_search.py   # Vector embeddings for search
+│   ├── reading_companion.py # Reading session tracking
+│   └── question_generator.py # Active recall questions
 ├── plugins/           # Plugin system architecture
 │   ├── base.py       # Plugin base classes
 │   ├── registry.py   # Plugin registry management
 │   └── hooks.py      # Hook system for events
-├── imports/          # Import modules
-│   ├── calibre.py   # Calibre library import
-│   ├── ebooks.py    # Raw ebook folder import
-│   └── zip.py       # ZIP archive import
 ├── exports/          # Export modules
 │   ├── hugo.py      # Hugo static site export
 │   └── zip.py       # ZIP archive export
-├── merge.py         # Set operations (union, intersect, diff, symdiff)
-├── utils.py         # Common utilities (search, stats, etc.)
-├── ident.py         # Unique ID generation
 ├── extract_metadata.py # Metadata extraction from PDFs/EPUBs
+├── ident.py         # Unique ID generation
 └── decorators.py    # Function decorators for validation
 ```
 
@@ -108,53 +136,83 @@ integrations/
 
 ### Key Design Patterns
 
-1. **Fluent API**: The Library class supports method chaining:
+1. **Fluent Query API**: The Library class supports method chaining for queries:
    ```python
-   lib.add_entry(...).tag_all("fiction").filter(lambda e: e.get("rating") >= 4).save()
+   results = (lib.query()
+       .filter_by_language("en")
+       .filter_by_author("Knuth")
+       .order_by("title")
+       .limit(20)
+       .all())
    ```
 
-2. **Plugin Architecture**: Extensible via plugin classes inheriting from base types:
-   - MetadataExtractor: Extract metadata from external sources
-   - TagSuggester: Suggest tags based on content
-   - ContentAnalyzer: Analyze book content
-   - Validator: Validate library entries
-   - Exporter: Custom export formats
+2. **Hash-based Deduplication**: Files are deduplicated using SHA256 hashes
+   - Same file (same hash) = skipped
+   - Same book, different format (different hash) = added as additional format
+   - Hash-prefixed storage: `files/ab/abc123.pdf`
 
-3. **Unique Identification**: Each entry gets a hash-based ID from `ident.py` for deduplication
+3. **Automatic Text Extraction**: Text is extracted from ebooks and indexed for FTS
+   - PDF: PyMuPDF (primary) with pypdf fallback
+   - EPUB: ebooklib with HTML parsing
+   - Plaintext: Direct read with encoding detection
+   - Chunks: 500-word overlapping chunks for semantic search
 
-4. **Transaction Support**: Library operations can be wrapped in transactions for atomicity
+4. **SQLAlchemy ORM**: Normalized relational database with proper relationships
+   - Many-to-many: Books ↔ Authors, Books ↔ Subjects
+   - One-to-many: Book → Files, Book → Covers, Book → Chunks
+   - FTS5 virtual table for full-text search
 
-### Data Format
+### Database Schema
 
-Libraries are stored as directories containing:
-- `metadata.json`: All book metadata entries
-- Ebook files organized by unique IDs
-- Cover images extracted separately
-
-Metadata entry structure:
-```json
-{
-  "unique_id": "hash_based_id",
-  "title": "Book Title",
-  "creators": ["Author Name"],
-  "subjects": ["Subject1", "Subject2"],
-  "language": "en",
-  "identifiers": {"isbn": "1234567890"},
-  "file_paths": ["path/to/book.pdf"],
-  "cover_path": "path/to/cover.jpg"
-}
+Library directory structure:
 ```
+my-library/
+├── library.db              # SQLite database
+├── files/                  # Hash-prefixed ebook storage
+│   ├── ab/
+│   │   └── abc123...pdf
+│   └── cd/
+│       └── cde456...epub
+├── covers/                 # Cover images
+│   ├── ab/
+│   │   └── abc123.jpg
+│   └── thumbnails/
+│       └── abc123_thumb.jpg
+└── vectors/                # Vector embeddings (future)
+    └── embeddings.pkl
+```
+
+Core database tables:
+- **books**: Core book metadata (title, language, publisher, etc.)
+- **authors**: Author names with sort names
+- **subjects**: Tags/subjects/categories
+- **files**: Physical file records with hash, format, size
+- **extracted_texts**: Full text extracted from files
+- **text_chunks**: Overlapping chunks for semantic search
+- **covers**: Cover images with dimensions
+- **books_fts**: FTS5 virtual table for full-text search
 
 ## Common Development Tasks
 
-### Adding a New Import Format
-1. Create module in `ebk/imports/new_format.py`
-2. Implement import function following existing patterns
-3. Add CLI command in `ebk/cli.py`:
+### Adding Support for a New Ebook Format
+1. Add text extraction method to `ebk/services/text_extraction.py`:
    ```python
-   @app.command()
-   def import_new_format(source: Path, output_dir: Path):
-       # Implementation
+   def _extract_newformat_text(self, file_path: Path) -> str:
+       # Extract text from new format
+       return text
+   ```
+
+2. Update `extract_full_text` method to handle new format:
+   ```python
+   elif file.format.lower() == 'newformat':
+       text = self._extract_newformat_text(file_path)
+   ```
+
+3. Optionally add cover extraction to `ebk/services/import_service.py`:
+   ```python
+   def _extract_newformat_cover(self, file_path: Path, file_hash: str) -> Optional[Path]:
+       # Extract cover from new format
+       return cover_path
    ```
 
 ### Creating a Plugin
@@ -167,17 +225,41 @@ Metadata entry structure:
 
 ### Working with the Library API
 ```python
-from ebk import Library
+from ebk.library_db import Library
+from pathlib import Path
 
-# Open/create library
-lib = Library.open("/path/to/library")
+# Initialize or open library
+lib = Library.open(Path("~/my-library"))
+
+# Add a book with auto-metadata extraction
+book = lib.add_book(
+    Path("book.pdf"),
+    metadata={"title": "My Book", "creators": ["Author Name"]},
+    extract_text=True,
+    extract_cover=True
+)
 
 # Query with fluent API
 results = (lib.query()
-    .where("language", "en")
-    .where("subjects", "Python", "contains")
-    .order_by("title")
-    .execute())
+    .filter_by_language("en")
+    .filter_by_subject("Python")
+    .filter_by_author("Knuth")
+    .order_by("title", desc=False)
+    .limit(20)
+    .all())
+
+# Full-text search
+results = lib.search("machine learning", limit=50)
+
+# Get statistics
+stats = lib.stats()
+print(f"Total books: {stats['total_books']}")
+
+# Update reading status
+lib.update_reading_status(book.id, "reading", progress=50, rating=4)
+
+# Always close when done
+lib.close()
 ```
 
 ## Testing Guidelines
@@ -198,5 +280,5 @@ results = (lib.query()
 ## Entry Points
 
 - CLI: `ebk` command maps to `ebk.cli:app`
-- Python API: `from ebk import Library`
-- Web UI: `streamlit run ebk/integrations/streamlit/app.py`
+- Python API: `from ebk.library_db import Library`
+- Web UI (optional): `streamlit run ebk/integrations/streamlit/app.py`
