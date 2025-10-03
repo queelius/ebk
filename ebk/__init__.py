@@ -1,31 +1,24 @@
 """
 ebk - A lightweight tool for managing eBook metadata.
 
-Main API (Database-backed):
+Main API:
     from ebk import Library
-
-    # Open or create a library (database-backed)
+    
+    # Create or open a library
+    lib = Library.create("/path/to/library")
     lib = Library.open("/path/to/library")
-
-    # Add books
-    lib.add_book(file_path, metadata_dict)
-    lib.add_calibre_book(metadata_opf_path)
-
-    # Search with full-text search
-    results = lib.search("Python programming")
-
-    # Query with filters
-    books = lib.query().filter_by_author("Knuth").filter_by_language("en").all()
-
-    # Get statistics
-    stats = lib.stats()
-
-    # Close when done
-    lib.close()
+    
+    # Search and filter
+    results = lib.search("Python")
+    filtered = lib.filter(lambda e: e.get("year") > 2020)
+    
+    # Add and modify
+    lib.add_entry(title="Book", creators=["Author"])
+    lib.save()
 """
 
-from .library_db import Library
-from .db import Book, Author, Subject, File
+from .library import Library, Entry, QueryBuilder
+from .manager import LibraryManager  # Keep for backward compatibility
 
 __version__ = "0.3.0"
-__all__ = ["Library", "Book", "Author", "Subject", "File"]
+__all__ = ["Library", "Entry", "QueryBuilder", "LibraryManager"]

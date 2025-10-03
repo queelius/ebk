@@ -23,7 +23,7 @@ from .imports import ebooks, calibre
 from .merge import merge_libraries
 from .utils import enumerate_ebooks, load_library, get_unique_filename, search_regex, search_jmes, get_library_statistics, get_index_by_unique_id, print_json_as_table
 from .ident import add_unique_id
-# Legacy JSON-based Library removed - use db-* commands for database-backed library
+from .library import Library
 from .decorators import handle_library_errors
 
 # Initialize Rich Traceback for better error messages

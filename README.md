@@ -2,7 +2,7 @@
 
 ![ebk Logo](https://github.com/queelius/ebk/blob/main/logo.png?raw=true)
 
-**ebk** is a powerful eBook metadata management tool built on **SQLAlchemy + SQLite**. It provides a comprehensive fluent API for programmatic use, a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), automatic text extraction with full-text search (FTS5), hash-based file deduplication, and optional AI-powered features including knowledge graphs and semantic search. 
+**ebk** is a powerful eBook metadata management tool with a SQLAlchemy + SQLite database backend. It provides a comprehensive fluent API for programmatic use, a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), full-text search with FTS5 indexing, automatic text extraction and chunking for semantic search, hash-based file deduplication, and optional AI-powered features including knowledge graphs and semantic search. 
 
 
 ---
@@ -37,32 +37,37 @@
 
 ## Features
 
-- **SQLAlchemy + SQLite Backend**: Robust, normalized database with proper relationships and constraints
-- **Full-Text Search (FTS5)**: Lightning-fast search across titles, descriptions, and extracted text content
-- **Automatic Text Extraction**:
-  - PDF support (PyMuPDF primary, pypdf fallback)
-  - EPUB support (ebooklib with HTML parsing)
-  - Plaintext files with encoding detection
-  - 500-word overlapping chunks for semantic search
-- **Hash-based Deduplication**: SHA256 file hashing prevents duplicates while supporting multiple formats per book
-- **Fluent Query API**: Chainable query builder for filtering by author, subject, language, rating, reading status
-- **Typer + Rich CLI**: Colorized, user-friendly command-line interface with progress tracking
+- **SQLAlchemy + SQLite Backend**: Robust database with normalized schema, proper relationships, and FTS5 full-text search
+- **Fluent Python API**: Comprehensive programmatic interface with method chaining and query builders
+- **Typer + Rich CLI**: A colorized, easy-to-use command-line interface
+- **Automatic Text Extraction**: Extract and index text from PDFs, EPUBs, and plaintext files
+  - PyMuPDF (primary) with pypdf fallback for PDFs
+  - ebooklib with HTML parsing for EPUBs
+  - Automatic chunking (500-word overlapping chunks) for semantic search
+- **Hash-based Deduplication**: SHA256-based file deduplication
+  - Same file (same hash) = skipped
+  - Same book, different format = added as additional format
+  - Hash-prefixed directory storage for scalability
+- **Full-Text Search**: Fast FTS5-powered search across titles, descriptions, and extracted text
 - **Import from Multiple Sources**:
-  - Calibre libraries (via metadata.opf files)
+  - Calibre libraries (reads metadata.opf files)
   - Individual ebook files with auto-metadata extraction
   - Batch import with progress tracking
-- **Cover Management**:
-  - Automatic extraction from PDFs (first page) and EPUBs (metadata)
-  - Thumbnail generation
-  - Hash-prefixed storage for organization
-- **AI Features** (optional):
+- **Cover Extraction**: Automatic cover extraction and thumbnail generation
+  - PDFs: First page rendered as image
+  - EPUBs: Cover from metadata or naming patterns
+- **AI-Powered Features** (optional):
   - **Knowledge Graph**: NetworkX-based concept extraction and relationship mapping
-  - **Semantic Search**: Vector embeddings with sentence-transformers (or TF-IDF fallback)
-  - **Reading Companion**: Track reading sessions, annotations, and progress
-  - **Question Generation**: Active recall questions based on content
+  - **Semantic Search**: Vector embeddings for similarity search (with TF-IDF fallback)
+  - **Reading Companion**: Track reading sessions with timestamps
+  - **Question Generator**: Generate active recall questions
+- **Flexible Exports**:
+  - Export to ZIP archives
+  - Hugo-compatible Markdown with multiple organization options
+  - Jinja2 template support for customizable export formats
 - **Integrations** (optional):
   - **Streamlit Dashboard**: Interactive web interface
-  - **MCP Server**: AI assistant integration via Model Context Protocol
+  - **MCP Server**: AI assistant integration
   - **Visualizations**: Network graphs for analysis
 
 ---
@@ -109,24 +114,26 @@ pip install ebk[dev]
 # Initialize a new library
 ebk db-init ~/my-library
 
+# Import a single ebook with auto-metadata extraction
+ebk db-import book.pdf ~/my-library
+
 # Import from Calibre library
 ebk db-import-calibre ~/Calibre/Library ~/my-library
 
-# Import a single ebook
-ebk db-import book.pdf ~/my-library
-
-# Search with full-text search (searches title, description, and extracted text)
+# Search using full-text search
 ebk db-search "python programming" ~/my-library
 
 # List books with filtering
 ebk db-list ~/my-library --author "Knuth" --limit 20
 
-# Show library statistics
+# Get statistics
 ebk db-stats ~/my-library
 
-# Get help
-ebk --help
-ebk db-import --help
+# Export to Hugo site (using legacy commands)
+ebk export hugo ~/my-library ~/my-hugo-site --jinja --organize-by subject
+
+# Launch web interface (requires pip install ebk[streamlit])
+streamlit run -m ebk.integrations.streamlit.app -- ~/my-library
 ```
 
 ---
@@ -161,106 +168,62 @@ ebk <command> --help     # see specific usage, options
 ```
 
 The primary commands include:
-- `db-init` - Initialize new database-backed library
-- `db-import` - Import single ebook file
+
+**Database-backed Library (Recommended)**:
+- `db-init` - Initialize a new library
+- `db-import` - Import an ebook file
 - `db-import-calibre` - Import from Calibre library
-- `db-search` - Full-text search across library
+- `db-search` - Full-text search
 - `db-list` - List books with filtering
 - `db-stats` - Show library statistics
-- `export` - Export library to various formats
-- `build-knowledge` - Build AI knowledge graph (optional)
-- `ask` - Ask questions about your library (optional, AI)
+
+**Legacy Commands** (still available):
+- `import-zip` - Import from ZIP archive
+- `import-calibre` - Import Calibre (legacy format)
+- `import-ebooks` - Import raw ebooks
+- `export` - Export library
+- `merge` - Merge libraries
+- `search` - Regex/JMESPath search
+- `recommend`
+- `similar`
 - …and more!
 
 ---
 
-### Database Commands
+### Importing Libraries
 
-#### Initialize Library (`db-init`)
+#### Import from Zip (`import-zip`)
 
-Create a new database-backed library:
-
-```bash
-ebk db-init ~/my-library
-```
-
-This creates a directory with a SQLite database (`library.db`) and subdirectories for files and covers.
-
-#### Import Single Ebook (`db-import`)
-
-Import an ebook file with automatic metadata extraction:
+Load an existing ebk library archive (which has a `metadata.json` plus eBook/cover files) into a folder:
 
 ```bash
-ebk db-import book.pdf ~/my-library
-ebk db-import book.epub ~/my-library --title "Custom Title" --authors "Author Name"
+ebk import-zip /path/to/ebk_library.zip --output-dir /path/to/output
 ```
 
-Options:
-- `--title`, `-t`: Override book title
-- `--authors`, `-a`: Set authors (comma-separated)
-- `--subjects`, `-s`: Set subjects/tags (comma-separated)
-- `--language`, `-l`: Set language code
-- `--no-text`: Skip text extraction
-- `--no-cover`: Skip cover extraction
+- If `--output-dir` is omitted, the default will be derived from the zip filename.  
+- This unpacks the ZIP while retaining the `metadata.json` structure.
 
-#### Import Calibre Library (`db-import-calibre`)
+#### Import Calibre Library (`import-calibre`)
 
-Import books from a [Calibre](https://calibre-ebook.com/) library:
+Convert your [Calibre](https://calibre-ebook.com/) library into an ebk JSON library:
 
 ```bash
-ebk db-import-calibre /path/to/calibre/library ~/my-library
-ebk db-import-calibre /path/to/calibre/library ~/my-library --limit 100
+ebk import-calibre /path/to/calibre/library --output-dir /path/to/output
 ```
 
-Reads Calibre's `metadata.opf` files and imports ebooks with full metadata extraction.
+- Extracts metadata from `metadata.opf` files (if present) or from PDF/EPUB fallback.
+- Copies ebook files + covers into the output directory, producing a consolidated `metadata.json`.
 
-Options:
-- `--limit`: Limit number of books to import (useful for testing)
+#### Import Raw Ebooks (`import-ebooks`)
 
-#### Search and Query (`db-search`, `db-list`)
-
-Full-text search across all books:
+Import a folder of eBooks (PDF, EPUB, etc.) by inferring minimal metadata:
 
 ```bash
-# Search across title, description, and extracted text
-ebk db-search "python programming" ~/my-library
-
-# Limit results
-ebk db-search "machine learning" ~/my-library --limit 10
+ebk import-ebooks /path/to/raw/ebooks --output-dir /path/to/output
 ```
 
-List books with filters:
-
-```bash
-# List all books
-ebk db-list ~/my-library
-
-# Filter by author
-ebk db-list ~/my-library --author "Knuth"
-
-# Filter by subject/tag
-ebk db-list ~/my-library --subject "Computer Science"
-
-# Filter by language
-ebk db-list ~/my-library --language "en"
-
-# Combine filters with pagination
-ebk db-list ~/my-library --author "Knuth" --language "en" --limit 20 --offset 0
-```
-
-#### Library Statistics (`db-stats`)
-
-View library statistics:
-
-```bash
-ebk db-stats ~/my-library
-```
-
-Shows:
-- Total books, authors, subjects, files
-- Books read and currently reading
-- Language distribution
-- Format distribution
+- Uses pypdf for PDF metadata and attempts a best-effort cover extraction (first page → thumbnail).
+- Creates `metadata.json` and copies files + covers to `/path/to/output`.
 
 ---
 
@@ -412,82 +375,52 @@ ebk recommend /path/to/library --based-on book_id_1 --based-on book_id_2
 
 ## Python API
 
-ebk provides a fluent API for programmatic library management using SQLAlchemy:
+ebk provides a comprehensive fluent API for programmatic library management:
 
 ```python
-from ebk.library_db import Library
-from pathlib import Path
+from ebk import Library
 
-# Initialize or open a library
-lib = Library.open(Path("~/my-library"))
+# Create or open a library
+lib = Library.create("/path/to/library")
+lib = Library.open("/existing/library")
 
-# Add a book with auto-metadata extraction
-book = lib.add_book(
-    Path("book.pdf"),
-    metadata={
-        "title": "Example Book",
-        "creators": ["Alice", "Bob"],
-        "subjects": ["Fiction", "Adventure"],
-        "language": "en"
-    },
-    extract_text=True,    # Extract full text for FTS
-    extract_cover=True    # Extract cover image
-)
+# Add books with method chaining
+lib.add_entry(
+    title="Example Book",
+    creators=["Alice", "Bob"],
+    subjects=["Fiction", "Adventure"],
+    language="en"
+).save()
 
-# Powerful fluent queries
+# Powerful queries
 results = (lib.query()
-    .filter_by_language("en")
-    .filter_by_subject("Python")
-    .filter_by_author("Knuth")
-    .filter_by_rating(min_rating=4)
-    .order_by("title", desc=False)
-    .limit(20)
-    .all())
+    .where("language", "en")
+    .where("date", "2020", ">=")
+    .where("subjects", "Python", "contains")
+    .order_by("title")
+    .take(10)
+    .execute())
 
-# Full-text search (searches across title, description, extracted text)
-python_books = lib.search("machine learning", limit=50)
+# Simple search
+python_books = lib.search("Python")
 
-# Get book by ID or unique ID
-book = lib.get_book(123)
-book = lib.get_book_by_unique_id("isbn_1234567890")
+# Filter and export
+(lib.filter(lambda e: e.get("rating", 0) >= 4)
+    .tag_all("recommended")
+    .export_to_hugo("/path/to/site", organize_by="subject"))
 
-# Update reading status
-lib.update_reading_status(book.id, "reading", progress=50, rating=4)
+# Find similar books
+similar = lib.find_similar("book_id_123", threshold=0.7)
 
-# Get library statistics
+# Get recommendations
+recommended = lib.recommend(based_on=["book_id_1", "book_id_2"])
+
+# Export as navigable directory structure
+lib.export_to_symlink_dag("/path/to/dag", tag_field="subjects")
+
+# Statistics and analysis
 stats = lib.stats()
-print(f"Total books: {stats['total_books']}")
-print(f"Languages: {stats['languages']}")
-print(f"Formats: {stats['formats']}")
-
-# Always close when done
-lib.close()
-```
-
-### Database Access
-
-Direct database access for advanced queries:
-
-```python
-from ebk.db import Book, Author, get_session, init_db
-from pathlib import Path
-
-# Initialize database
-init_db(Path("~/my-library"))
-session = get_session()
-
-# SQLAlchemy queries
-from sqlalchemy import func
-
-# Get most prolific authors
-authors = (session.query(Author, func.count(Book.id))
-    .join(Book.authors)
-    .group_by(Author.id)
-    .order_by(func.count(Book.id).desc())
-    .limit(10)
-    .all())
-
-session.close()
+analysis = lib.analyze_reading_patterns()
 ```
 
 See the [CLAUDE.md](CLAUDE.md) file for architectural details and development guidelines.
