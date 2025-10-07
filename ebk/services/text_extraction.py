@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 
 from ..db.models import File, ExtractedText, TextChunk
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -203,14 +204,14 @@ class TextExtractionService:
         import hashlib
         return hashlib.sha256(text.encode()).hexdigest()
 
-    def _update_fts_index(self, session: Session, book_id: int, text: str):
+    def _update_fts_index(self, session: Session, book_id: int, extracted_text: str):
         """
         Update full-text search index.
 
         Args:
             session: Database session
             book_id: Book ID
-            text: Extracted text content
+            extracted_text: Extracted text content
         """
         try:
             # Get book title and description for FTS
@@ -222,22 +223,22 @@ class TextExtractionService:
 
             # Delete existing FTS entry if exists
             session.execute(
-                "DELETE FROM books_fts WHERE book_id = ?",
-                (book_id,)
+                text("DELETE FROM books_fts WHERE book_id = :book_id"),
+                {"book_id": book_id}
             )
 
             # Insert into FTS table
             session.execute(
-                """
+                text("""
                 INSERT INTO books_fts (book_id, title, description, extracted_text)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    book_id,
-                    book.title or '',
-                    book.description or '',
-                    text[:50000]  # Limit FTS content to first 50k chars
-                )
+                VALUES (:book_id, :title, :description, :extracted_text)
+                """),
+                {
+                    "book_id": book_id,
+                    "title": book.title or '',
+                    "description": book.description or '',
+                    "extracted_text": extracted_text[:50000]  # Limit FTS content to first 50k chars
+                }
             )
 
             logger.info(f"Updated FTS index for book {book_id}")

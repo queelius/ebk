@@ -1,0 +1,6 @@
+This is a test ebook file used for testing.
+
+It contains some sample text about programming and computer science.
+Python is a great programming language for beginners and experts alike.
+
+This file is used by the test suite to verify text extraction and import functionality.

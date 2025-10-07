@@ -16,15 +16,18 @@ from rich.table import Table
 from rich import print_json as print_json_as_table
 from rich.json import JSON
 
-from .exports.hugo import export_hugo
-from .exports.zip import export_zipfile
-from .exports.jinja_export import JinjaExporter
-from .imports import ebooks, calibre
-from .merge import merge_libraries
-from .utils import enumerate_ebooks, load_library, get_unique_filename, search_regex, search_jmes, get_library_statistics, get_index_by_unique_id, print_json_as_table
-from .ident import add_unique_id
-from .library import Library
 from .decorators import handle_library_errors
+from .ident import add_unique_id
+
+# Export functions (still available)
+try:
+    from .exports.hugo import export_hugo
+    from .exports.zip import export_zipfile
+    from .exports.jinja_export import JinjaExporter
+except ImportError:
+    export_hugo = None
+    export_zipfile = None
+    JinjaExporter = None
 
 # Initialize Rich Traceback for better error messages
 install(show_locals=True)
@@ -1613,7 +1616,7 @@ def db_init(
 
     library_path = Path(library_path)
 
-    if library_path.exists() and list(library_path.iterdir()):
+    if library_path.exists() and any(library_path.iterdir()):
         console.print(f"[yellow]Warning: Directory {library_path} already exists and is not empty[/yellow]")
         if not Confirm.ask("Continue anyway?"):
             raise typer.Exit(code=0)

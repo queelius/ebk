@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import logging
 
-from sqlalchemy import func, or_, and_
+from sqlalchemy import func, or_, and_, text
 from sqlalchemy.orm import Session
 
 from .db.models import Book, Author, Subject, File, ExtractedText, PersonalMetadata
@@ -148,14 +148,14 @@ class Library:
         """
         try:
             result = self.session.execute(
-                """
+                text("""
                 SELECT book_id, rank
                 FROM books_fts
-                WHERE books_fts MATCH ?
+                WHERE books_fts MATCH :query
                 ORDER BY rank
-                LIMIT ?
-                """,
-                (query, limit)
+                LIMIT :limit
+                """),
+                {"query": query, "limit": limit}
             )
 
             book_ids = [row[0] for row in result]
@@ -270,7 +270,7 @@ class Library:
                 personal.rating = rating
 
             if status == 'read':
-                personal.date_read = datetime.now()
+                personal.date_finished = datetime.now()
 
             self.session.commit()
             logger.info(f"Updated reading status for book {book_id}: {status}")
@@ -349,14 +349,14 @@ class QueryBuilder:
 
     def filter_by_reading_status(self, status: str) -> 'QueryBuilder':
         """Filter by reading status."""
-        self._query = self._query.join(Book.personal_metadata).filter(
+        self._query = self._query.join(Book.personal).filter(
             PersonalMetadata.reading_status == status
         )
         return self
 
     def filter_by_rating(self, min_rating: int, max_rating: int = 5) -> 'QueryBuilder':
         """Filter by rating range."""
-        self._query = self._query.join(Book.personal_metadata).filter(
+        self._query = self._query.join(Book.personal).filter(
             and_(
                 PersonalMetadata.rating >= min_rating,
                 PersonalMetadata.rating <= max_rating
@@ -369,12 +369,12 @@ class QueryBuilder:
         Order results.
 
         Args:
-            field: Field name (title, date_added, publication_date, rating)
+            field: Field name (title, created_at, publication_date)
             desc: Descending order if True
         """
         field_map = {
             'title': Book.title,
-            'date_added': Book.date_added,
+            'created_at': Book.created_at,
             'publication_date': Book.publication_date,
         }
 

@@ -1,24 +1,35 @@
 """
-ebk - A lightweight tool for managing eBook metadata.
+ebk - A powerful eBook metadata management tool with SQLAlchemy + SQLite backend.
 
 Main API:
-    from ebk import Library
-    
-    # Create or open a library
-    lib = Library.create("/path/to/library")
-    lib = Library.open("/path/to/library")
-    
-    # Search and filter
-    results = lib.search("Python")
-    filtered = lib.filter(lambda e: e.get("year") > 2020)
-    
-    # Add and modify
-    lib.add_entry(title="Book", creators=["Author"])
-    lib.save()
+    from ebk.library_db import Library
+    from pathlib import Path
+
+    # Open or create a library
+    lib = Library.open(Path("/path/to/library"))
+
+    # Add a book
+    book = lib.add_book(
+        Path("book.pdf"),
+        metadata={"title": "My Book", "creators": ["Author"]},
+        extract_text=True
+    )
+
+    # Search with full-text search
+    results = lib.search("python programming", limit=50)
+
+    # Query with fluent API
+    results = (lib.query()
+        .filter_by_language("en")
+        .filter_by_author("Knuth")
+        .limit(20)
+        .all())
+
+    # Always close when done
+    lib.close()
 """
 
-from .library import Library, Entry, QueryBuilder
-from .manager import LibraryManager  # Keep for backward compatibility
+from .library_db import Library
 
-__version__ = "0.3.0"
-__all__ = ["Library", "Entry", "QueryBuilder", "LibraryManager"]
+__version__ = "0.4.0"
+__all__ = ["Library"]

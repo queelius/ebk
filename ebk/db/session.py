@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.engine import Engine
 
@@ -54,10 +54,10 @@ def init_db(library_path: Path, echo: bool = False) -> Engine:
     with _engine.connect() as conn:
         # Check if FTS table exists
         result = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='books_fts'"
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='books_fts'")
         )
         if not result.fetchone():
-            conn.execute("""
+            conn.execute(text("""
                 CREATE VIRTUAL TABLE books_fts USING fts5(
                     book_id UNINDEXED,
                     title,
@@ -65,7 +65,7 @@ def init_db(library_path: Path, echo: bool = False) -> Engine:
                     extracted_text,
                     tokenize='porter unicode61'
                 )
-            """)
+            """))
             conn.commit()
 
     # Create session factory
