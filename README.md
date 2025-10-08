@@ -1,7 +1,5 @@
 # ebk
 
-![ebk Logo](https://github.com/queelius/ebk/blob/main/logo.png?raw=true)
-
 **ebk** is a powerful eBook metadata management tool with a SQLAlchemy + SQLite database backend. It provides a comprehensive fluent API for programmatic use, a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), full-text search with FTS5 indexing, automatic text extraction and chunking for semantic search, hash-based file deduplication, and optional AI-powered features including knowledge graphs and semantic search. 
 
 
