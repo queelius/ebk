@@ -1238,6 +1238,19 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Changelog
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -1249,6 +1262,103 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#v030-2025-01-xx" class="md-nav__link">
+    <span class="md-ellipsis">
+      v0.3.0 (2025-01-XX)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v0.3.0 (2025-01-XX)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      New Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration System
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#llm-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      LLM Integration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Server Updates
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Breaking Changes
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#earlier-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Earlier Versions
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -1306,7 +1416,51 @@
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>Project changelog and release notes.</p>
-<p>See <a href="../../ROADMAP.md">ROADMAP.md</a> for planned features.</p>
+<h2 id="v030-2025-01-xx">v0.3.0 (2025-01-XX)<a class="headerlink" href="#v030-2025-01-xx" title="Permanent link">&para;</a></h2>
+<h3 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✨ Configuration system at <code>~/.config/ebk/config.json</code></li>
+<li>🤖 LLM provider abstraction with Ollama support (local and remote)</li>
+<li>🏷️ AI-powered metadata enrichment (tags, categories, descriptions, difficulty assessment)</li>
+<li>🌐 Enhanced web server with config defaults and auto-open browser</li>
+<li>📚 Complete documentation overhaul with mkdocs</li>
+</ul>
+<h3 id="configuration-system">Configuration System<a class="headerlink" href="#configuration-system" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Centralized configuration management with <code>ebk config</code> command</li>
+<li>Four configuration sections: <code>llm</code>, <code>server</code>, <code>cli</code>, <code>library</code></li>
+<li>Support for default library path</li>
+<li>Server host, port, and auto-open browser settings</li>
+<li>CLI defaults for verbosity and color output</li>
+</ul>
+<h3 id="llm-integration">LLM Integration<a class="headerlink" href="#llm-integration" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Abstract <code>BaseLLMProvider</code> interface in <code>ebk/ai/llm_providers/</code></li>
+<li><code>OllamaProvider</code> with local and remote support</li>
+<li><code>MetadataEnrichmentService</code> for intelligent metadata generation</li>
+<li><code>ebk enrich</code> command with selective enrichment options</li>
+<li>Support for multiple models and temperature control</li>
+</ul>
+<h3 id="server-updates">Server Updates<a class="headerlink" href="#server-updates" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ebk serve</code> now uses config defaults for library path, host, and port</li>
+<li>Optional library path argument (uses config if not specified)</li>
+<li>Auto-open browser feature</li>
+<li>REST API improvements</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>New user guides: Configuration, LLM Features, Web Server, CLI Reference</li>
+<li>Updated README with quickstart and modern examples</li>
+<li>Deployed to GitHub Pages</li>
+</ul>
+<h3 id="breaking-changes">Breaking Changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ebk serve</code> library path is now optional (uses config default)</li>
+<li>Some CLI options renamed for consistency (e.g., <code>--llm-*</code> prefix)</li>
+</ul>
+<h2 id="earlier-versions">Earlier Versions<a class="headerlink" href="#earlier-versions" title="Permanent link">&para;</a></h2>
+<p>See <a href="https://github.com/queelius/ebk/releases">GitHub Releases</a> for information about earlier versions.</p>
 
 
 
