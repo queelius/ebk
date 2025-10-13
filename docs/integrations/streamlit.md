@@ -7,4 +7,4 @@ Interactive web interface for ebk.
 pip install ebk[streamlit]
 ```
 
-See [integrations/streamlit-dashboard/README.md](../../integrations/streamlit-dashboard/) for details.
+See [integrations/streamlit-dashboard/README.md](https://github.com/queelius/ebk/tree/master/integrations/) for details.

@@ -584,4 +584,4 @@ Planned LLM-powered features:
 - [Configuration Guide](../getting-started/configuration.md) - Set up LLM provider
 - [CLI Reference](cli.md) - Complete command reference
 - [Python API](api.md) - Programmatic access
-- [LLM Providers README](/home/spinoza/github/beta/ebk/ebk/ai/llm_providers/README.md) - Provider details
+- [LLM Providers README](https://github.com/queelius/ebk/blob/master/ebk/ai/llm_providers/README.md) - Provider details

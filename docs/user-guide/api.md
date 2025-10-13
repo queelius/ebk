@@ -25,7 +25,7 @@ with Library.open(Path("~/my-library")) as lib:
 # Library is automatically closed
 ```
 
-See the [API Guide](/home/spinoza/github/beta/ebk/docs/API_GUIDE.md) for complete documentation.
+See the [API Guide](https://github.com/queelius/ebk/blob/master/docs/API_GUIDE.md) for complete documentation.
 
 ## Core Classes
 
