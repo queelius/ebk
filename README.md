@@ -12,22 +12,18 @@
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
-  - [General CLI Structure](#general-cli-structure)
-  - [Importing Libraries](#importing-libraries)
-    - [Import from Zip (`import-zip`)](#import-from-zip-import-zip)
-    - [Import Calibre Library (`import-calibre`)](#import-calibre-library-import-calibre)
-    - [Import Raw Ebooks (`import-ebooks`)](#import-raw-ebooks-import-ebooks)
-  - [Exporting Libraries](#exporting-libraries)
-  - [Merging Libraries](#merging-libraries)
-  - [Searching](#searching)
-    - [Regex Search](#regex-search)
-    - [JMESPath Search](#jmespath-search)
-  - [Listing, Adding, Updating, and Removing Entries](#listing-adding-updating-and-removing-entries)
+  - [Database Commands](#database-commands)
+  - [Web Server](#web-server)
+  - [AI-Powered Features](#ai-powered-features)
+  - [Configuration Management](#configuration-management)
+  - [Legacy Commands](#legacy-commands)
 - [Python API](#python-api)
 - [Integrations](#integrations)
+- [Architecture](#architecture)
+- [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
-- [Roadmap & TODOs](ROADMAP.md)
+- [Documentation](#documentation)
 - [Stay Updated](#stay-updated)
 - [Support](#support)
 
@@ -55,10 +51,18 @@
   - PDFs: First page rendered as image
   - EPUBs: Cover from metadata or naming patterns
 - **AI-Powered Features** (optional):
+  - **LLM Provider Abstraction**: Support for multiple LLM backends (Ollama, OpenAI-compatible APIs)
+  - **Metadata Enrichment**: Auto-generate tags, categories, and enhanced descriptions using LLMs
+  - **Local & Remote LLM**: Connect to local Ollama or remote GPU servers
   - **Knowledge Graph**: NetworkX-based concept extraction and relationship mapping
   - **Semantic Search**: Vector embeddings for similarity search (with TF-IDF fallback)
   - **Reading Companion**: Track reading sessions with timestamps
   - **Question Generator**: Generate active recall questions
+- **Web Server Interface**:
+  - FastAPI-based REST API for library management
+  - URL-based navigation with filters, pagination, and sorting
+  - Clickable covers and file formats to open books
+  - Book details modal with comprehensive metadata display
 - **Flexible Exports**:
   - Export to ZIP archives
   - Hugo-compatible Markdown with multiple organization options
@@ -108,320 +112,431 @@ pip install ebk[dev]
 
 ## Quick Start
 
+### 1. Initialize Configuration
+
+```bash
+# Create default configuration file at ~/.config/ebk/config.json
+ebk config init
+
+# View current configuration
+ebk config show
+
+# Set default library path
+ebk config set library.default_path ~/my-library
+```
+
+### 2. Create and Populate Library
+
 ```bash
 # Initialize a new library
-ebk db-init ~/my-library
+ebk init ~/my-library
 
 # Import a single ebook with auto-metadata extraction
-ebk db-import book.pdf ~/my-library
+ebk import book.pdf ~/my-library
 
 # Import from Calibre library
-ebk db-import-calibre ~/Calibre/Library ~/my-library
+ebk import-calibre ~/Calibre/Library --output ~/my-library
 
 # Search using full-text search
-ebk db-search "python programming" ~/my-library
+ebk search "python programming" ~/my-library
 
 # List books with filtering
-ebk db-list ~/my-library --author "Knuth" --limit 20
+ebk list ~/my-library --author "Knuth" --limit 20
 
 # Get statistics
-ebk db-stats ~/my-library
+ebk stats ~/my-library
+```
 
-# Export to Hugo site (using legacy commands)
-ebk export hugo ~/my-library ~/my-hugo-site --jinja --organize-by subject
+### 3. Launch Web Interface
 
-# Launch web interface (requires pip install ebk[streamlit])
-streamlit run -m ebk.integrations.streamlit.app -- ~/my-library
+```bash
+# Start web server (uses config defaults)
+ebk serve ~/my-library
+
+# Custom port and host
+ebk serve ~/my-library --port 8080 --host 127.0.0.1
+
+# Auto-open browser
+ebk config set server.auto_open_browser true
+ebk serve ~/my-library
+```
+
+### 4. AI-Powered Metadata Enrichment
+
+```bash
+# Configure LLM provider
+ebk config set llm.provider ollama
+ebk config set llm.model llama3.2
+ebk config set llm.host localhost
+
+# Enrich library metadata using LLM
+ebk enrich ~/my-library
+
+# Enrich with all features
+ebk enrich ~/my-library --generate-tags --categorize --enhance-descriptions
+
+# Use remote GPU server
+ebk enrich ~/my-library --host 192.168.1.100
 ```
 
 ---
 
 ## Configuration
 
-ebk can be configured via environment variables or a configuration file at `~/.ebkrc`:
+ebk uses a centralized configuration system stored at `~/.config/ebk/config.json`. This configuration file manages settings for LLM providers, web server, CLI defaults, and library preferences.
 
-```ini
-[export]
-# Default Hugo export path
-hugo_path = "/path/to/hugo/site"
+### Configuration File Structure
 
-[library]
-# Default library location
-default_path = "~/ebooks/library"
+```json
+{
+  "llm": {
+    "provider": "ollama",
+    "model": "llama3.2",
+    "host": "localhost",
+    "port": 11434,
+    "api_key": null,
+    "temperature": 0.7,
+    "max_tokens": null
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "auto_open_browser": false,
+    "page_size": 50
+  },
+  "cli": {
+    "verbose": false,
+    "color": true,
+    "page_size": 50
+  },
+  "library": {
+    "default_path": null
+  }
+}
+```
 
-[import]
-# Default formats to import
-formats = ["pdf", "epub", "mobi", "azw3"]
+### Configuration Management
+
+```bash
+# Initialize configuration (creates default config file)
+ebk config init
+
+# View current configuration
+ebk config show
+
+# Edit configuration in your default editor
+ebk config edit
+
+# Set specific values
+ebk config set llm.provider ollama
+ebk config set llm.model mistral
+ebk config set server.port 8080
+ebk config set library.default_path ~/my-library
+
+# Get specific value
+ebk config get llm.model
+```
+
+### LLM Provider Configuration
+
+Configure LLM providers for metadata enrichment:
+
+```bash
+# Local Ollama (default)
+ebk config set llm.provider ollama
+ebk config set llm.host localhost
+ebk config set llm.port 11434
+ebk config set llm.model llama3.2
+
+# Remote GPU server
+ebk config set llm.host 192.168.1.100
+
+# OpenAI-compatible API (future)
+ebk config set llm.provider openai
+ebk config set llm.api_key sk-...
+ebk config set llm.model gpt-4
+```
+
+### CLI Overrides
+
+All commands support CLI arguments that override configuration defaults:
+
+```bash
+# These override config settings
+ebk serve ~/library --port 9000 --host 127.0.0.1
+ebk enrich ~/library --host 192.168.1.50 --model mistral
 ```
 
 ## CLI Usage
 
-ebk uses [Typer](https://typer.tiangolo.com/) under the hood, providing subcommands for imports, exports, merges, searches, listing, updates, etc. The CLI also leverages [Rich](https://github.com/Textualize/rich) for colorized/logging output.
+ebk uses [Typer](https://typer.tiangolo.com/) with [Rich](https://github.com/Textualize/rich) for a beautiful, colorized CLI experience.
 
 ### General CLI Structure
 
+```bash
+ebk --help                 # See all available commands
+ebk <command> --help       # See specific command usage
+ebk --verbose <command>    # Enable verbose output
 ```
-ebk --help
-ebk <command> --help     # see specific usage, options
-```
 
-The primary commands include:
+### Database Commands
 
-**Database-backed Library (Recommended)**:
-- `db-init` - Initialize a new library
-- `db-import` - Import an ebook file
-- `db-import-calibre` - Import from Calibre library
-- `db-search` - Full-text search
-- `db-list` - List books with filtering
-- `db-stats` - Show library statistics
-
-**Legacy Commands** (still available):
-- `import-zip` - Import from ZIP archive
-- `import-calibre` - Import Calibre (legacy format)
-- `import-ebooks` - Import raw ebooks
-- `export` - Export library
-- `merge` - Merge libraries
-- `search` - Regex/JMESPath search
-- `recommend`
-- `similar`
-- …and more!
-
----
-
-### Importing Libraries
-
-#### Import from Zip (`import-zip`)
-
-Load an existing ebk library archive (which has a `metadata.json` plus eBook/cover files) into a folder:
+Core library management with SQLAlchemy + SQLite backend:
 
 ```bash
-ebk import-zip /path/to/ebk_library.zip --output-dir /path/to/output
+# Initialize library
+ebk init ~/my-library
+
+# Import books
+ebk import book.pdf ~/my-library
+ebk import ~/books/*.epub ~/my-library
+ebk import-calibre ~/Calibre/Library --output ~/my-library
+
+# Search with full-text search (FTS5)
+ebk search "machine learning" ~/my-library
+ebk search "author:Knuth" ~/my-library
+
+# List and filter
+ebk list ~/my-library
+ebk list ~/my-library --author "Knuth" --language en --limit 20
+ebk list ~/my-library --format pdf --rating 4
+
+# Statistics
+ebk stats ~/my-library
+ebk stats ~/my-library --format json
+
+# Manage reading status
+ebk rate ~/my-library <book-id> 5
+ebk favorite ~/my-library <book-id>
+ebk tag ~/my-library <book-id> --add "must-read" "technical"
+
+# Remove books
+ebk purge ~/my-library --rating 1 --confirm
 ```
 
-- If `--output-dir` is omitted, the default will be derived from the zip filename.  
-- This unpacks the ZIP while retaining the `metadata.json` structure.
+### Web Server
 
-#### Import Calibre Library (`import-calibre`)
-
-Convert your [Calibre](https://calibre-ebook.com/) library into an ebk JSON library:
+Launch FastAPI-based web interface:
 
 ```bash
-ebk import-calibre /path/to/calibre/library --output-dir /path/to/output
+# Start server (uses config defaults)
+ebk serve ~/my-library
+
+# Custom host and port
+ebk serve ~/my-library --host 127.0.0.1 --port 8080
+
+# Auto-open browser
+ebk serve ~/my-library --auto-open
+
+# Configure defaults in config
+ebk config set server.port 8080
+ebk config set server.auto_open_browser true
 ```
 
-- Extracts metadata from `metadata.opf` files (if present) or from PDF/EPUB fallback.
-- Copies ebook files + covers into the output directory, producing a consolidated `metadata.json`.
+### AI-Powered Features
 
-#### Import Raw Ebooks (`import-ebooks`)
-
-Import a folder of eBooks (PDF, EPUB, etc.) by inferring minimal metadata:
+Enrich metadata using LLMs:
 
 ```bash
-ebk import-ebooks /path/to/raw/ebooks --output-dir /path/to/output
+# Basic enrichment (uses config settings)
+ebk enrich ~/my-library
+
+# Full enrichment
+ebk enrich ~/my-library \
+  --generate-tags \
+  --categorize \
+  --enhance-descriptions \
+  --assess-difficulty
+
+# Enrich specific book
+ebk enrich ~/my-library --book-id 42
+
+# Use remote GPU server
+ebk enrich ~/my-library --host 192.168.1.100 --model mistral
+
+# Dry run (preview changes without saving)
+ebk enrich ~/my-library --dry-run
 ```
 
-- Uses pypdf for PDF metadata and attempts a best-effort cover extraction (first page → thumbnail).
-- Creates `metadata.json` and copies files + covers to `/path/to/output`.
+### Configuration Management
 
----
-
-### Exporting Libraries
-
-Available formats:
-- **Hugo**:  
-  ```bash
-  # Basic export
-  ebk export hugo /path/to/ebk_library /path/to/hugo_site
-  
-  # With Jinja templates and organization
-  ebk export hugo /path/to/ebk_library /path/to/hugo_site --jinja --organize-by subject
-  ```
-  This writes Hugo-compatible Markdown files (and copies covers/ebooks) into your Hugo `content` + `static` folders. See [Hugo Export Documentation](docs/HUGO_EXPORT.md) for advanced options.
-
-- **Zip**:  
-  ```bash
-  ebk export zip /path/to/ebk_library /path/to/export.zip
-  ```
-  Creates a `.zip` archive containing the entire library.
-
----
-
-### Merging Libraries
-
-Use set-theoretic operations to combine multiple ebk libraries:
+Manage global configuration:
 
 ```bash
-ebk merge <operation> /path/to/merged_dir [libs...]
+# Initialize configuration
+ebk config init
+
+# View configuration
+ebk config show
+ebk config show --section llm
+
+# Edit in default editor
+ebk config edit
+
+# Set values
+ebk config set llm.model llama3.2
+ebk config set server.port 8080
+ebk config set library.default_path ~/books
+
+# Get values
+ebk config get llm.model
 ```
 
-Where `<operation>` can be:
-- `union`: Combine all unique entries
-- `intersect`: Keep only entries common to all libraries
-- `diff`: Keep entries present in the first library but not others
-- `symdiff`: Entries in exactly one library (exclusive-or)
-
-**Example**:
+### Export and Advanced Features
 
 ```bash
-ebk merge union /path/to/merged_lib /path/to/lib1 /path/to/lib2
-```
+# Export library
+ebk export zip ~/my-library ~/backup.zip
+ebk export json ~/my-library ~/metadata.json
 
----
+# Virtual libraries (filtered views)
+ebk vlib create ~/my-library "python-books" --subject Python
+ebk vlib list ~/my-library
 
-### Searching
-
-#### Regex Search
-
-```bash
-ebk search <regex> /path/to/ebk_library
-```
-
-By default, it searches the `title` field. You can specify additional fields:
-
-```bash
-ebk search "Python" /path/to/lib --regex-fields title creators
-```
-
-#### JMESPath Search
-
-For more powerful, structured searches:
-
-```bash
-ebk search "[?language=='en']" /path/to/lib --jmespath
-```
-
-JMESPath expressions allow you to filter, project fields, etc. If you want to see these results as JSON:
-
-```bash
-ebk search "[?language=='en']" /path/to/lib --jmespath --json
+# Notes and annotations
+ebk note add ~/my-library <book-id> "Great chapter on algorithms"
+ebk note list ~/my-library <book-id>
 ```
 
 ---
 
-### Advanced Features
+## Documentation
 
-#### Symlink DAG Export
-```bash
-ebk export-dag /path/to/library /path/to/output
-```
-Creates a navigable directory structure where tags become folders and books appear via symlinks. See [Symlink DAG Documentation](docs/SYMLINK_DAG_EXPORT.md).
+Comprehensive documentation is available at: **[https://queelius.github.io/ebk/](https://queelius.github.io/ebk/)**
 
-#### Find Similar Books
-```bash
-ebk similar /path/to/library book_unique_id --threshold 0.7
-```
+### Documentation Contents
 
-#### Get Recommendations
-```bash
-# Random recommendations
-ebk recommend /path/to/library
+- **Getting Started**
+  - [Installation](https://queelius.github.io/ebk/getting-started/installation/)
+  - [Quick Start](https://queelius.github.io/ebk/getting-started/quickstart/)
+  - [Configuration Guide](https://queelius.github.io/ebk/getting-started/configuration/)
 
-# Based on specific books
-ebk recommend /path/to/library --based-on book_id_1 --based-on book_id_2
-```
+- **User Guide**
+  - [CLI Reference](https://queelius.github.io/ebk/user-guide/cli/)
+  - [Python API](https://queelius.github.io/ebk/user-guide/api/)
+  - [LLM Features](https://queelius.github.io/ebk/user-guide/llm-features/)
+  - [Web Server](https://queelius.github.io/ebk/user-guide/server/)
+  - [Import/Export](https://queelius.github.io/ebk/user-guide/import-export/)
+  - [Search & Query](https://queelius.github.io/ebk/user-guide/search/)
 
-### Listing, Adding, Updating, and Removing Entries
+- **Advanced Topics**
+  - [Hugo Export](https://queelius.github.io/ebk/advanced/hugo-export/)
+  - [Symlink DAG](https://queelius.github.io/ebk/advanced/symlink-dag/)
+  - [Recommendations](https://queelius.github.io/ebk/advanced/recommendations/)
+  - [Batch Operations](https://queelius.github.io/ebk/advanced/batch-operations/)
 
-- **List**:
-  ```bash
-  ebk list /path/to/lib
-  ```
-  Prints all ebooks with indexes, clickable file links (via Rich).
-
-- **Add**:
-  ```bash
-  ebk add /path/to/lib --title "My Book" --creators "Alice" --ebooks "/path/to/book.pdf"
-  ```
-  or
-  ```bash
-  ebk add /path/to/lib --json /path/to/new_entries.json
-  ```
-  to bulk-add entries from a JSON file.
-
-- **Update**:
-  - By index:  
-    ```bash
-    ebk update-index /path/to/lib 12 --title "New Title"
-    ```
-  - By unique ID:  
-    ```bash
-    ebk update-id /path/to/lib <unique_id> --cover /path/to/new_cover.jpg
-    ```
-
-- **Remove**:
-  - By regex in `title`, `creators`, or `identifiers`:
-    ```bash
-    ebk remove /path/to/lib "SomeRegex" --apply-to title creators
-    ```
-  - By index:
-    ```bash
-    ebk remove-index /path/to/lib 3 4 5
-    ```
-  - By unique ID:
-    ```bash
-    ebk remove-id /path/to/lib <unique_id>
-    ```
-
-- **Stats**:
-  ```bash
-  ebk stats /path/to/lib --keywords python data "machine learning"
-  ```
-  Returns aggregated statistics (common languages, top creators, subject frequency, etc.).
+- **Development**
+  - [Architecture](https://queelius.github.io/ebk/development/architecture/)
+  - [Contributing](https://queelius.github.io/ebk/development/contributing/)
+  - [API Reference](https://queelius.github.io/ebk/development/api-reference/)
 
 ---
 
 
 ## Python API
 
-ebk provides a comprehensive fluent API for programmatic library management:
+ebk provides a comprehensive SQLAlchemy-based API for programmatic library management:
 
 ```python
-from ebk import Library
+from pathlib import Path
+from ebk.library_db import Library
 
-# Create or open a library
-lib = Library.create("/path/to/library")
-lib = Library.open("/existing/library")
+# Open or create a library
+lib = Library.open(Path("~/my-library"))
 
-# Add books with method chaining
-lib.add_entry(
-    title="Example Book",
-    creators=["Alice", "Bob"],
-    subjects=["Fiction", "Adventure"],
-    language="en"
-).save()
+# Import books with automatic metadata extraction
+book = lib.add_book(
+    Path("book.pdf"),
+    metadata={"title": "My Book", "creators": ["Author Name"]},
+    extract_text=True,
+    extract_cover=True
+)
 
-# Powerful queries
+# Fluent query interface
 results = (lib.query()
-    .where("language", "en")
-    .where("date", "2020", ">=")
-    .where("subjects", "Python", "contains")
-    .order_by("title")
-    .take(10)
-    .execute())
+    .filter_by_language("en")
+    .filter_by_author("Knuth")
+    .filter_by_subject("Algorithms")
+    .order_by("title", desc=False)
+    .limit(20)
+    .all())
 
-# Simple search
-python_books = lib.search("Python")
+# Full-text search (FTS5)
+results = lib.search("machine learning", limit=50)
 
-# Filter and export
-(lib.filter(lambda e: e.get("rating", 0) >= 4)
-    .tag_all("recommended")
-    .export_to_hugo("/path/to/site", organize_by="subject"))
+# Get book by ID
+book = lib.get_book(42)
+print(f"{book.title} by {', '.join([a.name for a in book.authors])}")
 
-# Find similar books
-similar = lib.find_similar("book_id_123", threshold=0.7)
+# Update reading status
+lib.update_reading_status(book.id, "reading", progress=50, rating=4)
 
-# Get recommendations
-recommended = lib.recommend(based_on=["book_id_1", "book_id_2"])
+# Add tags
+lib.add_tags(book.id, ["must-read", "technical"])
 
-# Export as navigable directory structure
-lib.export_to_symlink_dag("/path/to/dag", tag_field="subjects")
-
-# Statistics and analysis
+# Get statistics
 stats = lib.stats()
-analysis = lib.analyze_reading_patterns()
+print(f"Total books: {stats['total_books']}")
+print(f"Total authors: {stats['total_authors']}")
+print(f"Languages: {', '.join(stats['languages'])}")
+
+# Query with filters
+from ebk.db.models import Book, Author
+from sqlalchemy import and_
+
+books = lib.session.query(Book).join(Book.authors).filter(
+    and_(
+        Author.name.like("%Knuth%"),
+        Book.language == "en"
+    )
+).all()
+
+# Always close when done
+lib.close()
+
+# Or use context manager
+with Library.open(Path("~/my-library")) as lib:
+    results = lib.search("Python programming")
+    for book in results:
+        print(book.title)
 ```
 
-See the [CLAUDE.md](CLAUDE.md) file for architectural details and development guidelines.
+### AI-Powered Metadata Enrichment
+
+```python
+from ebk.ai.llm_providers.ollama import OllamaProvider
+from ebk.ai.metadata_enrichment import MetadataEnrichmentService
+
+# Initialize provider (local or remote)
+provider = OllamaProvider.remote(
+    host="192.168.1.100",
+    model="llama3.2"
+)
+
+service = MetadataEnrichmentService(provider)
+
+async with provider:
+    # Generate tags
+    tags = await service.generate_tags(
+        title="Introduction to Algorithms",
+        authors=["Cormen", "Leiserson"],
+        description="Comprehensive algorithms textbook"
+    )
+
+    # Categorize
+    categories = await service.categorize(
+        title="Introduction to Algorithms",
+        subjects=["Algorithms", "Data Structures"]
+    )
+
+    # Enhance description
+    description = await service.enhance_description(
+        title="Introduction to Algorithms",
+        text_sample="Chapter 1: The Role of Algorithms..."
+    )
+```
+
+See the [CLAUDE.md](CLAUDE.md) file for architectural details and [API documentation](https://queelius.github.io/ebk/user-guide/api/) for complete reference.
 
 ---
 

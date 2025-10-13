@@ -32,12 +32,17 @@ def extract_metadata_from_opf(opf_file: str) -> Dict:
     simplified = {
         "title": metadata.get("dc:title", metadata.get("title")),
         "creators": None,
+        "contributors": None,
         "subjects": None,
         "description": metadata.get("dc:description", metadata.get("description")),
         "language": metadata.get("dc:language", metadata.get("language")),
         "date": metadata.get("dc:date", metadata.get("date")),
         "publisher": metadata.get("dc:publisher", metadata.get("publisher")),
-        "identifiers": None
+        "identifiers": None,
+        "rights": metadata.get("dc:rights", metadata.get("rights")),
+        "source": metadata.get("dc:source", metadata.get("source")),
+        "series": None,
+        "series_index": None
     }
 
     # -- Creators
@@ -75,6 +80,58 @@ def extract_metadata_from_opf(opf_file: str) -> Dict:
         text = identifiers.get("#text", "").strip()
         simplified["identifiers"][scheme] = text
 
+    # -- Contributors (editors, translators, etc)
+    contributors_raw = metadata.get("dc:contributor", metadata.get("contributor"))
+    if contributors_raw:
+        simplified["contributors"] = []
+        if isinstance(contributors_raw, list):
+            for contrib in contributors_raw:
+                if isinstance(contrib, dict):
+                    name = contrib.get("#text", "").strip()
+                    role = contrib.get("@opf:role", "contributor")
+                    file_as = contrib.get("@opf:file-as", "")
+                    if name:
+                        simplified["contributors"].append({
+                            "name": name,
+                            "role": role,
+                            "file_as": file_as
+                        })
+                elif isinstance(contrib, str):
+                    simplified["contributors"].append({
+                        "name": contrib.strip(),
+                        "role": "contributor",
+                        "file_as": ""
+                    })
+        elif isinstance(contributors_raw, dict):
+            name = contributors_raw.get("#text", "").strip()
+            role = contributors_raw.get("@opf:role", "contributor")
+            file_as = contributors_raw.get("@opf:file-as", "")
+            if name:
+                simplified["contributors"] = [{
+                    "name": name,
+                    "role": role,
+                    "file_as": file_as
+                }]
+
+    # -- Calibre-specific metadata (series, etc)
+    # Look for meta tags with name attributes
+    meta_tags = metadata.get("meta", [])
+    if not isinstance(meta_tags, list):
+        meta_tags = [meta_tags] if meta_tags else []
+
+    for meta in meta_tags:
+        if isinstance(meta, dict):
+            meta_name = meta.get("@name", "")
+            meta_content = meta.get("@content", "")
+
+            if meta_name == "calibre:series" and meta_content:
+                simplified["series"] = meta_content
+            elif meta_name == "calibre:series_index" and meta_content:
+                try:
+                    simplified["series_index"] = float(meta_content)
+                except (ValueError, TypeError):
+                    pass
+
     return simplified
 
 
@@ -94,6 +151,7 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
         "publisher": None,
         "identifiers": None,
         "keywords": None,
+        "creator_application": None,
     }
 
     try:
@@ -107,7 +165,9 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
         pdf_author = info.get("/Author", None) or info.get("author", None)
         pdf_subject = info.get("/Subject", None) or info.get("subject", None)
         pdf_keywords = info.get("/Keywords", None) or info.get("keywords", None)
-        pdf_publisher = info.get("/Producer", None) or info.get("producer", None) or info.get("/Publisher", None) or info.get("publisher", None)
+        pdf_creator = info.get("/Creator", None) or info.get("creator", None)  # Application used
+        pdf_producer = info.get("/Producer", None) or info.get("producer", None)
+        pdf_publisher = info.get("/Publisher", None) or info.get("publisher", None)
         pdf_creation_date = info.get("/CreationDate", None)
 
         if pdf_title:
@@ -130,10 +190,18 @@ def extract_metadata_from_pdf(pdf_path: str) -> Dict:
         metadata["identifiers"] = {"pdf:identifier": pdf_path}
 
         if pdf_keywords:
-            metadata["keywords"] = [kw.strip() for kw in pdf_keywords.split(",")]
+            metadata["keywords"] = [kw.strip() for kw in pdf_keywords.split(",") if kw.strip()]
 
+        # Creator is the application that created the PDF (e.g., LaTeX, Word)
+        if pdf_creator:
+            metadata["creator_application"] = pdf_creator.strip()
+
+        # Publisher: prefer explicit Publisher field, fallback to Producer
         if pdf_publisher:
             metadata["publisher"] = pdf_publisher.strip()
+        elif pdf_producer and not pdf_creator:
+            # Only use producer as publisher if there's no creator app
+            metadata["publisher"] = pdf_producer.strip()
 
         metadata["file_paths"] = [pdf_path]
 

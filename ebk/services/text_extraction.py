@@ -168,15 +168,35 @@ class TextExtractionService:
             text_parts = []
 
             for item in book.get_items():
-                if item.get_type() == epub.ITEM_DOCUMENT:
-                    soup = BeautifulSoup(item.content, 'html.parser')
+                # Handle different ebooklib versions
+                # Type 9 is ITEM_DOCUMENT in ebooklib
+                item_type = item.get_type()
 
-                    # Remove script and style elements
-                    for script in soup(["script", "style"]):
-                        script.decompose()
+                # Check if this is a document item (HTML/XHTML content)
+                is_document = False
+                if hasattr(epub, 'ITEM_DOCUMENT'):
+                    is_document = item_type == epub.ITEM_DOCUMENT
+                else:
+                    # Fallback: type 9 is document, or check media type
+                    is_document = (item_type == 9 or
+                                 'html' in item.get_name().lower() or
+                                 (hasattr(item, 'media_type') and
+                                  item.media_type and
+                                  'html' in item.media_type.lower()))
 
-                    text = soup.get_text(separator='\n')
-                    text_parts.append(text)
+                if is_document:
+                    try:
+                        soup = BeautifulSoup(item.content, 'html.parser')
+
+                        # Remove script and style elements
+                        for script in soup(["script", "style"]):
+                            script.decompose()
+
+                        text = soup.get_text(separator='\n')
+                        text_parts.append(text)
+                    except Exception as e:
+                        logger.debug(f"Failed to extract text from item {item.get_name()}: {e}")
+                        continue
 
             full_text = '\n\n'.join(text_parts)
             return self._clean_text(full_text)
