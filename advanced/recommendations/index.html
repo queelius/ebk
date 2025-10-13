@@ -12,13 +12,13 @@
         <meta name="author" content="Alex Towell">
       
       
-        <link rel="canonical" href="https://queelius.github.io/ebk/advanced/hugo-export/">
+        <link rel="canonical" href="https://queelius.github.io/ebk/advanced/recommendations/">
       
       
-        <link rel="prev" href="../../user-guide/library-management/">
+        <link rel="prev" href="../symlink-dag/">
       
       
-        <link rel="next" href="../symlink-dag/">
+        <link rel="next" href="../batch-operations/">
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
@@ -26,7 +26,7 @@
     
     
       
-        <title>Hugo Export - ebk - eBook Library Manager</title>
+        <title>Recommendations - ebk - eBook Library Manager</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#hugo-export-with-jinja-templates" class="md-skip">
+        <a href="#recommendations" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Hugo Export
+              Recommendations
             
           </span>
         </div>
@@ -290,7 +290,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../hugo-export/" class="md-tabs__link">
           
   
   
@@ -817,32 +817,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    Hugo Export
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../hugo-export/" class="md-nav__link">
         
   
   
@@ -853,254 +831,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#basic-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      Basic Usage
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#organization-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      Organization Options
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Organization Options">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#flat-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      Flat (default)
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#by-year" class="md-nav__link">
-    <span class="md-ellipsis">
-      By Year
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#by-language" class="md-nav__link">
-    <span class="md-ellipsis">
-      By Language
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#by-subject" class="md-nav__link">
-    <span class="md-ellipsis">
-      By Subject
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#by-creator" class="md-nav__link">
-    <span class="md-ellipsis">
-      By Creator
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#custom-templates" class="md-nav__link">
-    <span class="md-ellipsis">
-      Custom Templates
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Custom Templates">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#template-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      Template Variables
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Template Variables">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#bookmd" class="md-nav__link">
-    <span class="md-ellipsis">
-      book.md
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#indexmd" class="md-nav__link">
-    <span class="md-ellipsis">
-      index.md
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#librarymd" class="md-nav__link">
-    <span class="md-ellipsis">
-      library.md
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#hugo-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      Hugo Configuration
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Hugo Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-add-library-section" class="md-nav__link">
-    <span class="md-ellipsis">
-      1. Add Library Section
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-create-custom-layouts" class="md-nav__link">
-    <span class="md-ellipsis">
-      2. Create Custom Layouts
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-style-your-library" class="md-nav__link">
-    <span class="md-ellipsis">
-      3. Style Your Library
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#advanced-features" class="md-nav__link">
-    <span class="md-ellipsis">
-      Advanced Features
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Advanced Features">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#filtering-and-search" class="md-nav__link">
-    <span class="md-ellipsis">
-      Filtering and Search
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#multiple-views" class="md-nav__link">
-    <span class="md-ellipsis">
-      Multiple Views
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#static-but-dynamic" class="md-nav__link">
-    <span class="md-ellipsis">
-      Static but Dynamic
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#example-workflow" class="md-nav__link">
-    <span class="md-ellipsis">
-      Example Workflow
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Tips
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1133,10 +863,32 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../recommendations/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Recommendations
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1147,6 +899,35 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      See Also
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1564,211 +1345,11 @@
   
 
 
-<h1 id="hugo-export-with-jinja-templates">Hugo Export with Jinja Templates<a class="headerlink" href="#hugo-export-with-jinja-templates" title="Permanent link">&para;</a></h1>
-<p>The ebk Hugo export now supports flexible organization and templating through Jinja2.</p>
-<h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Legacy export (flat structure)</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>/path/to/library<span class="w"> </span>/path/to/hugo-site
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># New Jinja-based export with organization options</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>/path/to/library<span class="w"> </span>/path/to/hugo-site<span class="w"> </span>--jinja<span class="w"> </span>--organize-by<span class="w"> </span>year
-</code></pre></div>
-<h2 id="organization-options">Organization Options<a class="headerlink" href="#organization-options" title="Permanent link">&para;</a></h2>
-<p>With the <code>--jinja</code> flag, you can organize your library in different ways:</p>
-<h3 id="flat-default">Flat (default)<a class="headerlink" href="#flat-default" title="Permanent link">&para;</a></h3>
-<p>All books in one directory:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>content/library/
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── _index.md
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── book-1-abc12345.md
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>├── book-2-def67890.md
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>└── ...
-</code></pre></div></p>
-<h3 id="by-year">By Year<a class="headerlink" href="#by-year" title="Permanent link">&para;</a></h3>
-<p><div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>/path/to/library<span class="w"> </span>/path/to/hugo-site<span class="w"> </span>--jinja<span class="w"> </span>--organize-by<span class="w"> </span>year
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>content/library/
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>├── _index.md
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>├── 2023/
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>│   ├── _index.md
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>│   └── book-1-abc12345.md
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>├── 2024/
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>│   ├── _index.md
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>│   └── book-2-def67890.md
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>└── unknown-year/
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    └── ...
-</code></pre></div></p>
-<h3 id="by-language">By Language<a class="headerlink" href="#by-language" title="Permanent link">&para;</a></h3>
-<p><div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>/path/to/library<span class="w"> </span>/path/to/hugo-site<span class="w"> </span>--jinja<span class="w"> </span>--organize-by<span class="w"> </span>language
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>content/library/
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>├── _index.md
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>├── en/
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>│   ├── _index.md
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>│   └── books...
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>├── es/
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>│   ├── _index.md
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>│   └── books...
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>└── ...
-</code></pre></div></p>
-<h3 id="by-subject">By Subject<a class="headerlink" href="#by-subject" title="Permanent link">&para;</a></h3>
-<p><div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>/path/to/library<span class="w"> </span>/path/to/hugo-site<span class="w"> </span>--jinja<span class="w"> </span>--organize-by<span class="w"> </span>subject
-</code></pre></div>
-Books appear in multiple subject directories if they have multiple subjects:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>content/library/
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>├── _index.md
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>├── fiction/
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>│   ├── _index.md
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>│   └── books...
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>├── science/
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>│   ├── _index.md
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>│   └── books...
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>└── ...
-</code></pre></div></p>
-<h3 id="by-creator">By Creator<a class="headerlink" href="#by-creator" title="Permanent link">&para;</a></h3>
-<p><div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>/path/to/library<span class="w"> </span>/path/to/hugo-site<span class="w"> </span>--jinja<span class="w"> </span>--organize-by<span class="w"> </span>creator
-</code></pre></div>
-Books appear under each of their creators:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>content/library/
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>├── _index.md
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>├── jane-doe/
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>│   ├── _index.md
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>│   └── books...
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>├── john-smith/
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>│   ├── _index.md
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>│   └── books...
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>└── ...
-</code></pre></div></p>
-<h2 id="custom-templates">Custom Templates<a class="headerlink" href="#custom-templates" title="Permanent link">&para;</a></h2>
-<p>You can provide your own Jinja2 templates:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>/path/to/library<span class="w"> </span>/path/to/hugo-site<span class="w"> </span>--jinja<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span>--template-dir<span class="w"> </span>/path/to/custom/templates
-</code></pre></div>
-<p>Your template directory should follow this structure:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>templates/
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>└── hugo/
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    ├── book.md      # Individual book page
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    ├── index.md     # Category index pages
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    └── library.md   # Main library index
-</code></pre></div></p>
-<h3 id="template-variables">Template Variables<a class="headerlink" href="#template-variables" title="Permanent link">&para;</a></h3>
-<h4 id="bookmd">book.md<a class="headerlink" href="#bookmd" title="Permanent link">&para;</a></h4>
+<h1 id="recommendations">Recommendations<a class="headerlink" href="#recommendations" title="Permanent link">&para;</a></h1>
+<p>Finding similar books and getting recommendations.</p>
+<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>book</code>: Dictionary with all metadata fields</li>
-<li><code>ebook_urls</code>: List of download URLs</li>
-<li><code>cover_url</code>: Cover image URL</li>
-</ul>
-<h4 id="indexmd">index.md<a class="headerlink" href="#indexmd" title="Permanent link">&para;</a></h4>
-<ul>
-<li><code>title</code>: Section title</li>
-<li><code>organize_by</code>: Organization method</li>
-<li><code>group_key</code>: Current group identifier</li>
-<li><code>books</code>: List of books in this section</li>
-<li><code>book_count</code>: Number of books</li>
-</ul>
-<h4 id="librarymd">library.md<a class="headerlink" href="#librarymd" title="Permanent link">&para;</a></h4>
-<ul>
-<li><code>title</code>: Library title</li>
-<li><code>books</code>: All books in the library</li>
-<li><code>stats</code>: Library statistics dictionary</li>
-</ul>
-<h2 id="hugo-configuration">Hugo Configuration<a class="headerlink" href="#hugo-configuration" title="Permanent link">&para;</a></h2>
-<p>To fully utilize the exported library, configure your Hugo site:</p>
-<h3 id="1-add-library-section">1. Add Library Section<a class="headerlink" href="#1-add-library-section" title="Permanent link">&para;</a></h3>
-<p>In <code>config.toml</code>:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">[[menu.main]]</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Library&quot;</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/library/&quot;</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="n">weight</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span>
-</code></pre></div></p>
-<h3 id="2-create-custom-layouts">2. Create Custom Layouts<a class="headerlink" href="#2-create-custom-layouts" title="Permanent link">&para;</a></h3>
-<p>Create <code>layouts/library/single.html</code> for book pages:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>{{ define &quot;main&quot; }}
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="p">&lt;</span><span class="nt">article</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;book-page&quot;</span><span class="p">&gt;</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>  <span class="p">&lt;</span><span class="nt">h1</span><span class="p">&gt;</span>{{ .Title }}<span class="p">&lt;/</span><span class="nt">h1</span><span class="p">&gt;</span>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>  {{ with .Params.cover_image }}
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>    <span class="p">&lt;</span><span class="nt">img</span> <span class="na">src</span><span class="o">=</span><span class="s">&quot;{{ . }}&quot;</span> <span class="na">alt</span><span class="o">=</span><span class="s">&quot;Book cover&quot;</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;book-cover&quot;</span><span class="p">&gt;</span>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>  {{ end }}
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;book-meta&quot;</span><span class="p">&gt;</span>
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>    {{ with .Params.creators_display }}
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>      <span class="p">&lt;</span><span class="nt">p</span><span class="p">&gt;</span>By {{ delimit . &quot;, &quot; }}<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
-<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>    {{ end }}
-<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>
-<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>    {{ with .Params.description }}
-<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>      <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;description&quot;</span><span class="p">&gt;</span>{{ . | markdownify }}<span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
-<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a>    {{ end }}
-<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a>  <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
-<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a>
-<a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a>  {{ with .Params.ebook_files }}
-<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a>    <span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;downloads&quot;</span><span class="p">&gt;</span>
-<a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a>      <span class="p">&lt;</span><span class="nt">h3</span><span class="p">&gt;</span>Download<span class="p">&lt;/</span><span class="nt">h3</span><span class="p">&gt;</span>
-<a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a>      {{ range . }}
-<a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a>        <span class="p">&lt;</span><span class="nt">a</span> <span class="na">href</span><span class="o">=</span><span class="s">&quot;{{ . }}&quot;</span> <span class="na">class</span><span class="o">=</span><span class="s">&quot;download-btn&quot;</span><span class="p">&gt;</span>Download<span class="p">&lt;/</span><span class="nt">a</span><span class="p">&gt;</span>
-<a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a>      {{ end }}
-<a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a>    <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
-<a id="__codelineno-13-26" name="__codelineno-13-26" href="#__codelineno-13-26"></a>  {{ end }}
-<a id="__codelineno-13-27" name="__codelineno-13-27" href="#__codelineno-13-27"></a><span class="p">&lt;/</span><span class="nt">article</span><span class="p">&gt;</span>
-<a id="__codelineno-13-28" name="__codelineno-13-28" href="#__codelineno-13-28"></a>{{ end }}
-</code></pre></div></p>
-<h3 id="3-style-your-library">3. Style Your Library<a class="headerlink" href="#3-style-your-library" title="Permanent link">&para;</a></h3>
-<p>Add CSS for the book grid and cards:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="p">.</span><span class="nc">book-grid</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="k">display</span><span class="p">:</span><span class="w"> </span><span class="k">grid</span><span class="p">;</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span><span class="k">grid-template-columns</span><span class="p">:</span><span class="w"> </span><span class="nf">repeat</span><span class="p">(</span><span class="kc">auto</span><span class="nv">-fill</span><span class="p">,</span><span class="w"> </span><span class="nf">minmax</span><span class="p">(</span><span class="mi">200</span><span class="kt">px</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="n">fr</span><span class="p">));</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span><span class="k">gap</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="kt">rem</span><span class="p">;</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="p">}</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="p">.</span><span class="nc">book-card</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">  </span><span class="k">border</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">px</span><span class="w"> </span><span class="kc">solid</span><span class="w"> </span><span class="mh">#ddd</span><span class="p">;</span>
-<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">  </span><span class="k">padding</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="kt">rem</span><span class="p">;</span>
-<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">  </span><span class="k">transition</span><span class="p">:</span><span class="w"> </span><span class="k">transform</span><span class="w"> </span><span class="mf">0.2</span><span class="kt">s</span><span class="p">;</span>
-<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="p">}</span>
-<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>
-<a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a><span class="p">.</span><span class="nc">book-card</span><span class="p">:</span><span class="nd">hover</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a><span class="w">  </span><span class="k">transform</span><span class="p">:</span><span class="w"> </span><span class="nb">translateY</span><span class="p">(</span><span class="mi">-5</span><span class="kt">px</span><span class="p">);</span>
-<a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a><span class="p">}</span>
-</code></pre></div></p>
-<h2 id="advanced-features">Advanced Features<a class="headerlink" href="#advanced-features" title="Permanent link">&para;</a></h2>
-<h3 id="filtering-and-search">Filtering and Search<a class="headerlink" href="#filtering-and-search" title="Permanent link">&para;</a></h3>
-<p>The exported structure supports Hugo's built-in taxonomy system. You can filter by:
-- Tags (from subjects)
-- Authors (from creators)
-- Years
-- Languages</p>
-<h3 id="multiple-views">Multiple Views<a class="headerlink" href="#multiple-views" title="Permanent link">&para;</a></h3>
-<p>Since books can appear in multiple categories (e.g., by subject AND by author), users can browse your library from different perspectives.</p>
-<h3 id="static-but-dynamic">Static but Dynamic<a class="headerlink" href="#static-but-dynamic" title="Permanent link">&para;</a></h3>
-<p>While Hugo generates static files, the organization allows for client-side filtering and search using JavaScript if desired.</p>
-<h2 id="example-workflow">Example Workflow<a class="headerlink" href="#example-workflow" title="Permanent link">&para;</a></h2>
-<ol>
-<li>
-<p>Import your Calibre library:
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>ebk<span class="w"> </span>import-calibre<span class="w"> </span>~/Calibre<span class="w"> </span>~/my-ebk-library
-</code></pre></div></p>
-</li>
-<li>
-<p>Export to Hugo with year organization:
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>hugo<span class="w"> </span>~/my-ebk-library<span class="w"> </span>~/my-hugo-site<span class="w"> </span>--jinja<span class="w"> </span>--organize-by<span class="w"> </span>year
-</code></pre></div></p>
-</li>
-<li>
-<p>Build and serve your Hugo site:
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nb">cd</span><span class="w"> </span>~/my-hugo-site
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>hugo<span class="w"> </span>serve
-</code></pre></div></p>
-</li>
-<li>
-<p>Visit <code>http://localhost:1313/library/</code> to browse your collection!</p>
-</li>
-</ol>
-<h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Use <code>--organize-by subject</code> for topic-based browsing</li>
-<li>Use <code>--organize-by creator</code> for author-centric libraries</li>
-<li>Combine with Hugo's search functionality for full-text search</li>
-<li>The unique_id in URLs ensures no conflicts even with duplicate titles</li>
-<li>Consider using Hugo's image processing for cover thumbnails</li>
+<li><a href="cli.md">CLI Reference</a> - Recommendation commands</li>
 </ul>
 
 
