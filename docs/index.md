@@ -1,32 +1,89 @@
 # ebk - eBook Library Manager
 
-Welcome to the ebk documentation! ebk is a lightweight and versatile tool for managing eBook metadata with a comprehensive fluent API and rich CLI.
+Welcome to the ebk documentation! ebk is a powerful eBook metadata management tool with SQLAlchemy + SQLite backend, comprehensive Python API, rich CLI, and AI-powered features.
 
 ## Key Features
 
+- 🗄️ **SQLAlchemy + SQLite Backend** - Robust database with full-text search (FTS5)
 - 📚 **Fluent Python API** - Comprehensive programmatic interface with method chaining
 - 🎨 **Rich CLI** - Beautiful terminal interface powered by Typer and Rich
-- 📥 **Multiple Import Sources** - Calibre, raw ebooks, ZIP archives
-- 🔍 **Advanced Search** - Regex, JMESPath, and fluent query builders
-- 📤 **Flexible Export** - Hugo sites, ZIP archives, symlink DAGs
-- 🤖 **Smart Recommendations** - Find similar books based on metadata
-- 🔗 **Optional Integrations** - Web UI, AI assistants, visualizations
+- 🌐 **Web Server** - FastAPI-based interface for browsing and managing your library
+- 🤖 **AI-Powered Enrichment** - Automatic metadata enhancement using LLMs
+- 📥 **Multiple Import Sources** - Calibre, raw ebooks, batch imports
+- 🔍 **Advanced Search** - Full-text search with FTS5 indexing
+- 📤 **Flexible Export** - Hugo sites, ZIP archives, JSON
+- 🔧 **Configuration System** - Centralized config at `~/.config/ebk/config.json`
+- 🏷️ **Personal Organization** - Tags, ratings, reading status, notes
 
 ## Quick Example
 
 ```python
-from ebk import Library
+from pathlib import Path
+from ebk.library_db import Library
 
-# Open a library and find Python books published after 2020
-lib = Library.open("~/ebooks")
+# Open library
+lib = Library.open(Path("~/ebooks"))
+
+# Fluent query interface
 recent_python = (lib.query()
-    .where("subjects", "Python", "contains")
-    .where("date", "2020", ">=")
-    .order_by("title")
-    .execute())
+    .filter_by_language("en")
+    .filter_by_subject("Python")
+    .order_by("publication_date", desc=True)
+    .limit(20)
+    .all())
 
-# Get recommendations based on your favorites
-recommendations = lib.recommend(based_on=["book_id_1", "book_id_2"])
+# Full-text search
+results = lib.search("machine learning algorithms")
+
+# Update reading status
+lib.update_reading_status(book_id=42, status="reading", rating=5)
+
+lib.close()
+```
+
+## New in Latest Version
+
+### Configuration System
+
+Centralized configuration at `~/.config/ebk/config.json`:
+
+```bash
+# Initialize configuration
+ebk config init
+
+# Set defaults
+ebk config set library.default_path ~/my-ebooks
+ebk config set server.port 8000
+ebk config set llm.model llama3.2
+```
+
+### LLM-Powered Features
+
+Enrich your library metadata using AI:
+
+```bash
+# Setup Ollama
+ollama pull llama3.2
+
+# Configure ebk
+ebk config set llm.provider ollama
+ebk config set llm.model llama3.2
+
+# Enrich metadata
+ebk enrich ~/library --generate-tags --categorize
+```
+
+### Web Server
+
+Browse your library with a modern web interface:
+
+```bash
+# Start server
+ebk serve ~/library
+
+# Or with auto-open
+ebk config set server.auto_open_browser true
+ebk serve ~/library
 ```
 
 ## Getting Started

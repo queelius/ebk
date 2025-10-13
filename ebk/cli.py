@@ -2,10 +2,12 @@ import os
 import sys
 import json
 import shutil
+import csv
 from pathlib import Path
 import logging
 import re
 from typing import List, Optional
+from datetime import datetime
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
@@ -13,8 +15,6 @@ from rich.progress import Progress
 from rich.prompt import Confirm
 from rich.traceback import install
 from rich.table import Table
-from rich import print_json as print_json_as_table
-from rich.json import JSON
 
 from .decorators import handle_library_errors
 from .ident import add_unique_id
@@ -44,7 +44,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Main app
 app = typer.Typer()
+
+# Command groups
+export_app = typer.Typer(help="Export library data to various formats")
+vlib_app = typer.Typer(help="Manage virtual libraries (collection views)")
+note_app = typer.Typer(help="Manage book annotations and notes")
+
+# Register command groups
+app.add_typer(export_app, name="export")
+app.add_typer(vlib_app, name="vlib")
+app.add_typer(note_app, name="note")
 
 @app.callback()
 def main(
@@ -52,1565 +63,68 @@ def main(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose mode"),
 ):
     """
-    ebk - A lightweight tool for managing eBook metadata.
+    ebk - eBook metadata management tool with SQLAlchemy + SQLite backend.
+
+    Manage your ebook library with full-text search, automatic text extraction,
+    and hash-based deduplication.
     """
     if verbose:
         logger.setLevel(logging.DEBUG)
         console.print("[bold green]Verbose mode enabled.[/bold green]")
 
-@app.command()
-def import_zip(
-    zip_file: str = typer.Argument(..., help="Path to the Zip file containing the ebk library"),
-    output_dir: str = typer.Option(None, "--output-dir", "-o", help="Output directory for the ebk library (default: <zip_file>_ebk)"),
-):
-    """
-    Import an ebk library from a Zip file.
-    """
-    output_dir = output_dir or f"{zip_file.rstrip('.zip')}"
-    with Progress(console=console) as progress:
-        task = progress.add_task("[cyan]Importing Zip file...", total=None)
-        try:
-            if Path(output_dir).exists():
-                output_dir = get_unique_filename(output_dir)
-            with progress:
-                shutil.unpack_archive(zip_file, output_dir)
-            progress.update(task, description="[green]Zip file imported successfully!")
-            logger.info(f"Zip file imported to {output_dir}")
-        except Exception as e:
-            progress.update(task, description="[red]Failed to import Zip file.")
-            logger.error(f"Error importing Zip file: {e}")
-        raise typer.Exit(code=1)
-        
-
-@app.command()
-def import_calibre(
-    calibre_dir: str = typer.Argument(..., help="Path to the Calibre library directory"),
-    output_dir: str = typer.Option(None, "--output-dir", "-o", help="Output directory for the ebk library (default: <calibre_dir>_ebk)")
-):
-    """
-    Import a Calibre library.
-
-    Args:
-        calibre_dir (str): Path to the Calibre library directory
-        output_dir (str): Output directory for the ebk library (default: <calibre_dir>_ebk)
-    """
-    output_dir = output_dir or f"{calibre_dir.rstrip('/')}-ebk"
-    with Progress(console=console) as progress:
-        task = progress.add_task("[cyan]Importing Calibre library...", total=None)
-        try:
-            # Create library with fluent API
-            lib = Library.create(output_dir)
-            
-            # Import using the library's method (to be implemented)
-            # For now, use the existing import function
-            calibre.import_calibre(calibre_dir, output_dir)
-            
-            progress.update(task, description="[green]Calibre library imported successfully!")
-            logger.info(f"Calibre library imported to {output_dir}")
-        except Exception as e:
-            progress.update(task, description="[red]Failed to import Calibre library.")
-            logger.error(f"Error importing Calibre library: {e}")
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def import_ebooks(
-    ebooks_dir: str = typer.Argument(..., help="Path to the directory containing ebook files"),
-    output_dir: str = typer.Option(None, "--output-dir", "-o", help="Output directory for the ebk library (default: <ebooks_dir>_ebk)"),
-    ebook_formats: List[str] = typer.Option(
-        ["pdf", "epub", "mobi", "azw3", "txt", "markdown", "html", "docx", "rtf", "djvu", "fb2", "cbz", "cbr"],
-        "--ebook-formats", "-f",
-        help="List of ebook formats to import"
-    )
-):
-    """
-    Recursively import a directory of ebooks. The metadata will be inferred from the file.
-    """
-    output_dir = output_dir or f"{ebooks_dir.rstrip('/')}-ebk"
-    with Progress(console=console) as progress:
-        progress.add_task("[cyan]Importing raw ebooks...", total=None)
-        try:
-            # Create library with fluent API
-            lib = Library.create(output_dir)
-            
-            # Import using the existing function for now
-            ebooks.import_ebooks(ebooks_dir, output_dir, ebook_formats)
-        except Exception as e:
-            logger.error(f"Error importing raw ebooks: {e}")
-        raise typer.Exit(code=1)
-
-@app.command()
-@handle_library_errors
-def export(
-    format: str = typer.Argument(..., help="Export format (e.g., 'hugo', 'zip')"),
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to export"),
-    destination: Optional[str] = typer.Argument(None, help="Destination path"),
-    organize_by: str = typer.Option("flat", "--organize-by", "-o", 
-                                   help="For Hugo: organize by 'flat', 'year', 'language', 'subject', or 'creator'"),
-    template_dir: Optional[str] = typer.Option(None, "--template-dir", "-t",
-                                              help="Custom template directory for Jinja-based exports"),
-    use_jinja: bool = typer.Option(False, "--jinja", "-j",
-                                  help="Use Jinja2 template system for Hugo export")
-):
-    """
-    Export the ebk library to the specified format.
-    
-    Formats:
-    - zip: Create a ZIP archive of the library
-    - hugo: Export for Hugo static site (supports --jinja for flexible layouts)
-    
-    Hugo organization options (with --jinja):
-    - flat: All books in one directory (default)
-    - year: Organize by publication year
-    - language: Organize by language
-    - subject: Organize by subject/tag
-    - creator: Organize by author/creator
-    """
-    format = format.lower()
-    
-    lib = Library.open(lib_dir)
-    
-    if format == "zip":
-        # Determine the destination filename
-        if destination:
-            dest_path = Path(destination)
-            if dest_path.exists():
-                console.print(f"[yellow]Destination '{destination}' already exists. Finding an available filename...[/yellow]")
-                dest_str = get_unique_filename(destination)
-                dest_path = Path(dest_str)
-                console.print(f"[green]Using '{dest_path.name}' as the destination.[/green]")
-        else:
-            dest_str = get_unique_filename(lib_dir + ".zip")
-            dest_path = Path(dest_str)
-            console.print(f"[bold]No destination provided[/bold]. Using default [bold green]{dest_path.name}.[/bold green]")
-
-        with Progress(console=console) as progress:
-            task = progress.add_task("[cyan]Exporting to Zip...", total=None)
-            try:
-                lib.export_to_zip(str(dest_path))
-                progress.update(task, description="[green]Exported to Zip successfully!")
-                console.print(f"[bold green]Exported library to '{dest_path}'.[/bold green]")
-            except Exception as e:
-                progress.update(task, description="[red]Failed to export to Zip.")
-                logger.error(f"Error exporting to Zip: {e}")
-                console.print(f"[bold red]Failed to export to Zip: {e}[/bold red]")
-            raise typer.Exit(code=1)
-    
-    elif format == "hugo":
-        if not destination:
-            console.print(f"[red]Destination directory is required for 'hugo' export format.[/red]")
-        raise typer.Exit(code=1)
-        
-        dest_path = Path(destination)
-        if not dest_path.exists():
-            try:
-                dest_path.mkdir(parents=True, exist_ok=True)
-                console.print(f"[green]Created destination directory '{destination}'.[/green]")
-            except Exception as e:
-                console.print(f"[red]Failed to create destination directory '{destination}': {e}[/red]")
-            raise typer.Exit(code=1)
-        elif not dest_path.is_dir():
-            console.print(f"[red]Destination '{destination}' exists and is not a directory.[/red]")
-        raise typer.Exit(code=1)
-
-        with Progress(console=console) as progress:
-            if use_jinja:
-                task = progress.add_task(f"[cyan]Exporting to Hugo with Jinja (organize by {organize_by})...", total=None)
-                try:
-                    lib.export_to_hugo(str(dest_path), organize_by=organize_by)
-                    progress.update(task, description="[green]Exported to Hugo with Jinja successfully!")
-                    logger.info(f"Library exported to Hugo at {dest_path} (organized by {organize_by})")
-                    console.print(f"[bold green]Exported library to Hugo directory '{dest_path}' (organized by {organize_by}).[/bold green]")
-                except Exception as e:
-                    progress.update(task, description="[red]Failed to export to Hugo.")
-                    logger.error(f"Error exporting to Hugo with Jinja: {e}")
-                    console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
-                raise typer.Exit(code=1)
-            else:
-                task = progress.add_task("[cyan]Exporting to Hugo (legacy)...", total=None)
-                try:
-                    # Use legacy export for non-jinja
-                    export_hugo(str(lib.path), str(dest_path))
-                    progress.update(task, description="[green]Exported to Hugo successfully!")
-                    logger.info(f"Library exported to Hugo at {dest_path}")
-                    console.print(f"[bold green]Exported library to Hugo directory '{dest_path}'.[/bold green]")
-                    console.print("[yellow]Tip: Use --jinja for more flexible export options![/yellow]")
-                except Exception as e:
-                    progress.update(task, description="[red]Failed to export to Hugo.")
-                    logger.error(f"Error exporting to Hugo: {e}")
-                    console.print(f"[bold red]Failed to export to Hugo: {e}[/bold red]")
-                raise typer.Exit(code=1)
-
-    else:
-        console.print(f"[red]Unsupported export format: '{format}'. Supported formats are 'zip' and 'hugo'.[/red]")
-        raise typer.Exit(code=1)
-    
-@app.command()
-def show_index(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to display"),
-    indices: list[int] = typer.Argument(..., help="Index of the entry to display"),
-    output_json: bool = typer.Option(False, "--json", help="Output as JSON")
-):
-    """
-    Display the index of the ebk library.
-
-    Args:
-    lib_dir (str): Path to the ebk library directory to display
-    index (int): Index of the entry to display
-
-
-    Raises:
-    typer.Exit: If the library directory is invalid or the index is out of range
-    """
-    try:
-        lib = Library.open(lib_dir)
-        
-        # Use library's get_by_indices method with validation
-        entries = lib.get_by_indices(indices)
-        
-        for entry in entries:
-            if output_json:
-                console.print_json(json.dumps(entry.to_dict(), indent=2))
-            else:
-                # Create a table
-                table = Table(title="ebk Ebook Entry", show_lines=True)
-
-                # Add column headers dynamically based on JSON keys
-                data = entry.to_dict()
-                columns = data.keys()
-                for column in columns:
-                    table.add_column(column, justify="center", style="bold cyan")
-
-                # Add single row for this entry
-                table.add_row(*(str(data[col]) for col in columns))
-
-                # Print the table
-                console.print(table)
-    except IndexError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
-        raise typer.Exit(code=1)
-
-
 
 @app.command()
 def about():
-    """
-    Display information about ebk.
-    """
-    
-    console.print("[bold green]Welcome to ebk![/bold green]\n")
-    console.print("A lightweight and efficient tool for managing eBook metadata.\n")
-    console.print("[bold]Usage:[/bold]")
-    console.print("  - Run [bold]ebk --help[/bold] for general help.")
-    console.print("  - Use [bold]ebk <command> --help[/bold] for detailed command-specific help.\n")
-    console.print("[bold]More Information:[/bold]")
-    console.print("  📖 GitHub: [link=https://github.com/queelius/ebk]github.com/queelius/ebk[/link]")
-    console.print("  🌐 Website: [link=https://metafunctor.com]metafunctor.com[/link]")
-    console.print("  📧 Contact: [link=mailto:lex@metafunctor.com]lex@metafunctor.com[/link]\n")
-    console.print("Developed by [bold]Alex Towell[/bold]. Enjoy using ebk! 🚀")
-    
-@app.command()
-def merge(
-    operation: str = typer.Argument(..., help="Set-theoretic operation to apply (union, intersect, diff, symdiff)"),
-    output_dir: str = typer.Argument(..., help="Output directory for the merged ebk library"),
-    libs: List[str] = typer.Argument(..., help="Paths to the source ebk library directories", min=2)
-):
-    """
-    Merge multiple ebk libraries using set-theoretic operations.
-
-    Args:
-        operation (str): Set-theoretic operation to apply (union, intersect, diff, symdiff)
-        output_dir (str): Output directory for the merged ebk library
-        libs (List[str]): Paths to the source ebk library directories
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the index is out of range
-    
-    Output:
-        Merges the specified libraries using the set-theoretic operation and saves the result in the output directory.
-    """
-    with Progress(console=console) as progress:
-        task = progress.add_task(f"[cyan]Merging libraries with operation '{operation}'...", total=None)
-        try:
-            # Load first library
-            merged = Library.open(libs[0])
-            
-            # Apply operation with remaining libraries
-            for lib_path in libs[1:]:
-                other = Library.open(lib_path)
-                if operation == "union":
-                    merged = merged.union(other)
-                elif operation == "intersect":
-                    merged = merged.intersect(other)
-                elif operation == "diff":
-                    merged = merged.difference(other)
-                elif operation == "symdiff":
-                    merged = merged.merge(other, operation="symdiff")
-                else:
-                    raise ValueError(f"Unknown operation: {operation}")
-            
-            # Save to output directory
-            output = Library.create(output_dir)
-            output._entries = merged._entries
-            output.save()
-            
-            # Copy files from merged entries
-            for entry in output._entries:
-                # Find source library containing this entry
-                for lib_path in libs:
-                    src_lib = Library.open(lib_path)
-                    if any(e.get("unique_id") == entry.get("unique_id") for e in src_lib._entries):
-                        # Copy files from this library
-                        for file_path in entry.get("file_paths", []):
-                            src_file = src_lib.path / file_path
-                            if src_file.exists():
-                                shutil.copy2(src_file, output.path / file_path)
-                        if entry.get("cover_path"):
-                            src_cover = src_lib.path / entry["cover_path"]
-                            if src_cover.exists():
-                                shutil.copy2(src_cover, output.path / entry["cover_path"])
-                        break
-            
-            progress.update(task, description=f"[green]Libraries merged into {output_dir}")
-            console.print(f"[bold green]Libraries merged with operation '{operation}' into {output_dir}[/bold green]")
-        except Exception as e:
-            progress.update(task, description="[red]Failed to merge libraries.")
-            logger.error(f"Error merging libraries: {e}")
-            console.print(f"[bold red]Failed to merge libraries: {e}[/bold red]")
-        raise typer.Exit(code=1)
-
-@app.command()
-@handle_library_errors
-def stats(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to get stats"),
-    keywords: List[str] = typer.Option(
-        ["python", "data", "machine learning"],
-        "--keywords",
-        "-k",
-        help="Keywords to search for in titles"
-    )
-):
-    """
-    Get statistics about the ebk library.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to get stats
-        keywords (List[str]): Keywords to search for in titles
-
-    Raises:
-        typer.Exit: If the library directory is invalid
-    
-    Output:
-        Prints the statistics about the library.
-    """
-    lib = Library.open(lib_dir)
-    stats = lib.stats()
-    
-    # Add keyword counts
-    keyword_counts = {}
-    for keyword in keywords:
-        count = len(lib.search(keyword, fields=["title"]))
-        keyword_counts[keyword] = count
-    stats["keyword_counts"] = keyword_counts
-    
-    console.print_json(json.dumps(stats, indent=2))
-    
-@app.command()
-@handle_library_errors
-def list_indices(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to list"),
-    indices: List[int] = typer.Argument(..., help="Indices of entries to list"),
-    output_json: bool = typer.Option(False, "--json", help="Output as JSON"),
-    detailed: bool = typer.Option(False, "--detailed", "-d", help="Show detailed information")):
-    """
-    List the entries in the ebk library directory by index.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to list
-        indices (List[int]): Indices of entries to list
-        output_json (bool): Output as JSON
-        detailed (bool): Show detailed information
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the index is out of range
-    
-    Output:
-        Prints the list of entries in the library directory.
-    """
-    lib = Library.open(lib_dir)
-
-    try:
-        # Use library's get_by_indices method with validation
-        entries = lib.get_by_indices(indices)
-
-        if output_json:
-            data = [e.to_dict() for e in entries]
-            console.print_json(json.dumps(data, indent=2))
-        else:
-            # Convert to legacy format for enumerate_ebooks
-            entry_data = [e._data for e in entries]
-            enumerate_ebooks(entry_data, lib.path, indices, detailed)
-    except IndexError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def list(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to list"),
-    output_json: bool = typer.Option(False, "--json", "-j",  help="Output as JSON")):
-    """
-    List the entries in the ebk library directory.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to list
-        output_json (bool): Output as JSON
-
-    Raises:
-        typer.Exit: If the library directory is invalid
-    
-    Output:
-        Prints the list of entries in the library directory.
-    """
-    
-    lib = Library.open(lib_dir)
-    if output_json:
-        # Use to_dict() for proper serialization
-        data = [entry.to_dict() for entry in lib]
-        console.print_json(json.dumps(data, indent=2))
-    else:
-        # Use internal _entries for legacy enumerate_ebooks function
-        enumerate_ebooks(lib._entries, lib.path)
-
-
-@app.command()
-@handle_library_errors
-def add(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
-    json_file: str = typer.Option(None, "--json", help="JSON file containing entry info to add"),
-    title: str = typer.Option(None, "--title", help="Title of the entry to add"),
-    creators: List[str] = typer.Option(None, "--creators", help="Creators of the entry to add"),
-    ebooks: List[str] = typer.Option(None, "--ebooks", help="Paths to the ebook files to add"),
-    cover: str = typer.Option(None, "--cover", help="Path to the cover image to add")
-):
-    """
-    Add entries to the ebk library.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to modify
-        json_file (str): Path to a JSON file containing entry info to add
-        title (str): Title of the entry to add
-        creators (List[str]): Creators of the entry to add
-        ebooks (List[str]): Paths to the ebook files to add
-        cover (str): Path to the cover image to add
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the entry is invalid
-    
-    Output:
-        Adds the specified entry to the library and updates the metadata file in-place.
-    """
-    lib = Library.open(lib_dir)
-    console.print(f"Loaded [bold]{len(lib)}[/bold] entries from [green]{lib_dir}[/green]")
-    
-    if json_file:
-        with open(json_file, "r") as f:
-            new_entries = json.load(f)
-        lib.add_entries(new_entries)
-        console.print(f"[green]Added {len(new_entries)} entries from {json_file}[/green]")
-    else:
-        if not title or not creators:
-            console.print("[red]Title and creators are required when not using a JSON file.[/red]")
-        raise typer.Exit(code=1)
-        
-        # Copy files first if provided
-        file_paths = []
-        cover_path = None
-        
-        with Progress(console=console) as progress:
-            if ebooks:
-                task = progress.add_task("[cyan]Copying ebook files...", total=len(ebooks))
-                for ebook in ebooks:
-                    filename = Path(ebook).name
-                    dest_path = Path(lib_dir) / filename
-                    shutil.copy(ebook, dest_path)
-                    file_paths.append(filename)
-                    progress.advance(task)
-                    logger.debug(f"Copied ebook file: {ebook}")
-                    
-            if cover:
-                task = progress.add_task("[cyan]Copying cover image...", total=1)
-                cover_filename = Path(cover).name
-                cover_dest = Path(lib_dir) / cover_filename
-                shutil.copy(cover, cover_dest)
-                cover_path = cover_filename
-                progress.advance(task)
-                logger.debug(f"Copied cover image: {cover}")
-        
-        entry = lib.add_entry(
-            title=title,
-            creators=creators,
-            file_paths=file_paths,
-            cover_path=cover_path
-        )
-        console.print(f"Adding new entry: [bold]{entry.title}[/bold]")
-    
-    lib.save()
-    console.print(f"[bold green]Successfully added entries to the library.[/bold green]")
-    
-
-
-@app.command()
-@handle_library_errors
-def remove(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
-    regex: str = typer.Argument(..., help="Regex search expression to remove entries"),
-    force: bool = typer.Option(False, "--force", help="Force removal without confirmation"),
-    apply_to: List[str] = typer.Option(
-        ["title"],
-        "--apply-to",
-        help="Apply the removal to ebooks, covers, or all files",
-        show_default=True
-    )
-):
-    """
-    Remove entries from the ebk library.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to modify
-        regex (str): Regex search expression to remove entries
-        force (bool): Force removal without confirmation
-        apply_to (List[str]): Apply the removal to ebooks, covers, or all files
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the index is out of range
-    
-    Output:
-        Removed entries from the library directory and associated files in-place.
-    """
-    lib = Library.open(lib_dir)
-    console.print(f"Loaded [bold]{len(lib)}[/bold] entries from [green]{lib_dir}[/green]")
-    
-    # Find matching entries
-    matches = []
-    for field in apply_to:
-        results = lib.search(regex, fields=[field])
-        matches.extend(results)
-    
-    # Remove duplicates by unique_id
-    seen_ids = set()
-    unique_matches = []
-    for entry in matches:
-        if entry.id not in seen_ids:
-            seen_ids.add(entry.id)
-            unique_matches.append(entry)
-    
-    if not unique_matches:
-        console.print("[yellow]No matching entries found for removal.[/yellow]")
-        return
-    
-    console.print(f"[yellow]Found {len(unique_matches)} entries matching the regex '{regex}':[/yellow]")
-    enumerate_ebooks([e._data for e in unique_matches], lib.path)
-    
-    if not force:
-        confirm = Confirm.ask(f"[bold red]Are you sure you want to remove {len(unique_matches)} entries?[/bold red]")
-        if not confirm:
-            console.print("[green]Removal cancelled.[/green]")
-            return
-    
-    # Remove associated files and entries
-    for entry in unique_matches:
-        # Remove ebook files
-        for file_path in entry.get('file_paths', []):
-            full_path = lib.path / file_path
-            if full_path.exists():
-                full_path.unlink()
-                logger.info(f"Removed ebook file: {full_path}")
-        
-        # Remove cover image
-        if entry.get('cover_path'):
-            cover_path = lib.path / entry.get('cover_path')
-            if cover_path.exists():
-                cover_path.unlink()
-                logger.info(f"Removed cover image: {cover_path}")
-        
-        # Remove from library
-        lib.remove(entry.id)
-    
-    lib.save()
-    console.print(f"[bold green]Removed {len(unique_matches)} entries from the library.[/bold green]")
-    
-
-
-@app.command()
-@handle_library_errors
-def remove_index(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
-    indices: List[int] = typer.Argument(..., help="Indices of entries to remove")
-):
-    """
-    Remove entries from the ebk library by index.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to modify
-        indices (List[int]): Indices of entries to remove
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the index is out of range
-    
-    Output:
-        Removes the specified entries from the library.
-    """
-    lib = Library.open(lib_dir)
-    
-    # Validate indices
-    total_books = len(lib)
-    for index in indices:
-        if index < 0 or index >= total_books:
-            console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
-        raise typer.Exit(code=1)
-    
-    # Get entries to remove
-    entries_to_remove = [lib[i] for i in indices]
-    
-    console.print(f"[yellow]Removing {len(entries_to_remove)} entries:[/yellow]")
-    for entry in entries_to_remove:
-        console.print(f"  - {entry.title}")
-    
-    # Remove files and entries
-    for entry in entries_to_remove:
-        # Remove ebook files
-        for file_path in entry.get('file_paths', []):
-            full_path = lib.path / file_path
-            if full_path.exists():
-                full_path.unlink()
-        
-        # Remove cover image
-        if entry.get('cover_path'):
-            cover_path = lib.path / entry.get('cover_path')
-            if cover_path.exists():
-                cover_path.unlink()
-        
-        # Remove from library
-        lib.remove(entry.id)
-    
-    lib.save()
-    console.print(f"[bold green]Removed {len(entries_to_remove)} entries.[/bold green]")
-    
-
-
-@app.command()
-@handle_library_errors
-def remove_id(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
-    unique_id: str = typer.Argument(..., help="Unique ID of the entry to remove")
-):
-    """
-    Remove an entry from the ebk library by unique ID.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to modify
-        unique_id (str): Unique ID of the entry to remove
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the ID is not found
-    
-    Output:
-        Removes the specified entry from the library.
-    """
-    lib = Library.open(lib_dir)
-    
-    # Find entry with unique ID
-    entry_to_remove = lib.find(unique_id)
-    
-    if not entry_to_remove:
-        console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
-        raise typer.Exit(code=1)
-    
-    console.print(f"[yellow]Removing entry: {entry_to_remove.title}[/yellow]")
-    
-    # Remove files
-    for file_path in entry_to_remove.get('file_paths', []):
-        full_path = lib.path / file_path
-        if full_path.exists():
-            full_path.unlink()
-    
-    if entry_to_remove.get('cover_path'):
-        cover_path = lib.path / entry_to_remove.get('cover_path')
-        if cover_path.exists():
-            cover_path.unlink()
-    
-    # Remove from library
-    lib.remove(unique_id)
-    lib.save()
-    
-    console.print(f"[bold green]Removed entry with ID: {unique_id}[/bold green]")
-    
-
-
-@app.command()
-@handle_library_errors
-def update_index(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
-    index: int = typer.Argument(..., help="Index of the entry to update"),
-    title: str = typer.Option(None, "--title", help="New title"),
-    creators: List[str] = typer.Option(None, "--creators", help="New creators"),
-    ebooks: List[str] = typer.Option(None, "--ebooks", help="New ebook file paths"),
-    cover: str = typer.Option(None, "--cover", help="New cover image path")
-):
-    """
-    Update an entry in the ebk library by index.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to modify
-        index (int): Index of the entry to update
-        title (str): New title
-        creators (List[str]): New creators
-        ebooks (List[str]): New ebook file paths
-        cover (str): New cover image path
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the index is out of range
-    
-    Output:
-        Updates the specified entry in the library.
-    """
-    lib = Library.open(lib_dir)
-    
-    total_books = len(lib)
-    if index < 0 or index >= total_books:
-        console.print(f"[red]Index {index} is out of range (0-{total_books - 1}).[/red]")
-        raise typer.Exit(code=1)
-    
-    entry = lib[index]
-    
-    # Update fields if provided
-    if title:
-        entry.title = title
-    if creators:
-        entry.creators = creators
-    if ebooks:
-        entry.set("file_paths", ebooks)
-    if cover:
-        entry.set("cover_path", cover)
-    
-    lib.save()
-    console.print(f"[bold green]Updated entry at index {index}.[/bold green]")
-    
-
-
-@app.command()
-@handle_library_errors
-def update_id(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to modify"),
-    unique_id: str = typer.Argument(..., help="Unique ID of the entry to update"),
-    title: str = typer.Option(None, "--title", help="New title"),
-    creators: List[str] = typer.Option(None, "--creators", help="New creators"),
-    ebooks: List[str] = typer.Option(None, "--ebooks", help="New ebook file paths"),
-    cover: str = typer.Option(None, "--cover", help="New cover image path")
-):
-    """
-    Update an entry in the ebk library by unique ID.
-
-    Args:
-        lib_dir (str): Path to the ebk library directory to modify
-        unique_id (str): Unique ID of the entry to update
-        title (str): New title
-        creators (List[str]): New creators
-        ebooks (List[str]): New ebook file paths
-        cover (str): New cover image path
-
-    Raises:
-        typer.Exit: If the library directory is invalid or the ID is not found
-    
-    Output:
-        Updates the specified entry in the library.
-    """
-    lib = Library.open(lib_dir)
-    
-    # Find entry
-    entry = lib.find(unique_id)
-    if not entry:
-        console.print(f"[red]No entry found with unique ID: {unique_id}[/red]")
-        raise typer.Exit(code=1)
-    
-    # Update fields if provided
-    if title:
-        entry.title = title
-    if creators:
-        entry.creators = creators
-    if ebooks:
-        entry.set("file_paths", ebooks)
-    if cover:
-        entry.set("cover_path", cover)
-    
-    lib.save()
-    console.print(f"[bold green]Updated entry with ID: {unique_id}[/bold green]")
-    
-
-
-@app.command()
-@handle_library_errors
-def search(
-    expression: str = typer.Argument(..., help="Search expression (regex or JMESPath)"),
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory to search"),
-    jmespath: bool = typer.Option(False, "--jmespath", help="Use JMESPath query instead of regex"),
-    output_json: bool = typer.Option(False, "--json", help="Output as JSON"),
-    regex_fields: List[str] = typer.Option(
-        ["title"],
-        "--regex-fields",
-        help="Fields to apply regex search to",
-        show_default=True
-    )
-):
-    """
-    Search the ebk library using regex or JMESPath.
-
-    Args:
-        expression (str): Search expression (regex or JMESPath)
-        lib_dir (str): Path to the ebk library directory to search
-        jmespath (bool): Use JMESPath query instead of regex
-        output_json (bool): Output as JSON
-        regex_fields (List[str]): Fields to apply regex search to (for regex mode)
-
-    Raises:
-        typer.Exit: If the library directory is invalid
-    
-    Output:
-        Displays matching entries from the library.
-    """
-    lib = Library.open(lib_dir)
-    
-    if jmespath:
-        # Use JMESPath query
-        results = lib.query().jmespath(expression).execute()
-    else:
-        # Use simple search for regex across fields
-        results = lib.search(expression, fields=regex_fields)
-        # Convert Entry objects to dicts for compatibility
-        results = [entry._data for entry in results]
-    
-    if not results:
-        console.print(f"[yellow]No entries found matching '{expression}'.[/yellow]")
-        return
-    
-    console.print(f"[green]Found {len(results)} matching entries.[/green]")
-    
-    if output_json:
-        console.print_json(json.dumps(results, indent=2))
-    else:
-        enumerate_ebooks(results, lib.path)
-    
-
-
-
-
-@app.command()
-@handle_library_errors
-def export_dag(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    output_dir: str = typer.Argument(..., help="Output directory for the symlink DAG structure"),
-    tag_field: str = typer.Option("subjects", "--tag-field", "-t", help="Field to use for tags (e.g., subjects, creators)"),
-    include_files: bool = typer.Option(False, "--copy-files/--no-copy", help="Copy actual ebook files (default: no-copy)"),
-    create_index: bool = typer.Option(True, "--create-index/--no-index", help="Create HTML index files"),
-    flatten: bool = typer.Option(False, "--flatten", help="Create direct symlinks to files instead of _books structure"),
-    min_books: int = typer.Option(0, "--min-books", "-m", help="Minimum books per tag folder (smaller tags go to _misc)")
-):
-    """
-    Export library as a navigable directory structure using symlinks.
-    
-    This creates a filesystem view where:
-    - Tags become directories in a hierarchy
-    - Books appear in relevant tag directories via symlinks
-    - The DAG structure of hierarchical tags is preserved
-    
-    Example:
-        ebk export-dag /path/to/library /path/to/output
-        
-    With hierarchical tags like "Programming/Python/Web", creates:
-        Programming/
-          Python/
-            Web/
-              (books tagged with Programming/Python/Web)
-            (books tagged with Programming/Python)
-          (books tagged with Programming)
-    """
-    lib = Library.open(lib_dir)
-    
-    with Progress(console=console) as progress:
-        task = progress.add_task("[cyan]Creating symlink DAG structure...", total=None)
-        
-        lib.export_to_symlink_dag(
-            output_dir,
-            tag_field=tag_field,
-            include_files=include_files,
-            create_index=create_index,
-            flatten=flatten,
-            min_books=min_books
-        )
-        
-        progress.update(task, description="[green]Symlink DAG created successfully!")
-        
-    console.print(f"[bold green]Created navigable library structure at: {output_dir}[/bold green]")
-    console.print(f"\n[yellow]You can now:[/yellow]")
-    console.print(f"  • Navigate with your file explorer")
-    console.print(f"  • Use command line: cd {output_dir}")
-    if create_index:
-        console.print(f"  • Open in browser: file://{Path(output_dir).absolute()}/index.html")
-    
-
-
-
-@app.command()
-@handle_library_errors
-def export_multi(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    output_dir: str = typer.Argument(..., help="Output directory for the multi-faceted view"),
-    facets: Optional[List[str]] = typer.Option(
-        None, "--facet", "-f", 
-        help="Facets to include (format: 'DisplayName:field'), e.g., 'Authors:creators'"
-    ),
-    include_files: bool = typer.Option(False, "--copy-files/--no-copy", help="Copy actual ebook files (default: no-copy)"),
-    create_index: bool = typer.Option(True, "--create-index/--no-index", help="Create HTML index file")
-):
-    """
-    Export library with multi-faceted navigation interface.
-    
-    Creates a modern web interface with:
-    - Sidebar navigation for multiple facets (subjects, authors, etc.)
-    - Real-time search and filtering
-    - Pagination for large libraries
-    - Grid and list views
-    
-    Example:
-        ebk export-multi /path/to/library /path/to/output
-        
-        # Custom facets
-        ebk export-multi library/ output/ -f "Topics:subjects" -f "Writers:creators" -f "Years:date"
-    """
-    try:
-        # Parse custom facets if provided
-        custom_facets = None
-        if facets:
-            custom_facets = {}
-            for facet in facets:
-                if ':' in facet:
-                    display_name, field_name = facet.split(':', 1)
-                    custom_facets[display_name] = field_name
-                else:
-                    console.print(f"[yellow]Warning: Invalid facet format '{facet}', skipping[/yellow]")
-        
-        # Import here to avoid circular imports
-        from ebk.exports.multi_facet_export import MultiFacetExporter
-        
-        lib = Library.open(lib_dir)
-        
-        with Progress(console=console) as progress:
-            task = progress.add_task("[cyan]Creating multi-faceted export...", total=None)
-            
-            exporter = MultiFacetExporter(facets=custom_facets)
-            exporter.export(
-                Path(lib_dir),
-                Path(output_dir),
-                include_files=include_files,
-                create_index=create_index
-            )
-            
-            progress.update(task, description="[green]Multi-faceted export created successfully!")
-            
-        console.print(f"[bold green]Created multi-faceted view at: {output_dir}[/bold green]")
-        console.print(f"\n[yellow]You can now:[/yellow]")
-        console.print(f"  • Open in browser: file://{Path(output_dir).absolute()}/index.html")
-        console.print(f"  • Navigate by subjects, authors, and more")
-        console.print(f"  • Search and filter in real-time")
-    
-    except FileNotFoundError:
-        console.print(f"[bold red]Error:[/bold red] The library directory '{lib_dir}' does not exist.")
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error(f"Error creating multi-faceted export: {e}")
-        console.print(f"[bold red]Failed to create export: {e}[/bold red]")
-        raise typer.Exit(code=1)
-
-
-@app.command()
-@handle_library_errors
-def rate(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    entry_id: str = typer.Argument(..., help="Entry ID or title pattern to rate"),
-    rating: float = typer.Argument(..., help="Rating (0-5 stars)"),
-):
-    """Rate a book in your library."""
-    lib = Library.open(lib_dir)
-    
-    # Find entry by ID or title
-    entry = lib.get(entry_id)
-    if not entry:
-        # Try to find by title pattern
-        results = lib.query().where_title_contains(entry_id).execute()
-        if not results:
-            console.print(f"[red]No entry found matching '{entry_id}'[/red]")
-            raise typer.Exit(code=1)
-        elif len(results) > 1:
-            console.print(f"[yellow]Multiple entries found:[/yellow]")
-            for e in results[:5]:
-                console.print(f"  • {e['unique_id']}: {e.get('title', 'Unknown')}")
-            console.print("[yellow]Please use a more specific ID[/yellow]")
-            raise typer.Exit(code=1)
-        entry = Entry(results[0], lib)
-    
-    entry.rate(rating)
-    console.print(f"[green]✓[/green] Rated '{entry.title}' with {rating} stars")
-
-
-@app.command()
-@handle_library_errors
-def comment(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    entry_id: str = typer.Argument(..., help="Entry ID or title pattern"),
-    text: str = typer.Argument(..., help="Comment text"),
-):
-    """Add a comment to a book."""
-    lib = Library.open(lib_dir)
-
-    # Find entry
-    entry = lib.get(entry_id)
-    if not entry:
-        results = lib.query().where_title_contains(entry_id).execute()
-        if not results:
-            console.print(f"[red]No entry found matching '{entry_id}'[/red]")
-            raise typer.Exit(code=1)
-        elif len(results) > 1:
-            console.print(f"[yellow]Multiple entries found. Please be more specific.[/yellow]")
-            raise typer.Exit(code=1)
-        entry = Entry(results[0], lib)
-
-    entry.comment(text)
-    console.print(f"[green]✓[/green] Added comment to '{entry.title}'")
-
-
-@app.command()
-@handle_library_errors
-def mark(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    entry_id: str = typer.Argument(..., help="Entry ID or title pattern"),
-    status: str = typer.Argument(..., help="Status: read, reading, unread, abandoned"),
-    progress: Optional[int] = typer.Option(None, "--progress", "-p", help="Reading progress (0-100)"),
-):
-    """Mark reading status of a book."""
-    lib = Library.open(lib_dir)
-
-    # Find entry
-    entry = lib.get(entry_id)
-    if not entry:
-        results = lib.query().where_title_contains(entry_id).execute()
-        if not results:
-            console.print(f"[red]No entry found matching '{entry_id}'[/red]")
-            raise typer.Exit(code=1)
-        elif len(results) > 1:
-            console.print(f"[yellow]Multiple entries found. Please be more specific.[/yellow]")
-            raise typer.Exit(code=1)
-        entry = Entry(results[0], lib)
-    
-    # Apply status
-    if status == "read":
-        entry.mark_read(progress)
-    elif status == "reading":
-        entry.mark_reading(progress)
-    elif status == "unread":
-        entry.mark_unread()
-    elif status == "abandoned":
-        entry.mark_abandoned(progress)
-    else:
-        console.print(f"[red]Invalid status: {status}[/red]")
-        console.print("Valid statuses: read, reading, unread, abandoned")
-        raise typer.Exit(code=1)
-    
-    progress_str = f" ({progress}%)" if progress is not None else ""
-    console.print(f"[green]✓[/green] Marked '{entry.title}' as {status}{progress_str}")
-
-
-@app.command()
-@handle_library_errors
-def personal_stats(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-):
-    """Show personal library statistics."""
-    lib = Library.open(lib_dir)
-    stats = lib.personal.get_statistics()
-    
-    console.print("[bold]Personal Library Statistics[/bold]\n")
-    
-    # Reading status
-    total_tracked = (stats["total_read"] + stats["total_reading"] + 
-                    stats["total_unread"] + stats["total_abandoned"])
-    
-    if total_tracked > 0:
-        console.print("[cyan]Reading Status:[/cyan]")
-        console.print(f"  📚 Read: {stats['total_read']}")
-        console.print(f"  📖 Currently Reading: {stats['total_reading']}")
-        console.print(f"  📘 Unread: {stats['total_unread']}")
-        console.print(f"  ❌ Abandoned: {stats['total_abandoned']}")
-        console.print()
-    
-    # Ratings
-    if stats["total_rated"] > 0:
-        console.print("[cyan]Ratings:[/cyan]")
-        console.print(f"  ⭐ Average Rating: {stats['average_rating']:.1f}")
-        console.print(f"  📊 Total Rated: {stats['total_rated']}")
-        console.print("  Distribution:")
-        for stars in range(5, 0, -1):
-            count = stats["rating_distribution"].get(stars, 0)
-            bar = "█" * (count // 5) if count > 0 else ""
-            console.print(f"    {stars}⭐ {count:3d} {bar}")
-        console.print()
-    
-    # Other metadata
-    console.print("[cyan]Other:[/cyan]")
-    console.print(f"  ❤️  Favorites: {stats['total_favorites']}")
-    console.print(f"  💬 With Comments: {stats['total_with_comments']}")
-    console.print(f"  🏷️  With Personal Tags: {stats['total_with_tags']}")
-
-
-@app.command()
-@handle_library_errors
-def recommend(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    based_on: Optional[List[str]] = typer.Option(None, "--based-on", "-b", help="Book IDs to base recommendations on"),
-    limit: int = typer.Option(10, "--limit", "-l", help="Number of recommendations"),
-    output_json: bool = typer.Option(False, "--json", help="Output as JSON")
-):
-    """
-    Get book recommendations based on similarity.
-    
-    Examples:
-    # Random recommendations from highly-rated books
-    ebk recommend /path/to/library
-    
-    # Recommendations based on specific books
-    ebk recommend /path/to/library --based-on book_id_1 --based-on book_id_2
-    """
-    lib = Library.open(lib_dir)
-
-    recommendations = lib.recommend(based_on=based_on, limit=limit)
-    
-    if not recommendations:
-        console.print("[yellow]No recommendations found.[/yellow]")
-        return
-    
-    console.print(f"[green]Found {len(recommendations)} recommendations:[/green]\n")
-    
-    if output_json:
-        data = [r.to_dict() for r in recommendations]
-        console.print_json(json.dumps(data, indent=2))
-    else:
-        for i, entry in enumerate(recommendations, 1):
-            console.print(f"[bold]{i}. {entry.title}[/bold]")
-            if entry.creators:
-                console.print(f"   by {', '.join(entry.creators)}")
-            if entry.subjects:
-                console.print(f"   Tags: {', '.join(entry.subjects[:5])}")
-            console.print()
-    
-
-
-
-@app.command()
-@handle_library_errors
-def similar(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    entry_id: str = typer.Argument(..., help="Entry ID to find similar books for"),
-    threshold: float = typer.Option(0.7, "--threshold", "-t", help="Similarity threshold (0-1)"),
-    limit: int = typer.Option(10, "--limit", "-l", help="Maximum number of results"),
-    output_json: bool = typer.Option(False, "--json", help="Output as JSON")
-):
-    """
-    Find books similar to a given entry.
-    
-    Similarity is based on:
-    - Shared subjects/tags (40% weight)
-    - Shared authors (30% weight)  
-    - Same language (20% weight)
-    - Title similarity (10% weight)
-    """
-    lib = Library.open(lib_dir)
-    
-    # Find the reference entry
-    ref_entry = lib.find(entry_id)
-    if not ref_entry:
-        console.print(f"[red]No entry found with ID: {entry_id}[/red]")
-        raise typer.Exit(code=1)
-    
-    console.print(f"[cyan]Finding books similar to:[/cyan] {ref_entry.title}\n")
-    
-    similar_entries = lib.find_similar(entry_id, threshold=threshold)
-    similar_entries = similar_entries[:limit]
-    
-    if not similar_entries:
-        console.print(f"[yellow]No similar entries found with threshold {threshold}.[/yellow]")
-        console.print("Try lowering the threshold with --threshold 0.5")
-        return
-    
-    console.print(f"[green]Found {len(similar_entries)} similar books:[/green]\n")
-    
-    if output_json:
-        data = [e.to_dict() for e in similar_entries]
-        console.print_json(json.dumps(data, indent=2))
-    else:
-        for i, entry in enumerate(similar_entries, 1):
-            console.print(f"[bold]{i}. {entry.title}[/bold]")
-            if entry.creators:
-                console.print(f"   by {', '.join(entry.creators)}")
-            if entry.subjects:
-                console.print(f"   Tags: {', '.join(entry.subjects[:5])}")
-            console.print()
-    
-
-
-
-@app.command()
-@handle_library_errors
-def build_knowledge(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    book_ids: Optional[List[str]] = typer.Option(None, "--book", "-b", help="Specific book IDs to process"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force rebuild even if graph exists"),
-    extract_concepts: bool = typer.Option(True, "--concepts/--no-concepts", help="Extract concepts from books"),
-    build_relations: bool = typer.Option(True, "--relations/--no-relations", help="Build concept relations"),
-):
-    """
-    Build a knowledge graph from your library.
-
-    Extracts concepts, ideas, and relationships from all books in your library
-    and builds a connected knowledge graph for intelligent searching.
-
-    Examples:
-    # Build knowledge graph for entire library
-    ebk build-knowledge /path/to/library
-
-    # Build for specific books only
-    ebk build-knowledge /path/to/library --book book_id_1 --book book_id_2
-
-    # Force rebuild
-    ebk build-knowledge /path/to/library --force
-    """
-    from .ai.knowledge_graph import KnowledgeGraph
-    from .ai.text_extractor import TextExtractor
-
-    console.print("[cyan]Building knowledge graph...[/cyan]")
-
-    # Initialize components
-    kg = KnowledgeGraph(Path(lib_dir))
-    extractor = TextExtractor()
-
-    # Check if graph exists
-    if kg.concepts and not force:
-        console.print(f"[yellow]Knowledge graph already exists with {len(kg.concepts)} concepts.[/yellow]")
-        if not Confirm.ask("Do you want to rebuild?"):
-            return
-
-    # Load library
-    lib = Library.open(lib_dir)
-    entries = lib.entries
-
-    # Filter by book IDs if specified
-    if book_ids:
-        entries = [e for e in entries if e.unique_id in book_ids]
-        console.print(f"Processing {len(entries)} specified books...")
-    else:
-        console.print(f"Processing {len(entries)} books in library...")
-
-    with Progress() as progress:
-        task = progress.add_task("[green]Extracting concepts...", total=len(entries))
-
-        for entry in entries:
-            # Get the first ebook file
-            if not entry.file_paths:
-                progress.advance(task)
-                continue
-
-            file_path = Path(lib_dir) / entry.file_paths[0]
-            if not file_path.exists():
-                progress.advance(task)
-                continue
-
-            try:
-                # Extract key passages and concepts
-                if extract_concepts:
-                    passages = extractor.extract_key_passages(file_path)
-                    for passage in passages[:20]:  # Top 20 passages per book
-                        kg.add_concept(
-                            name=f"Key idea from {entry.title[:30]}",
-                            description=passage['sentence'],
-                            book_id=entry.unique_id,
-                            page=passage.get('page'),
-                            quote=passage['context']
-                        )
-
-                # Extract definitions
-                definitions = extractor.extract_definitions(file_path)
-                for defn in definitions[:10]:  # Top 10 definitions per book
-                    kg.add_concept(
-                        name=defn['term'],
-                        description=defn['definition'],
-                        book_id=entry.unique_id
-                    )
-
-            except Exception as e:
-                logger.warning(f"Failed to process {entry.title}: {e}")
-
-            progress.advance(task)
-
-    # Calculate importance scores
-    kg.calculate_concept_importance()
-
-    # Save the graph
-    kg.save_graph()
-
-    console.print(f"[green]✓ Knowledge graph built successfully![/green]")
-    console.print(f"  - Total concepts: {len(kg.concepts)}")
-    console.print(f"  - Total relations: {kg.graph.number_of_edges()}")
-    console.print(f"  - Books indexed: {len(kg.book_concepts)}")
-
-
-@app.command()
-@handle_library_errors
-def ask(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    query: str = typer.Argument(..., help="Your question about the library"),
-    use_graph: bool = typer.Option(True, "--graph/--no-graph", help="Use knowledge graph"),
-    use_semantic: bool = typer.Option(True, "--semantic/--no-semantic", help="Use semantic search"),
-    max_results: int = typer.Option(5, "--max", "-n", help="Maximum number of results"),
-):
-    """
-    Ask questions about your library using AI.
-
-    Uses knowledge graph and semantic search to find answers from your books.
-
-    Examples:
-    # Ask about a topic
-    ebk ask /path/to/library "What do my books say about habit formation?"
-
-    # Ask for connections
-    ebk ask /path/to/library "How does stoicism relate to modern psychology?"
-
-    # Find specific information
-    ebk ask /path/to/library "What are the key principles of machine learning?"
-    """
-    from .ai.knowledge_graph import KnowledgeGraph
-    from .ai.semantic_search import SemanticSearch
-
-    results = []
-
-    # Use knowledge graph
-    if use_graph:
-        kg = KnowledgeGraph(Path(lib_dir))
-        if kg.concepts:
-            console.print("[cyan]Searching knowledge graph...[/cyan]")
-
-            # Find relevant concepts
-            keywords = query.lower().split()
-            relevant_concepts = []
-
-            for keyword in keywords:
-                for concept_id in kg.concept_index.get(keyword, []):
-                    concept = kg.concepts[concept_id]
-                    relevant_concepts.append(concept)
-
-            # Sort by importance
-            relevant_concepts.sort(key=lambda c: c.importance_score, reverse=True)
-
-            for concept in relevant_concepts[:max_results]:
-                results.append({
-                    'source': 'Knowledge Graph',
-                    'concept': concept.name,
-                    'description': concept.description,
-                    'books': concept.source_books[:3]
-                })
-
-    # Use semantic search
-    if use_semantic:
-        search = SemanticSearch(Path(lib_dir))
-        console.print("[cyan]Performing semantic search...[/cyan]")
-
-        semantic_results = search.search_library(query, top_k=max_results)
-
-        for result in semantic_results:
-            results.append({
-                'source': 'Semantic Search',
-                'text': result['text'][:200] + '...',
-                'similarity': f"{result['similarity']:.2f}",
-                'book_id': result['book_id']
-            })
-
-    # Display results
-    if not results:
-        console.print("[yellow]No relevant information found. Try building the knowledge graph first.[/yellow]")
-        console.print("Run: ebk build-knowledge /path/to/library")
-        return
-
-    console.print(f"\n[green]Found {len(results)} relevant results:[/green]\n")
-
-    for i, result in enumerate(results, 1):
-        console.print(f"[bold]{i}. [{result['source']}][/bold]")
-        if 'concept' in result:
-            console.print(f"   Concept: {result['concept']}")
-            console.print(f"   {result['description']}")
-        else:
-            console.print(f"   {result['text']}")
-        if 'book_id' in result:
-            console.print(f"   From: {result['book_id']}")
-        console.print()
-
-
-@app.command()
-@handle_library_errors
-def learning_path(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    start_topic: str = typer.Argument(..., help="Starting topic/concept"),
-    end_topic: str = typer.Argument(..., help="Goal topic/concept to understand"),
-    max_steps: int = typer.Option(10, "--max-steps", "-n", help="Maximum books in path"),
-):
-    """
-    Generate a personalized learning path between topics.
-
-    Creates a reading sequence that bridges from your current knowledge
-    to your learning goal using books in your library.
-
-    Examples:
-    # Learn quantum computing starting from basic math
-    ebk learning-path /path/to/library "linear algebra" "quantum computing"
-
-    # Bridge from psychology to neuroscience
-    ebk learning-path /path/to/library "cognitive psychology" "neuroscience"
-    """
-    from .ai.knowledge_graph import KnowledgeGraph
-
-    kg = KnowledgeGraph(Path(lib_dir))
-
-    if not kg.concepts:
-        console.print("[red]Knowledge graph not built. Run 'ebk build-knowledge' first.[/red]")
-        raise typer.Exit(code=1)
-
-    console.print(f"[cyan]Finding learning path from '{start_topic}' to '{end_topic}'...[/cyan]\n")
-
-    # Get available books
-    lib = Library.open(lib_dir)
-    available_books = [e.unique_id for e in lib.entries]
-
-    # Generate path
-    path = kg.generate_reading_path(start_topic, end_topic, available_books)
-
-    if not path:
-        console.print(f"[yellow]No path found between '{start_topic}' and '{end_topic}'.[/yellow]")
-        console.print("Try more general terms or ensure your library covers both topics.")
-        return
-
-    # Limit path length
-    path = path[:max_steps]
-
-    console.print(f"[green]Generated learning path with {len(path)} steps:[/green]\n")
-
-    for i, step in enumerate(path, 1):
-        # Find book details
-        entry = lib.find(step['book_id'])
-        if entry:
-            console.print(f"[bold]Step {i}: {entry.title}[/bold]")
-            if entry.creators:
-                console.print(f"   by {', '.join(entry.creators)}")
-        else:
-            console.print(f"[bold]Step {i}: Book {step['book_id']}[/bold]")
-
-        console.print(f"   Concept: {step['concept']}")
-        console.print(f"   Why: {step['why']}")
-        console.print()
-
-
-@app.command()
-@handle_library_errors
-def index_semantic(
-    lib_dir: str = typer.Argument(..., help="Path to the ebk library directory"),
-    book_ids: Optional[List[str]] = typer.Option(None, "--book", "-b", help="Specific book IDs to index"),
-    chunk_size: int = typer.Option(500, "--chunk-size", help="Size of text chunks for indexing"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force reindex"),
-):
-    """
-    Build semantic search index for intelligent content discovery.
-
-    Creates vector embeddings for all books to enable semantic search
-    across your library.
-
-    Examples:
-    # Index entire library
-    ebk index-semantic /path/to/library
-
-    # Index specific books
-    ebk index-semantic /path/to/library --book id1 --book id2
-    """
-    from .ai.semantic_search import SemanticSearch
-    from .ai.text_extractor import TextExtractor
-
-    console.print("[cyan]Building semantic search index...[/cyan]")
-
-    search = SemanticSearch(Path(lib_dir))
-    extractor = TextExtractor()
-
-    # Check existing index
-    if search.book_chunks and not force:
-        console.print(f"[yellow]Semantic index exists for {len(search.book_chunks)} books.[/yellow]")
-        if not Confirm.ask("Do you want to rebuild?"):
-            return
-
-    # Load library
-    lib = Library.open(lib_dir)
-    entries = lib.entries
-
-    # Filter by book IDs if specified
-    if book_ids:
-        entries = [e for e in entries if e.unique_id in book_ids]
-
-    console.print(f"Indexing {len(entries)} books...")
-
-    with Progress() as progress:
-        task = progress.add_task("[green]Indexing books...", total=len(entries))
-
-        for entry in entries:
-            if not entry.file_paths:
-                progress.advance(task)
-                continue
-
-            file_path = Path(lib_dir) / entry.file_paths[0]
-            if not file_path.exists():
-                progress.advance(task)
-                continue
-
-            try:
-                # Extract text
-                text = extractor.extract_full_text(file_path)
-                if text:
-                    # Index the book
-                    search.index_book(entry.unique_id, text, chunk_size)
-            except Exception as e:
-                logger.warning(f"Failed to index {entry.title}: {e}")
-
-            progress.advance(task)
-
-    console.print(f"[green]✓ Semantic index built successfully![/green]")
-    console.print(f"  - Books indexed: {len(search.book_chunks)}")
+    """Display information about ebk."""
+    console.print("[bold cyan]ebk - eBook Metadata Management Tool[/bold cyan]")
+    console.print("")
+    console.print("A powerful tool for managing ebook libraries with:")
+    console.print("  • SQLAlchemy + SQLite database backend")
+    console.print("  • Full-text search (FTS5)")
+    console.print("  • Automatic text extraction from PDFs, EPUBs, plaintext")
+    console.print("  • Hash-based file deduplication")
+    console.print("  • Cover extraction and thumbnails")
+    console.print("  • Virtual libraries and personal metadata")
+    console.print("")
+    console.print("[bold]Core Commands:[/bold]")
+    console.print("  ebk init <path>              Initialize new library")
+    console.print("  ebk import <file> <lib>      Import ebook")
+    console.print("  ebk import-calibre <src>     Import from Calibre")
+    console.print("  ebk search <query> <lib>     Full-text search")
+    console.print("  ebk list <lib>               List books")
+    console.print("  ebk stats <lib>              Show statistics")
+    console.print("  ebk view <id> <lib>          View book content")
+    console.print("")
+    console.print("[bold]Command Groups:[/bold]")
+    console.print("  ebk export <subcommand>      Export library data")
+    console.print("  ebk vlib <subcommand>        Manage virtual libraries")
+    console.print("  ebk note <subcommand>        Manage annotations")
+    console.print("")
+    console.print("[bold]Getting Started:[/bold]")
+    console.print("  1. Initialize: ebk init ~/my-library")
+    console.print("  2. Import: ebk import book.pdf ~/my-library")
+    console.print("  3. Search: ebk search 'python' ~/my-library")
+    console.print("")
+    console.print("For more info: https://github.com/queelius/ebk")
 
 
 # ============================================================================
-# Database-backed Library Commands (New Architecture)
+# Core Library Commands
 # ============================================================================
 
 @app.command()
-def db_init(
+def init(
     library_path: Path = typer.Argument(..., help="Path to create the library"),
     echo_sql: bool = typer.Option(False, "--echo-sql", help="Echo SQL statements for debugging")
 ):
     """
     Initialize a new database-backed library.
 
-    This creates a new library directory with SQLite database backend.
+    This creates a new library directory with SQLite database backend,
+    including directories for files, covers, and vector embeddings.
+
+    Example:
+        ebk init ~/my-library
     """
     from .library_db import Library
 
@@ -1626,13 +140,14 @@ def db_init(
         lib.close()
         console.print(f"[green]✓ Library initialized at {library_path}[/green]")
         console.print(f"  Database: {library_path / 'library.db'}")
+        console.print(f"  Use 'ebk import' to add books")
     except Exception as e:
         console.print(f"[red]Error initializing library: {e}[/red]")
         raise typer.Exit(code=1)
 
 
-@app.command()
-def db_import(
+@app.command(name="import")
+def import_book(
     file_path: Path = typer.Argument(..., help="Path to ebook file"),
     library_path: Path = typer.Argument(..., help="Path to library"),
     title: Optional[str] = typer.Option(None, "--title", "-t", help="Book title"),
@@ -1646,7 +161,12 @@ def db_import(
     """
     Import an ebook file into a database-backed library.
 
-    Extracts metadata, text, and cover images automatically.
+    Extracts metadata, text, and cover images automatically unless disabled.
+    Supports PDF, EPUB, MOBI, and plaintext files.
+
+    Examples:
+        ebk import book.pdf ~/my-library
+        ebk import book.epub ~/my-library --title "My Book" --authors "Author Name"
     """
     from .library_db import Library
     from .extract_metadata import extract_metadata
@@ -1657,7 +177,7 @@ def db_import(
 
     if not library_path.exists():
         console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        console.print(f"[yellow]Initialize a library first with: ebk db-init {library_path}[/yellow]")
+        console.print(f"[yellow]Initialize a library first with: ebk init {library_path}[/yellow]")
         raise typer.Exit(code=1)
 
     try:
@@ -1705,11 +225,12 @@ def db_import(
 
     except Exception as e:
         console.print(f"[red]Error importing book: {e}[/red]")
+        logger.exception("Import error details:")
         raise typer.Exit(code=1)
 
 
-@app.command()
-def db_import_calibre(
+@app.command(name="import-calibre")
+def import_calibre(
     calibre_path: Path = typer.Argument(..., help="Path to Calibre library"),
     library_path: Path = typer.Argument(..., help="Path to ebk library"),
     limit: Optional[int] = typer.Option(None, "--limit", help="Limit number of books to import")
@@ -1718,6 +239,11 @@ def db_import_calibre(
     Import books from a Calibre library into database-backed library.
 
     Reads Calibre's metadata.opf files and imports ebooks with full metadata.
+    Supports all Calibre-managed formats (PDF, EPUB, MOBI, etc.).
+
+    Examples:
+        ebk import-calibre ~/Calibre/Library ~/my-library
+        ebk import-calibre ~/Calibre/Library ~/my-library --limit 100
     """
     from .library_db import Library
 
@@ -1727,13 +253,14 @@ def db_import_calibre(
 
     if not library_path.exists():
         console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        console.print(f"[yellow]Initialize a library first with: ebk db-init {library_path}[/yellow]")
+        console.print(f"[yellow]Initialize a library first with: ebk init {library_path}[/yellow]")
         raise typer.Exit(code=1)
 
     try:
         lib = Library.open(library_path)
 
         # Find all metadata.opf files
+        console.print(f"Scanning Calibre library...")
         opf_files = list(calibre_path.rglob("metadata.opf"))
 
         if limit:
@@ -1741,7 +268,14 @@ def db_import_calibre(
 
         console.print(f"Found {len(opf_files)} books in Calibre library")
 
+        if len(opf_files) == 0:
+            console.print("[yellow]No books found. Make sure this is a Calibre library directory.[/yellow]")
+            lib.close()
+            raise typer.Exit(code=0)
+
         imported = 0
+        failed = 0
+
         with Progress() as progress:
             task = progress.add_task("[green]Importing...", total=len(opf_files))
 
@@ -1750,21 +284,29 @@ def db_import_calibre(
                     book = lib.add_calibre_book(opf_path)
                     if book:
                         imported += 1
+                    else:
+                        failed += 1
                 except Exception as e:
-                    logger.warning(f"Failed to import {opf_path.parent.name}: {e}")
+                    failed += 1
+                    logger.debug(f"Failed to import {opf_path.parent.name}: {e}")
 
                 progress.advance(task)
 
-        console.print(f"[green]✓ Imported {imported} books[/green]")
+        console.print(f"[green]✓ Import complete[/green]")
+        console.print(f"  Successfully imported: {imported}")
+        if failed > 0:
+            console.print(f"  Failed: {failed}")
+
         lib.close()
 
     except Exception as e:
         console.print(f"[red]Error importing Calibre library: {e}[/red]")
+        logger.exception("Calibre import error details:")
         raise typer.Exit(code=1)
 
 
 @app.command()
-def db_search(
+def search(
     query: str = typer.Argument(..., help="Search query"),
     library_path: Path = typer.Argument(..., help="Path to library"),
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum number of results")
@@ -1772,7 +314,12 @@ def db_search(
     """
     Search books in database-backed library using full-text search.
 
-    Searches across titles, descriptions, and extracted text content.
+    Searches across titles, descriptions, and extracted text content using
+    SQLite's FTS5 engine for fast, relevance-ranked results.
+
+    Examples:
+        ebk search "python programming" ~/my-library
+        ebk search "machine learning" ~/my-library --limit 50
     """
     from .library_db import Library
 
@@ -1817,11 +364,17 @@ def db_search(
 
 
 @app.command()
-def db_stats(
+def stats(
     library_path: Path = typer.Argument(..., help="Path to library")
 ):
     """
     Show statistics for database-backed library.
+
+    Displays book counts, author counts, language distribution,
+    format distribution, and reading progress.
+
+    Example:
+        ebk stats ~/my-library
     """
     from .library_db import Library
 
@@ -1866,8 +419,8 @@ def db_stats(
         raise typer.Exit(code=1)
 
 
-@app.command()
-def db_list(
+@app.command(name="list")
+def list_books(
     library_path: Path = typer.Argument(..., help="Path to library"),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum number of books to show"),
     offset: int = typer.Option(0, "--offset", help="Starting offset"),
@@ -1877,6 +430,13 @@ def db_list(
 ):
     """
     List books in database-backed library with optional filtering.
+
+    Supports pagination and filtering by author, subject, or language.
+
+    Examples:
+        ebk list ~/my-library
+        ebk list ~/my-library --author "Knuth"
+        ebk list ~/my-library --subject "Python" --limit 20
     """
     from .library_db import Library
 
@@ -1935,6 +495,1428 @@ def db_list(
     except Exception as e:
         console.print(f"[red]Error listing books: {e}[/red]")
         raise typer.Exit(code=1)
+
+
+# ============================================================================
+# Personal Metadata Commands (Tags, Ratings, Favorites, Annotations)
+# ============================================================================
+
+@app.command()
+def rate(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    rating: float = typer.Option(..., "--rating", "-r", help="Rating (0-5 stars)")
+):
+    """
+    Rate a book (0-5 stars).
+
+    Example:
+        ebk rate 42 ~/my-library --rating 4.5
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    if not (0 <= rating <= 5):
+        console.print(f"[red]Error: Rating must be between 0 and 5[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        lib.update_reading_status(book_id, "unread", rating=rating)
+
+        book = lib.get_book(book_id)
+        if book:
+            console.print(f"[green]✓ Rated '{book.title}': {rating} stars[/green]")
+        else:
+            console.print(f"[yellow]Book {book_id} not found[/yellow]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error rating book: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def favorite(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    unfavorite: bool = typer.Option(False, "--unfavorite", "-u", help="Remove from favorites")
+):
+    """
+    Mark/unmark a book as favorite.
+
+    Examples:
+        ebk favorite 42 ~/my-library
+        ebk favorite 42 ~/my-library --unfavorite
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        lib.set_favorite(book_id, favorite=not unfavorite)
+
+        book = lib.get_book(book_id)
+        if book:
+            action = "Removed from" if unfavorite else "Added to"
+            console.print(f"[green]✓ {action} favorites: '{book.title}'[/green]")
+        else:
+            console.print(f"[yellow]Book {book_id} not found[/yellow]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error updating favorite: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def tag(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    tags: str = typer.Option(..., "--tags", "-t", help="Tags (comma-separated)"),
+    remove: bool = typer.Option(False, "--remove", "-r", help="Remove tags instead of adding")
+):
+    """
+    Add or remove personal tags from a book.
+
+    Examples:
+        ebk tag 42 ~/my-library --tags "to-read,programming"
+        ebk tag 42 ~/my-library --tags "to-read" --remove
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        tag_list = [t.strip() for t in tags.split(',')]
+
+        if remove:
+            lib.remove_tags(book_id, tag_list)
+            action = "Removed tags from"
+        else:
+            lib.add_tags(book_id, tag_list)
+            action = "Added tags to"
+
+        book = lib.get_book(book_id)
+        if book:
+            console.print(f"[green]✓ {action} '{book.title}': {', '.join(tag_list)}[/green]")
+        else:
+            console.print(f"[yellow]Book {book_id} not found[/yellow]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error updating tags: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def purge(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    # Filtering criteria
+    no_files: bool = typer.Option(False, "--no-files", help="Purge books with no file attachments"),
+    no_supported_formats: bool = typer.Option(False, "--no-supported-formats", help="Purge books without supported ebook formats (pdf, epub, mobi, azw3)"),
+    language: Optional[str] = typer.Option(None, "--language", help="Purge books in this language"),
+    format_filter: Optional[str] = typer.Option(None, "--format", help="Purge books with this format only"),
+    unread: bool = typer.Option(False, "--unread", help="Purge unread books only"),
+    max_rating: Optional[int] = typer.Option(None, "--max-rating", help="Purge books with rating <= this (1-5)"),
+    author: Optional[str] = typer.Option(None, "--author", help="Purge books by this author (partial match)"),
+    subject: Optional[str] = typer.Option(None, "--subject", help="Purge books with this subject (partial match)"),
+    # Safety options
+    dry_run: bool = typer.Option(True, "--dry-run/--execute", help="Show what would be deleted without deleting"),
+    delete_files: bool = typer.Option(False, "--delete-files", help="Also delete associated files from disk")
+):
+    """
+    Remove books from library based on filtering criteria.
+
+    By default runs in dry-run mode to show what would be deleted.
+    Use --execute to actually perform the deletion.
+
+    WARNING: This operation cannot be undone!
+
+    Examples:
+        # Preview books without files
+        ebk purge ~/my-library --no-files
+
+        # Preview books without supported ebook formats
+        ebk purge ~/my-library --no-supported-formats
+
+        # Delete books without files (after confirming)
+        ebk purge ~/my-library --no-files --execute
+
+        # Delete books with only unsupported formats
+        ebk purge ~/my-library --no-supported-formats --execute
+
+        # Delete unread books with rating <= 2 and their files
+        ebk purge ~/my-library --unread --max-rating 2 --execute --delete-files
+
+        # Delete all books in a specific language
+        ebk purge ~/my-library --language fr --execute
+    """
+    from .library_db import Library
+    from rich.table import Table
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        # Build filtered query
+        query = lib.query()
+
+        # Apply filters
+        if language:
+            query = query.filter_by_language(language)
+        if author:
+            query = query.filter_by_author(author)
+        if subject:
+            query = query.filter_by_subject(subject)
+        if format_filter:
+            query = query.filter_by_format(format_filter)
+        if max_rating is not None:
+            # Get books with rating <= max_rating
+            query = query.filter_by_rating(0, max_rating)
+        if unread:
+            # Filter for unread status
+            from .db.models import PersonalMetadata
+            query.query = query.query.join(PersonalMetadata).filter(
+                PersonalMetadata.reading_status == 'unread'
+            )
+
+        books = query.all()
+
+        # Filter for no files if requested
+        if no_files:
+            books = [b for b in books if len(b.files) == 0]
+
+        # Filter for no supported formats if requested
+        if no_supported_formats:
+            SUPPORTED_FORMATS = {'pdf', 'epub', 'mobi', 'azw3', 'azw', 'djvu', 'fb2', 'txt'}
+            books = [
+                b for b in books
+                if len(b.files) == 0 or not any(f.format.lower() in SUPPORTED_FORMATS for f in b.files)
+            ]
+
+        if not books:
+            console.print("[yellow]No books match the specified criteria[/yellow]")
+            lib.close()
+            return
+
+        # Display what will be purged
+        table = Table(title=f"Books to {'DELETE' if not dry_run else 'purge'} ({len(books)} total)")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="white")
+        table.add_column("Authors", style="blue")
+        table.add_column("Files", style="magenta")
+        table.add_column("Language", style="green")
+
+        for book in books[:20]:  # Show first 20
+            authors = ", ".join(a.name for a in book.authors) or "Unknown"
+            files = ", ".join(f.format for f in book.files) or "None"
+            table.add_row(
+                str(book.id),
+                book.title[:50],
+                authors[:30],
+                files,
+                book.language or "?"
+            )
+
+        if len(books) > 20:
+            table.add_row("...", f"and {len(books) - 20} more", "", "", "")
+
+        console.print(table)
+
+        if dry_run:
+            console.print("\n[yellow]This is a DRY RUN - no changes will be made[/yellow]")
+            console.print("[yellow]Use --execute to actually delete these books[/yellow]")
+            if delete_files:
+                console.print("[yellow]--delete-files will also remove files from disk[/yellow]")
+        else:
+            # Confirm deletion
+            console.print("\n[red]WARNING: This will permanently delete these books![/red]")
+            if delete_files:
+                console.print("[red]This will also DELETE FILES from disk![/red]")
+
+            confirm = typer.confirm("Are you sure you want to proceed?")
+            if not confirm:
+                console.print("[yellow]Purge cancelled[/yellow]")
+                lib.close()
+                return
+
+            # Perform deletion
+            deleted_count = 0
+            files_deleted = 0
+            total_size = 0
+
+            for book in books:
+                # Delete files from disk if requested
+                if delete_files:
+                    for file in book.files:
+                        file_path = library_path / file.path
+                        if file_path.exists():
+                            total_size += file.size_bytes
+                            file_path.unlink()
+                            files_deleted += 1
+
+                # Delete from database
+                lib.session.delete(book)
+                deleted_count += 1
+
+            lib.session.commit()
+
+            console.print(f"\n[green]✓ Deleted {deleted_count} books from database[/green]")
+            if delete_files:
+                console.print(f"[green]✓ Deleted {files_deleted} files ({total_size / (1024**2):.1f} MB)[/green]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error during purge: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+@note_app.command(name="add")
+def note_add(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    content: str = typer.Option(..., "--content", "-c", help="Note/annotation text"),
+    page: Optional[int] = typer.Option(None, "--page", "-p", help="Page number"),
+    note_type: str = typer.Option("note", "--type", "-t", help="Annotation type (note, highlight, bookmark)")
+):
+    """
+    Add a note/annotation to a book.
+
+    Examples:
+        ebk note add 42 ~/my-library --content "Great explanation of algorithms"
+        ebk note add 42 ~/my-library --content "Important theorem" --page 42
+        ebk note add 42 ~/my-library --content "Key passage" --type highlight
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        annotation_id = lib.add_annotation(book_id, content, page=page, annotation_type=note_type)
+
+        book = lib.get_book(book_id)
+        if book:
+            loc_info = f" (page {page})" if page else ""
+            console.print(f"[green]✓ Added {note_type} to '{book.title}'{loc_info}[/green]")
+            console.print(f"  Annotation ID: {annotation_id}")
+        else:
+            console.print(f"[yellow]Book {book_id} not found[/yellow]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error adding note: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@note_app.command(name="list")
+def note_list(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Path = typer.Argument(..., help="Path to library")
+):
+    """
+    List all notes/annotations for a book.
+
+    Example:
+        ebk note list 42 ~/my-library
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[yellow]Book {book_id} not found[/yellow]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        annotations = lib.get_annotations(book_id)
+
+        if not annotations:
+            console.print(f"[yellow]No notes found for '{book.title}'[/yellow]")
+        else:
+            console.print(f"\n[bold]Notes for: {book.title}[/bold]\n")
+
+            for i, ann in enumerate(annotations, 1):
+                type_info = f"[{ann.annotation_type}]" if ann.annotation_type else "[note]"
+                page_info = f" Page {ann.page_number}" if ann.page_number else ""
+                console.print(f"{i}. {type_info}{page_info}")
+                console.print(f"   {ann.content}")
+                console.print(f"   [dim]ID: {ann.id} | Added: {ann.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]\n")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error listing notes: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+# ============================================================================
+# Export Commands
+# ============================================================================
+
+@export_app.command(name="json")
+def export_json(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    output_file: Path = typer.Argument(..., help="Output JSON file"),
+    include_annotations: bool = typer.Option(True, "--annotations/--no-annotations", help="Include annotations")
+):
+    """
+    Export library to JSON format.
+
+    Example:
+        ebk export json ~/my-library ~/backup.json
+    """
+    from .library_db import Library
+    import json
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        books = lib.get_all_books()
+
+        export_data = {
+            "exported_at": datetime.now().isoformat(),
+            "total_books": len(books),
+            "books": []
+        }
+
+        for book in books:
+            book_data = {
+                "id": book.id,
+                "unique_id": book.unique_id,
+                "title": book.title,
+                "subtitle": book.subtitle,
+                "authors": [a.name for a in book.authors],
+                "subjects": [s.name for s in book.subjects],
+                "language": book.language,
+                "publisher": book.publisher,
+                "publication_date": book.publication_date,
+                "description": book.description,
+                "page_count": book.page_count,
+                "word_count": book.word_count,
+                "files": [{"format": f.format, "size": f.size_bytes, "path": f.path} for f in book.files],
+                "created_at": book.created_at.isoformat(),
+            }
+
+            # Add personal metadata if exists
+            if book.personal:
+                book_data["personal"] = {
+                    "reading_status": book.personal.reading_status,
+                    "reading_progress": book.personal.reading_progress,
+                    "rating": book.personal.rating,
+                    "favorite": book.personal.favorite,
+                    "tags": book.personal.personal_tags
+                }
+
+            # Add annotations if requested
+            if include_annotations:
+                annotations = lib.get_annotations(book.id)
+                book_data["annotations"] = [
+                    {
+                        "id": ann.id,
+                        "type": ann.annotation_type,
+                        "content": ann.content,
+                        "page": ann.page_number,
+                        "position": ann.position,
+                        "created_at": ann.created_at.isoformat()
+                    }
+                    for ann in annotations
+                ]
+
+            export_data["books"].append(book_data)
+
+        # Write JSON file
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+        console.print(f"[green]✓ Exported {len(books)} books to {output_file}[/green]")
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error exporting to JSON: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@export_app.command(name="csv")
+def export_csv(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    output_file: Path = typer.Argument(..., help="Output CSV file")
+):
+    """
+    Export library to CSV format.
+
+    Example:
+        ebk export csv ~/my-library ~/books.csv
+    """
+    from .library_db import Library
+    import csv
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        books = lib.get_all_books()
+
+        # Write CSV file
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+
+            # Header
+            writer.writerow([
+                'ID', 'Title', 'Authors', 'Publisher', 'Publication Date',
+                'Language', 'Subjects', 'Page Count', 'Rating', 'Favorite',
+                'Reading Status', 'Tags', 'Formats'
+            ])
+
+            # Data
+            for book in books:
+                authors = '; '.join(a.name for a in book.authors)
+                subjects = '; '.join(s.name for s in book.subjects)
+                formats = ', '.join(f.format for f in book.files)
+
+                rating = book.personal.rating if book.personal else None
+                favorite = book.personal.favorite if book.personal else False
+                status = book.personal.reading_status if book.personal else 'unread'
+                tags = ', '.join(book.personal.personal_tags) if book.personal and book.personal.personal_tags else ''
+
+                writer.writerow([
+                    book.id,
+                    book.title,
+                    authors,
+                    book.publisher or '',
+                    book.publication_date or '',
+                    book.language or '',
+                    subjects,
+                    book.page_count or '',
+                    rating or '',
+                    favorite,
+                    status,
+                    tags,
+                    formats
+                ])
+
+        console.print(f"[green]✓ Exported {len(books)} books to {output_file}[/green]")
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error exporting to CSV: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@export_app.command(name="html")
+def export_html(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    output_file: Path = typer.Argument(..., help="Output HTML file"),
+    include_stats: bool = typer.Option(True, "--stats/--no-stats", help="Include library statistics"),
+    base_url: str = typer.Option("", "--base-url", help="Base URL for file links (e.g., '/library' or 'https://example.com/books')"),
+    copy_files: bool = typer.Option(False, "--copy", help="Copy referenced files to output directory"),
+    # Filtering options
+    language: Optional[str] = typer.Option(None, "--language", help="Filter by language code (e.g., 'en', 'es')"),
+    author: Optional[str] = typer.Option(None, "--author", help="Filter by author name (partial match)"),
+    subject: Optional[str] = typer.Option(None, "--subject", help="Filter by subject/tag (partial match)"),
+    format_filter: Optional[str] = typer.Option(None, "--format", help="Filter by file format (e.g., 'pdf', 'epub')"),
+    has_files: bool = typer.Option(True, "--has-files/--no-files", help="Only include books with file attachments"),
+    favorite: Optional[bool] = typer.Option(None, "--favorite", help="Filter by favorite status"),
+    min_rating: Optional[int] = typer.Option(None, "--min-rating", help="Minimum rating (1-5)"),
+):
+    """
+    Export library to a self-contained HTML5 file.
+
+    Creates an interactive, searchable, filterable catalog that works offline.
+    All metadata including contributors, series, keywords, etc. is preserved.
+
+    File links are included in the export. Use --base-url to set the URL prefix for files
+    when deploying to a web server (e.g., Hugo site).
+
+    Use --copy to copy only the referenced files to the output directory, avoiding duplication
+    of the entire library.
+
+    Examples:
+        # Basic export with relative paths
+        ebk export html ~/my-library ~/library.html
+
+        # Export for Hugo deployment with file copying
+        ebk export html ~/my-library ~/hugo/static/library.html \\
+            --base-url /library --copy
+
+        # Export only English PDFs rated 4+
+        ebk export html ~/my-library ~/library.html \\
+            --language en --format pdf --min-rating 4
+    """
+    from .library_db import Library
+    from .exports.html_library import export_to_html
+    import shutil
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        console.print("[blue]Exporting library to HTML...[/blue]")
+        lib = Library.open(library_path)
+
+        # Build filtered query
+        query = lib.query()
+
+        # Apply filters
+        if language:
+            query = query.filter_by_language(language)
+        if author:
+            query = query.filter_by_author(author)
+        if subject:
+            query = query.filter_by_subject(subject)
+        if format_filter:
+            query = query.filter_by_format(format_filter)
+        if favorite is not None:
+            query = query.filter_by_favorite(favorite)
+        if min_rating:
+            query = query.filter_by_rating(min_rating)
+
+        books = query.all()
+
+        # Filter out books without files if requested
+        if has_files:
+            books = [b for b in books if len(b.files) > 0]
+
+        if not books:
+            console.print("[yellow]No books match the specified filters[/yellow]")
+            lib.close()
+            return
+
+        # Copy files if requested
+        if copy_files:
+            output_dir = output_file.parent
+            if not base_url:
+                console.print("[yellow]Warning: --copy requires --base-url to be set[/yellow]")
+                console.print("[yellow]Files will be copied but may not resolve correctly[/yellow]")
+
+            # Determine copy destination
+            if base_url.startswith(('http://', 'https://')):
+                console.print("[red]Error: --copy cannot be used with full URLs in --base-url[/red]")
+                console.print("[red]Use a relative path like '/library' instead[/red]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+            # Copy files to output_dir / base_url (stripping leading /)
+            copy_dest = output_dir / base_url.lstrip('/')
+            copy_dest.mkdir(parents=True, exist_ok=True)
+
+            console.print(f"[blue]Copying files to {copy_dest}...[/blue]")
+            files_copied = 0
+            total_size = 0
+
+            for book in books:
+                for file in book.files:
+                    src = library_path / file.path
+                    dest = copy_dest / file.path
+
+                    if src.exists():
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src, dest)
+                        files_copied += 1
+                        total_size += file.size_bytes
+
+            console.print(f"[green]✓ Copied {files_copied} files ({total_size / (1024**2):.1f} MB)[/green]")
+
+        export_to_html(books, output_file, include_stats=include_stats, base_url=base_url)
+
+        console.print(f"[green]✓ Exported {len(books)} books to {output_file}[/green]")
+        if base_url:
+            console.print(f"  File links will use base URL: {base_url}")
+        console.print(f"  Open {output_file} in a web browser to view your library")
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error exporting to HTML: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+@vlib_app.command(name="add")
+def vlib_add(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    vlib: str = typer.Option(..., "--library", "-l", help="Virtual library name (e.g., 'computer-science', 'mathematics')")
+):
+    """
+    Add a book to a virtual library (collection view).
+
+    Virtual libraries allow organizing books into multiple collections.
+    A book can belong to multiple virtual libraries.
+
+    Examples:
+        ebk vlib add 1 ~/my-library --library computer-science
+        ebk vlib add 1 ~/my-library -l mathematics
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        lib.add_to_virtual_library(book_id, vlib)
+
+        book = lib.get_book(book_id)
+        if book:
+            console.print(f"[green]✓ Added '{book.title}' to virtual library '{vlib}'[/green]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vlib_app.command(name="remove")
+def vlib_remove(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    vlib: str = typer.Option(..., "--library", "-l", help="Virtual library name")
+):
+    """
+    Remove a book from a virtual library.
+
+    Example:
+        ebk vlib remove 1 ~/my-library --library computer-science
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        lib.remove_from_virtual_library(book_id, vlib)
+
+        book = lib.get_book(book_id)
+        if book:
+            console.print(f"[green]✓ Removed '{book.title}' from virtual library '{vlib}'[/green]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vlib_app.command(name="list")
+def vlib_list(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    vlib: Optional[str] = typer.Option(None, "--library", "-l", help="Show books in specific virtual library")
+):
+    """
+    List all virtual libraries or books in a specific virtual library.
+
+    Examples:
+        ebk vlib list ~/my-library                     # List all virtual libraries
+        ebk vlib list ~/my-library --library mathematics # List books in 'mathematics'
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        if vlib:
+            # Show books in this virtual library
+            books = lib.get_virtual_library(vlib)
+
+            if not books:
+                console.print(f"[yellow]No books found in virtual library '{vlib}'[/yellow]")
+            else:
+                console.print(f"\n[bold]Virtual Library: {vlib}[/bold] ({len(books)} books)\n")
+
+                table = Table(show_header=True, header_style="bold magenta")
+                table.add_column("ID", style="dim")
+                table.add_column("Title")
+                table.add_column("Authors")
+
+                for book in books:
+                    authors = ", ".join(a.name for a in book.authors[:2])
+                    if len(book.authors) > 2:
+                        authors += "..."
+
+                    table.add_row(
+                        str(book.id),
+                        book.title[:50] + "..." if len(book.title) > 50 else book.title,
+                        authors
+                    )
+
+                console.print(table)
+        else:
+            # List all virtual libraries
+            libraries = lib.list_virtual_libraries()
+
+            if not libraries:
+                console.print("[yellow]No virtual libraries found[/yellow]")
+                console.print("[dim]Use 'ebk vlib add' to create virtual libraries[/dim]")
+            else:
+                console.print(f"\n[bold]Virtual Libraries[/bold] ({len(libraries)} total)\n")
+
+                for vlib_name in libraries:
+                    books = lib.get_virtual_library(vlib_name)
+                    console.print(f"  • {vlib_name} ({len(books)} books)")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def view(
+    book_id: int = typer.Argument(..., help="Book ID to view"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    text: bool = typer.Option(False, "--text", help="Display extracted text in console"),
+    page: Optional[int] = typer.Option(None, "--page", help="View specific page (for text mode)"),
+    format_choice: Optional[str] = typer.Option(None, "--format", help="Choose specific format (pdf, epub, txt, etc.)")
+):
+    """
+    View a book's content.
+
+    Without --text: Opens the ebook file in the default application.
+    With --text: Displays extracted text in the console with paging.
+    """
+    import subprocess
+    import platform
+    from .library_db import Library
+    from .db.models import ExtractedText
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book with ID {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        if text:
+            # Display extracted text in console
+            # ExtractedText is linked to File, not Book directly
+            extracted_text = None
+            for file in book.files:
+                if file.extracted_text and file.extracted_text.content:
+                    extracted_text = file.extracted_text.content
+                    break
+
+            if not extracted_text:
+                console.print(f"[yellow]No extracted text available for '{book.title}'[/yellow]")
+                console.print("[dim]Try re-importing the book with text extraction enabled[/dim]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+            # Display book info
+            console.print(f"\n[bold blue]{book.title}[/bold blue]")
+            if book.authors:
+                console.print(f"[dim]by {', '.join(a.name for a in book.authors)}[/dim]")
+            console.print()
+
+            # If page specified, try to show just that page
+            # (This is approximate - we don't have exact page boundaries)
+            if page is not None:
+                # Estimate ~400 words per page
+                words = extracted_text.split()
+                words_per_page = 400
+                start_idx = (page - 1) * words_per_page
+                end_idx = start_idx + words_per_page
+
+                if start_idx >= len(words):
+                    console.print(f"[yellow]Page {page} exceeds document length[/yellow]")
+                    lib.close()
+                    raise typer.Exit(code=1)
+
+                page_words = words[start_idx:end_idx]
+                text_content = ' '.join(page_words)
+                console.print(f"[dim]Approximate page {page} (words {start_idx+1}-{end_idx}):[/dim]\n")
+                console.print(text_content)
+            else:
+                # Show full text with paging
+                # Use rich pager for long text
+                with console.pager(styles=True):
+                    console.print(extracted_text)
+        else:
+            # Open file in default application
+            if not book.files:
+                console.print(f"[yellow]No files available for '{book.title}'[/yellow]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+            # Select file to open
+            file_to_open = None
+            if format_choice:
+                # Find file matching requested format
+                for f in book.files:
+                    if f.format.lower() == format_choice.lower():
+                        file_to_open = f
+                        break
+                if not file_to_open:
+                    console.print(f"[yellow]No {format_choice} file found for this book[/yellow]")
+                    console.print(f"Available formats: {', '.join(f.format for f in book.files)}")
+                    lib.close()
+                    raise typer.Exit(code=1)
+            else:
+                # Use first file (prefer PDF > EPUB > others)
+                formats_priority = ['pdf', 'epub', 'mobi', 'azw3', 'txt']
+                for fmt in formats_priority:
+                    for f in book.files:
+                        if f.format.lower() == fmt:
+                            file_to_open = f
+                            break
+                    if file_to_open:
+                        break
+
+                if not file_to_open:
+                    file_to_open = book.files[0]
+
+            file_path = library_path / file_to_open.path
+
+            if not file_path.exists():
+                console.print(f"[red]File not found: {file_path}[/red]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+            console.print(f"[blue]Opening '{book.title}' ({file_to_open.format})[/blue]")
+
+            # Open with default application based on OS
+            system = platform.system()
+            try:
+                if system == 'Darwin':  # macOS
+                    subprocess.run(['open', str(file_path)], check=True)
+                elif system == 'Windows':
+                    subprocess.run(['start', '', str(file_path)], shell=True, check=True)
+                else:  # Linux and others
+                    subprocess.run(['xdg-open', str(file_path)], check=True)
+
+                console.print("[green]✓ File opened successfully[/green]")
+            except subprocess.CalledProcessError as e:
+                console.print(f"[red]Failed to open file: {e}[/red]")
+                console.print(f"[dim]File location: {file_path}[/dim]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error viewing book: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def serve(
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (defaults from config)"),
+    host: Optional[str] = typer.Option(None, "--host", help="Host to bind to (defaults from config)"),
+    port: Optional[int] = typer.Option(None, "--port", help="Port to bind to (defaults from config)"),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload for development"),
+    no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open browser")
+):
+    """
+    Start the web server for library management.
+
+    Provides a browser-based interface for managing your ebook library.
+    Access the interface at http://localhost:8000 (or the specified host/port).
+
+    Configuration:
+        Default server settings are loaded from ~/.config/ebk/config.json
+        Command-line options override config file values.
+        Use 'ebk config' to set default library path and server settings.
+
+    Examples:
+        # Start server with configured defaults
+        ebk serve
+
+        # Override config for one-time use
+        ebk serve ~/my-library --port 8080
+
+        # Start with auto-reload (development)
+        ebk serve --reload
+    """
+    from ebk.config import load_config
+    import webbrowser
+
+    # Load config
+    config = load_config()
+
+    # Resolve library path
+    if library_path is None:
+        if config.library.default_path:
+            library_path = Path(config.library.default_path)
+        else:
+            console.print("[red]Error: No library path specified[/red]")
+            console.print("[yellow]Either provide a path or set default with:[/yellow]")
+            console.print("[yellow]  ebk config --library-path ~/my-library[/yellow]")
+            raise typer.Exit(code=1)
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    # Resolve host and port
+    server_host = host if host is not None else config.server.host
+    server_port = port if port is not None else config.server.port
+    auto_open = config.server.auto_open_browser and not no_open
+
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]Error: uvicorn is not installed[/red]")
+        console.print("[yellow]Install with: pip install uvicorn[/yellow]")
+        raise typer.Exit(code=1)
+
+    try:
+        from .server import create_app
+
+        console.print(f"[blue]Starting ebk server...[/blue]")
+        console.print(f"[blue]Library: {library_path}[/blue]")
+        console.print(f"[green]Server running at http://{server_host}:{server_port}[/green]")
+        console.print("[dim]Press Ctrl+C to stop[/dim]")
+
+        # Auto-open browser
+        if auto_open:
+            # Use localhost for browser even if binding to 0.0.0.0
+            browser_host = "localhost" if server_host == "0.0.0.0" else server_host
+            url = f"http://{browser_host}:{server_port}"
+            console.print(f"[dim]Opening browser to {url}...[/dim]")
+            webbrowser.open(url)
+
+        # Create app with library
+        app_instance = create_app(library_path)
+
+        # Run server
+        uvicorn.run(
+            app_instance,
+            host=server_host,
+            port=server_port,
+            reload=reload,
+            log_level="info"
+        )
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Server stopped[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error starting server: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def enrich(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    provider: Optional[str] = typer.Option(None, help="LLM provider (ollama, openai) - defaults from config"),
+    model: Optional[str] = typer.Option(None, help="Model name - defaults from config"),
+    host: Optional[str] = typer.Option(None, help="Ollama host (for remote GPU) - defaults from config"),
+    port: Optional[int] = typer.Option(None, help="Ollama port - defaults from config"),
+    api_key: Optional[str] = typer.Option(None, help="API key (for OpenAI)"),
+    book_id: Optional[int] = typer.Option(None, help="Enrich specific book ID only"),
+    generate_tags: bool = typer.Option(True, help="Generate tags"),
+    categorize: bool = typer.Option(True, help="Categorize books"),
+    enhance_descriptions: bool = typer.Option(False, help="Enhance descriptions"),
+    assess_difficulty: bool = typer.Option(False, help="Assess difficulty levels"),
+    dry_run: bool = typer.Option(False, help="Show what would be done without saving"),
+):
+    """
+    Enrich book metadata using LLM.
+
+    Uses LLM to generate tags, categorize books, enhance descriptions,
+    and assess difficulty levels based on existing metadata and extracted text.
+
+    Configuration:
+        Default LLM settings are loaded from ~/.config/ebk/config.json
+        Command-line options override config file values.
+        Use 'ebk config' to view/edit your default configuration.
+
+    Examples:
+        # Enrich all books using configured defaults
+        ebk enrich ~/my-library
+
+        # Override config to use different host
+        ebk enrich ~/my-library --host 192.168.1.100
+
+        # Enrich specific book
+        ebk enrich ~/my-library --book-id 42
+
+        # Generate tags and descriptions
+        ebk enrich ~/my-library --enhance-descriptions
+
+        # Dry run to see what would be generated
+        ebk enrich ~/my-library --dry-run
+    """
+    import asyncio
+    from ebk.library_db import Library
+    from ebk.ai.llm_providers.ollama import OllamaProvider
+    from ebk.ai.llm_providers.base import LLMConfig
+    from ebk.ai.metadata_enrichment import MetadataEnrichmentService
+    from ebk.config import load_config
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    # Load configuration and apply CLI overrides
+    config = load_config()
+    llm_cfg = config.llm
+
+    # Override config with CLI options if provided
+    if provider is not None:
+        llm_cfg.provider = provider
+    if model is not None:
+        llm_cfg.model = model
+    if host is not None:
+        llm_cfg.host = host
+    if port is not None:
+        llm_cfg.port = port
+    if api_key is not None:
+        llm_cfg.api_key = api_key
+
+    console.print(f"[dim]Using provider: {llm_cfg.provider}[/dim]")
+    console.print(f"[dim]Model: {llm_cfg.model}[/dim]")
+    console.print(f"[dim]Host: {llm_cfg.host}:{llm_cfg.port}[/dim]")
+
+    async def enrich_library():
+        # Initialize LLM provider
+        console.print(f"[blue]Initializing {llm_cfg.provider} provider...[/blue]")
+
+        if llm_cfg.provider == "ollama":
+            llm_provider = OllamaProvider.remote(
+                host=llm_cfg.host,
+                port=llm_cfg.port,
+                model=llm_cfg.model,
+                temperature=llm_cfg.temperature
+            )
+        elif llm_cfg.provider == "openai":
+            if not llm_cfg.api_key:
+                console.print("[red]Error: API key required for OpenAI (use --api-key or set in config)[/red]")
+                raise typer.Exit(code=1)
+            config = LLMConfig(
+                base_url="https://api.openai.com/v1",
+                api_key=llm_cfg.api_key,
+                model=llm_cfg.model
+            )
+            # Would need OpenAI provider implementation
+            console.print("[red]OpenAI provider not yet implemented[/red]")
+            raise typer.Exit(code=1)
+        else:
+            console.print(f"[red]Unknown provider: {llm_cfg.provider}[/red]")
+            raise typer.Exit(code=1)
+
+        # Initialize provider
+        await llm_provider.initialize()
+
+        try:
+            # Test connection by listing models
+            models = await llm_provider.list_models()
+            console.print(f"[green]Connected! Available models: {', '.join(models[:5])}[/green]")
+
+            # Initialize service
+            service = MetadataEnrichmentService(llm_provider)
+
+            # Open library
+            console.print(f"[blue]Opening library: {library_path}[/blue]")
+            lib = Library.open(library_path)
+
+            try:
+                # Get books to process
+                if book_id:
+                    books = [lib.get_book(book_id)]
+                    if not books[0]:
+                        console.print(f"[red]Book ID {book_id} not found[/red]")
+                        raise typer.Exit(code=1)
+                else:
+                    books = lib.query().all()
+
+                console.print(f"[blue]Processing {len(books)} books...[/blue]")
+
+                with Progress() as progress:
+                    task = progress.add_task("Enriching metadata...", total=len(books))
+
+                    for book in books:
+                        progress.console.print(f"\n[cyan]Processing: {book.title}[/cyan]")
+
+                        # Get extracted text if available
+                        text_sample = None
+                        if book.extracted_texts:
+                            text_sample = book.extracted_texts[0].full_text[:5000]
+
+                        # Generate tags
+                        if generate_tags:
+                            progress.console.print("  Generating tags...")
+                            tags = await service.generate_tags(
+                                title=book.title,
+                                authors=[a.name for a in book.authors],
+                                subjects=[s.name for s in book.subjects],
+                                description=book.description,
+                                text_sample=text_sample
+                            )
+
+                            if tags:
+                                progress.console.print(f"  [green]Tags: {', '.join(tags)}[/green]")
+                                if not dry_run:
+                                    lib.add_tags(book.id, tags)
+
+                        # Categorize
+                        if categorize:
+                            progress.console.print("  Categorizing...")
+                            categories = await service.categorize(
+                                title=book.title,
+                                subjects=[s.name for s in book.subjects],
+                                description=book.description
+                            )
+
+                            if categories:
+                                progress.console.print(f"  [green]Categories: {', '.join(categories)}[/green]")
+                                if not dry_run:
+                                    # Add categories as subjects
+                                    for cat in categories:
+                                        lib.add_subject(book.id, cat)
+
+                        # Enhance description
+                        if enhance_descriptions and (not book.description or len(book.description) < 100):
+                            progress.console.print("  Enhancing description...")
+                            description = await service.enhance_description(
+                                title=book.title,
+                                existing_description=book.description,
+                                text_sample=text_sample
+                            )
+
+                            if description and description != book.description:
+                                progress.console.print(f"  [green]New description: {description[:100]}...[/green]")
+                                if not dry_run:
+                                    book.description = description
+                                    lib.session.commit()
+
+                        # Assess difficulty
+                        if assess_difficulty and text_sample:
+                            progress.console.print("  Assessing difficulty...")
+                            difficulty = await service.assess_difficulty(
+                                text_sample=text_sample,
+                                subjects=[s.name for s in book.subjects]
+                            )
+
+                            progress.console.print(f"  [green]Difficulty: {difficulty}[/green]")
+                            # Could store in keywords or custom field
+
+                        progress.update(task, advance=1)
+
+                if dry_run:
+                    console.print("\n[yellow]Dry run completed - no changes saved[/yellow]")
+                else:
+                    lib.session.commit()
+                    console.print("\n[green]Enrichment completed![/green]")
+
+            finally:
+                lib.close()
+
+        finally:
+            await llm_provider.cleanup()
+
+    # Run async function
+    try:
+        asyncio.run(enrich_library())
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Enrichment cancelled[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Enrichment failed: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def config(
+    show: bool = typer.Option(False, "--show", help="Show current configuration"),
+    init: bool = typer.Option(False, "--init", help="Initialize config file with defaults"),
+    # LLM settings
+    set_provider: Optional[str] = typer.Option(None, "--llm-provider", help="Set LLM provider (ollama, openai)"),
+    set_model: Optional[str] = typer.Option(None, "--llm-model", help="Set default model name"),
+    set_llm_host: Optional[str] = typer.Option(None, "--llm-host", help="Set Ollama/LLM host"),
+    set_llm_port: Optional[int] = typer.Option(None, "--llm-port", help="Set Ollama/LLM port"),
+    set_api_key: Optional[str] = typer.Option(None, "--llm-api-key", help="Set LLM API key"),
+    set_temperature: Optional[float] = typer.Option(None, "--llm-temperature", help="Set temperature (0.0-1.0)"),
+    # Server settings
+    set_server_host: Optional[str] = typer.Option(None, "--server-host", help="Set web server host"),
+    set_server_port: Optional[int] = typer.Option(None, "--server-port", help="Set web server port"),
+    set_auto_open: Optional[bool] = typer.Option(None, "--server-auto-open/--no-server-auto-open", help="Auto-open browser on server start"),
+    # Library settings
+    set_library_path: Optional[str] = typer.Option(None, "--library-path", help="Set default library path"),
+    # CLI settings
+    set_verbose: Optional[bool] = typer.Option(None, "--cli-verbose/--no-cli-verbose", help="Enable verbose output by default"),
+    set_color: Optional[bool] = typer.Option(None, "--cli-color/--no-cli-color", help="Enable colored output by default"),
+):
+    """
+    View or edit EBK configuration.
+
+    Configuration is stored at ~/.config/ebk/config.json (or ~/.ebk/config.json).
+
+    Examples:
+        # Show current configuration
+        ebk config --show
+
+        # Initialize config file with defaults
+        ebk config --init
+
+        # Set default library path
+        ebk config --library-path ~/my-library
+
+        # Set remote Ollama host
+        ebk config --llm-host 192.168.0.225
+
+        # Set server to auto-open browser
+        ebk config --server-auto-open --server-host 0.0.0.0
+
+        # Set multiple values
+        ebk config --llm-host 192.168.0.225 --llm-model llama3.2 --server-port 9000
+    """
+    from ebk.config import (
+        load_config, save_config, ensure_config_exists,
+        update_config, get_config_path
+    )
+    import json
+
+    # Handle --init
+    if init:
+        config_path = ensure_config_exists()
+        console.print(f"[green]Configuration initialized at {config_path}[/green]")
+        return
+
+    # Check if any settings provided
+    has_settings = any([
+        set_provider, set_model, set_llm_host, set_llm_port, set_api_key, set_temperature,
+        set_server_host, set_server_port, set_auto_open is not None,
+        set_library_path, set_verbose is not None, set_color is not None
+    ])
+
+    # Handle --show or no args (default to show)
+    if show or not has_settings:
+        config = load_config()
+        config_path = get_config_path()
+
+        console.print(f"\n[bold]EBK Configuration[/bold]")
+        console.print(f"[dim]Location: {config_path}[/dim]\n")
+
+        console.print("[bold cyan]Library Settings:[/bold cyan]")
+        if config.library.default_path:
+            console.print(f"  Default Path: {config.library.default_path}")
+        else:
+            console.print(f"  Default Path: [dim]not set[/dim]")
+
+        console.print("\n[bold cyan]LLM Settings:[/bold cyan]")
+        console.print(f"  Provider:    {config.llm.provider}")
+        console.print(f"  Model:       {config.llm.model}")
+        console.print(f"  Host:        {config.llm.host}")
+        console.print(f"  Port:        {config.llm.port}")
+        console.print(f"  Temperature: {config.llm.temperature}")
+        if config.llm.api_key:
+            masked = f"{config.llm.api_key[:4]}...{config.llm.api_key[-4:]}"
+            console.print(f"  API Key:     {masked}")
+        else:
+            console.print(f"  API Key:     [dim]not set[/dim]")
+
+        console.print("\n[bold cyan]Server Settings:[/bold cyan]")
+        console.print(f"  Host:        {config.server.host}")
+        console.print(f"  Port:        {config.server.port}")
+        console.print(f"  Auto-open:   {config.server.auto_open_browser}")
+        console.print(f"  Page Size:   {config.server.page_size}")
+
+        console.print("\n[bold cyan]CLI Settings:[/bold cyan]")
+        console.print(f"  Verbose:     {config.cli.verbose}")
+        console.print(f"  Color:       {config.cli.color}")
+        console.print(f"  Page Size:   {config.cli.page_size}")
+
+        console.print(f"\n[dim]Edit with: ebk config --library-path <path> --llm-host <host> etc.[/dim]")
+        console.print(f"[dim]Or edit directly: {config_path}[/dim]\n")
+        return
+
+    # Handle setting values
+    changes = []
+
+    if set_provider is not None:
+        changes.append(f"LLM provider: {set_provider}")
+    if set_model is not None:
+        changes.append(f"LLM model: {set_model}")
+    if set_llm_host is not None:
+        changes.append(f"LLM host: {set_llm_host}")
+    if set_llm_port is not None:
+        changes.append(f"LLM port: {set_llm_port}")
+    if set_api_key is not None:
+        changes.append("LLM API key: ****")
+    if set_temperature is not None:
+        changes.append(f"LLM temperature: {set_temperature}")
+    if set_server_host is not None:
+        changes.append(f"Server host: {set_server_host}")
+    if set_server_port is not None:
+        changes.append(f"Server port: {set_server_port}")
+    if set_auto_open is not None:
+        changes.append(f"Server auto-open: {set_auto_open}")
+    if set_library_path is not None:
+        changes.append(f"Library path: {set_library_path}")
+    if set_verbose is not None:
+        changes.append(f"CLI verbose: {set_verbose}")
+    if set_color is not None:
+        changes.append(f"CLI color: {set_color}")
+
+    if changes:
+        console.print("[blue]Updating configuration:[/blue]")
+        for change in changes:
+            console.print(f"  • {change}")
+
+        update_config(
+            llm_provider=set_provider,
+            llm_model=set_model,
+            llm_host=set_llm_host,
+            llm_port=set_llm_port,
+            llm_api_key=set_api_key,
+            llm_temperature=set_temperature,
+            server_host=set_server_host,
+            server_port=set_server_port,
+            server_auto_open=set_auto_open,
+            library_default_path=set_library_path,
+            cli_verbose=set_verbose,
+            cli_color=set_color,
+        )
+        console.print("[green]✓ Configuration updated![/green]")
+        console.print("[dim]Use 'ebk config --show' to view current settings[/dim]")
 
 
 if __name__ == "__main__":

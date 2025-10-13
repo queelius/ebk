@@ -275,6 +275,225 @@ class Library:
             self.session.commit()
             logger.info(f"Updated reading status for book {book_id}: {status}")
 
+    def set_favorite(self, book_id: int, favorite: bool = True):
+        """
+        Mark/unmark book as favorite.
+
+        Args:
+            book_id: Book ID
+            favorite: True to mark as favorite, False to unmark
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if not personal:
+            # Create personal metadata if it doesn't exist
+            personal = PersonalMetadata(book_id=book_id, favorite=favorite)
+            self.session.add(personal)
+        else:
+            personal.favorite = favorite
+
+        self.session.commit()
+        logger.info(f"Set favorite for book {book_id}: {favorite}")
+
+    def add_tags(self, book_id: int, tags: List[str]):
+        """
+        Add personal tags to a book.
+
+        Args:
+            book_id: Book ID
+            tags: List of tag strings
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if not personal:
+            personal = PersonalMetadata(book_id=book_id, personal_tags=tags)
+            self.session.add(personal)
+        else:
+            existing_tags = personal.personal_tags or []
+            # Add new tags without duplicates
+            combined = list(set(existing_tags + tags))
+            personal.personal_tags = combined
+
+        self.session.commit()
+        logger.info(f"Added tags to book {book_id}: {tags}")
+
+    def remove_tags(self, book_id: int, tags: List[str]):
+        """
+        Remove personal tags from a book.
+
+        Args:
+            book_id: Book ID
+            tags: List of tag strings to remove
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if personal and personal.personal_tags:
+            personal.personal_tags = [t for t in personal.personal_tags if t not in tags]
+            self.session.commit()
+            logger.info(f"Removed tags from book {book_id}: {tags}")
+
+    def add_annotation(self, book_id: int, content: str,
+                      page: Optional[int] = None,
+                      annotation_type: str = 'note'):
+        """
+        Add an annotation/comment to a book.
+
+        Args:
+            book_id: Book ID
+            content: Annotation text
+            page: Page number (optional)
+            annotation_type: Type of annotation (note, highlight, bookmark)
+
+        Returns:
+            Annotation ID
+        """
+        from .db.models import Annotation
+
+        annotation = Annotation(
+            book_id=book_id,
+            content=content,
+            page_number=page,
+            annotation_type=annotation_type,
+            created_at=datetime.now()
+        )
+        self.session.add(annotation)
+        self.session.commit()
+
+        logger.info(f"Added annotation to book {book_id}")
+        return annotation.id
+
+    def get_annotations(self, book_id: int) -> List:
+        """
+        Get all annotations for a book.
+
+        Args:
+            book_id: Book ID
+
+        Returns:
+            List of Annotation objects
+        """
+        from .db.models import Annotation
+
+        return self.session.query(Annotation).filter_by(
+            book_id=book_id
+        ).order_by(Annotation.created_at.desc()).all()
+
+    def delete_annotation(self, annotation_id: int):
+        """
+        Delete an annotation.
+
+        Args:
+            annotation_id: Annotation ID
+        """
+        from .db.models import Annotation
+
+        annotation = self.session.query(Annotation).get(annotation_id)
+        if annotation:
+            self.session.delete(annotation)
+            self.session.commit()
+            logger.info(f"Deleted annotation {annotation_id}")
+
+    def add_to_virtual_library(self, book_id: int, library_name: str):
+        """
+        Add a book to a virtual library (collection/view).
+
+        Args:
+            book_id: Book ID
+            library_name: Name of the virtual library
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if not personal:
+            # Use personal_tags as virtual_libraries array
+            personal = PersonalMetadata(book_id=book_id, personal_tags=[library_name])
+            self.session.add(personal)
+        else:
+            existing_libs = personal.personal_tags or []
+            if library_name not in existing_libs:
+                existing_libs.append(library_name)
+                personal.personal_tags = existing_libs
+
+        self.session.commit()
+        logger.info(f"Added book {book_id} to virtual library '{library_name}'")
+
+    def remove_from_virtual_library(self, book_id: int, library_name: str):
+        """
+        Remove a book from a virtual library.
+
+        Args:
+            book_id: Book ID
+            library_name: Name of the virtual library
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if personal and personal.personal_tags:
+            personal.personal_tags = [lib for lib in personal.personal_tags if lib != library_name]
+            self.session.commit()
+            logger.info(f"Removed book {book_id} from virtual library '{library_name}'")
+
+    def get_virtual_library(self, library_name: str) -> List[Book]:
+        """
+        Get all books in a virtual library.
+
+        Args:
+            library_name: Name of the virtual library
+
+        Returns:
+            List of books in this virtual library
+        """
+        from .db.models import PersonalMetadata
+        from sqlalchemy import func
+
+        # Query books where personal_tags contains the library_name
+        # This works with SQLite's JSON support
+        books = (self.session.query(Book)
+                .join(Book.personal)
+                .filter(PersonalMetadata.personal_tags.contains(library_name))
+                .all())
+
+        return books
+
+    def list_virtual_libraries(self) -> List[str]:
+        """
+        Get all unique virtual library names.
+
+        Returns:
+            List of virtual library names
+        """
+        from .db.models import PersonalMetadata
+
+        # Get all personal_tags arrays and flatten them
+        all_metadata = self.session.query(PersonalMetadata).filter(
+            PersonalMetadata.personal_tags.isnot(None)
+        ).all()
+
+        libraries = set()
+        for pm in all_metadata:
+            if pm.personal_tags:
+                libraries.update(pm.personal_tags)
+
+        return sorted(list(libraries))
+
     def delete_book(self, book_id: int, delete_files: bool = False):
         """
         Delete a book from the library.
@@ -361,6 +580,21 @@ class QueryBuilder:
                 PersonalMetadata.rating >= min_rating,
                 PersonalMetadata.rating <= max_rating
             )
+        )
+        return self
+
+    def filter_by_favorite(self, is_favorite: bool = True) -> 'QueryBuilder':
+        """Filter by favorite status."""
+        self._query = self._query.join(Book.personal).filter(
+            PersonalMetadata.favorite == is_favorite
+        )
+        return self
+
+    def filter_by_format(self, format_name: str) -> 'QueryBuilder':
+        """Filter by file format (e.g., 'pdf', 'epub')."""
+        from .db.models import File
+        self._query = self._query.join(Book.files).filter(
+            File.format.ilike(f'%{format_name}%')
         )
         return self
 

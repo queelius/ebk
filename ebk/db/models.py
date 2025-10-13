@@ -55,10 +55,20 @@ class Book(Base):
     publisher = Column(String(200), index=True)
     publication_date = Column(String(50))  # Flexible: year, YYYY-MM, or YYYY-MM-DD
 
+    # Series information
+    series = Column(String(200), index=True)  # Book series name
+    series_index = Column(Float)  # Position in series (e.g., 2.5)
+
+    # Edition and rights
+    edition = Column(String(100))  # "2nd Edition", "Revised", etc.
+    rights = Column(Text)  # Copyright/license statement
+    source = Column(String(500))  # Original source URL or reference
+
     # Rich content
     description = Column(Text)  # Full text indexed separately
     page_count = Column(Integer)
     word_count = Column(Integer)  # From extracted text
+    keywords = Column(JSON)  # Array of keyword strings from PDF/metadata
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -67,6 +77,7 @@ class Book(Base):
     # Relationships
     authors = relationship('Author', secondary=book_authors, back_populates='books', lazy='selectin')
     subjects = relationship('Subject', secondary=book_subjects, back_populates='books', lazy='selectin')
+    contributors = relationship('Contributor', back_populates='book', cascade='all, delete-orphan')
     identifiers = relationship('Identifier', back_populates='book', cascade='all, delete-orphan')
     files = relationship('File', back_populates='book', cascade='all, delete-orphan')
     covers = relationship('Cover', back_populates='book', cascade='all, delete-orphan')
@@ -145,6 +156,28 @@ class Subject(Base):
         return f"<Subject(id={self.id}, name='{self.name}', type='{self.type}')>"
 
 
+class Contributor(Base):
+    """Contributors to a book (editors, translators, illustrators, etc)."""
+    __tablename__ = 'contributors'
+
+    id = Column(Integer, primary_key=True)
+    book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
+
+    name = Column(String(200), nullable=False, index=True)
+    role = Column(String(50), nullable=False)  # editor, translator, illustrator, etc.
+    file_as = Column(String(200))  # Sorting name
+
+    book = relationship('Book', back_populates='contributors')
+
+    __table_args__ = (
+        Index('idx_contributor_name', 'name'),
+        Index('idx_contributor_role', 'role'),
+    )
+
+    def __repr__(self):
+        return f"<Contributor(name='{self.name}', role='{self.role}')>"
+
+
 class Identifier(Base):
     """Flexible identifiers (ISBN, DOI, etc)."""
     __tablename__ = 'identifiers'
@@ -175,6 +208,12 @@ class File(Base):
     format = Column(String(20), nullable=False, index=True)  # pdf, epub, mobi
     size_bytes = Column(Integer)
     file_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA256
+
+    # File metadata
+    mime_type = Column(String(100))  # Full MIME type (e.g., application/pdf)
+    created_date = Column(DateTime)  # File creation time from filesystem
+    modified_date = Column(DateTime)  # File modification time from filesystem
+    creator_application = Column(String(200))  # PDF: Creator app (e.g., "LaTeX")
 
     # Text extraction status
     text_extracted = Column(Boolean, default=False)

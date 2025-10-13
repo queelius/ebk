@@ -82,13 +82,28 @@ class ImportService:
             dest_path = self._get_file_path(file_hash, source_path.suffix)
             shutil.copy2(source_path, dest_path)
 
-            # Create file record
+            # Get file metadata from filesystem
+            file_stat = source_path.stat()
+            import mimetypes
+            from datetime import datetime
+            mime_type = mimetypes.guess_type(str(source_path))[0]
+            created_date = datetime.fromtimestamp(file_stat.st_ctime)
+            modified_date = datetime.fromtimestamp(file_stat.st_mtime)
+
+            # Extract creator application from metadata if PDF
+            creator_app = metadata.get('creator_application')
+
+            # Create file record with enhanced metadata
             file = File(
                 book_id=book.id,
                 path=str(dest_path.relative_to(self.library_root)),
                 format=source_path.suffix[1:].lower(),  # Remove leading dot
-                size_bytes=source_path.stat().st_size,
-                file_hash=file_hash
+                size_bytes=file_stat.st_size,
+                file_hash=file_hash,
+                mime_type=mime_type,
+                created_date=created_date,
+                modified_date=modified_date,
+                creator_application=creator_app
             )
             self.session.add(file)
             self.session.flush()  # Get file.id
@@ -113,7 +128,7 @@ class ImportService:
     def _create_book(self, metadata: Dict[str, Any], unique_id: str) -> Book:
         """Create book record with metadata."""
 
-        # Create book
+        # Create book with enhanced metadata
         book = Book(
             unique_id=unique_id,
             title=metadata.get('title', 'Unknown Title'),
@@ -123,30 +138,58 @@ class ImportService:
             publisher=metadata.get('publisher'),
             publication_date=metadata.get('date'),
             description=metadata.get('description'),
-            page_count=metadata.get('page_count')
+            page_count=metadata.get('page_count'),
+            # New fields
+            series=metadata.get('series'),
+            series_index=metadata.get('series_index'),
+            edition=metadata.get('edition'),
+            rights=metadata.get('rights'),
+            source=metadata.get('source'),
+            keywords=metadata.get('keywords')
         )
         self.session.add(book)
         self.session.flush()  # Get book.id
 
         # Add authors
-        for author_name in metadata.get('creators', []):
-            author, _ = get_or_create(
-                self.session,
-                Author,
-                name=author_name,
-                sort_name=self._get_sort_name(author_name)
-            )
-            book.authors.append(author)
+        creators = metadata.get('creators') or []
+        for author_name in creators:
+            if author_name:  # Skip None/empty values
+                author, _ = get_or_create(
+                    self.session,
+                    Author,
+                    name=author_name,
+                    sort_name=self._get_sort_name(author_name)
+                )
+                book.authors.append(author)
 
         # Add subjects/tags
-        for subject_name in metadata.get('subjects', []):
-            subject, _ = get_or_create(
-                self.session,
-                Subject,
-                name=subject_name,
-                type='topic'
-            )
-            book.subjects.append(subject)
+        subjects = metadata.get('subjects') or []
+        for subject_name in subjects:
+            if subject_name:  # Skip None/empty values
+                subject, _ = get_or_create(
+                    self.session,
+                    Subject,
+                    name=subject_name,
+                    type='topic'
+                )
+                book.subjects.append(subject)
+
+        # Add contributors (editors, translators, etc.)
+        contributors = metadata.get('contributors') or []
+        for contrib in contributors:
+            if isinstance(contrib, dict):
+                name = contrib.get('name')
+                role = contrib.get('role', 'contributor')
+                file_as = contrib.get('file_as', '')
+                if name:
+                    from ..db.models import Contributor
+                    contributor = Contributor(
+                        book_id=book.id,
+                        name=name,
+                        role=role,
+                        file_as=file_as
+                    )
+                    self.session.add(contributor)
 
         # Add identifiers
         for scheme, value in metadata.get('identifiers', {}).items():
@@ -221,20 +264,37 @@ class ImportService:
             from ebooklib import epub
             book = epub.read_epub(str(epub_path))
 
-            # Try to get cover
+            # Try to get cover - handle different ebooklib versions
             cover_item = None
-            for item in book.get_items():
-                if item.get_type() == epub.ITEM_COVER:
-                    cover_item = item
-                    break
 
-            # Fallback: look for image named 'cover'
+            # Method 1: Try ITEM_COVER constant (older ebooklib)
+            try:
+                for item in book.get_items():
+                    if hasattr(epub, 'ITEM_COVER') and item.get_type() == epub.ITEM_COVER:
+                        cover_item = item
+                        break
+            except AttributeError:
+                pass
+
+            # Method 2: Look for image named 'cover' or check item type == 1 (image)
             if not cover_item:
                 for item in book.get_items():
-                    if item.get_type() == epub.ITEM_IMAGE:
+                    # Type 1 is ITEM_IMAGE in ebooklib
+                    if item.get_type() == 1:  # ITEM_IMAGE
                         if 'cover' in item.get_name().lower():
                             cover_item = item
                             break
+
+            # Method 3: Try ITEM_IMAGE constant fallback
+            if not cover_item:
+                try:
+                    for item in book.get_items():
+                        if hasattr(epub, 'ITEM_IMAGE') and item.get_type() == epub.ITEM_IMAGE:
+                            if 'cover' in item.get_name().lower():
+                                cover_item = item
+                                break
+                except AttributeError:
+                    pass
 
             if cover_item:
                 # Determine image format

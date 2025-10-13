@@ -69,6 +69,8 @@ nav:
   - User Guide:
       - CLI Reference: user-guide/cli.md
       - Python API: user-guide/api.md
+      - LLM Features: user-guide/llm-features.md
+      - Web Server: user-guide/server.md
       - Import/Export: user-guide/import-export.md
       - Search & Query: user-guide/search.md
       - Library Management: user-guide/library-management.md
