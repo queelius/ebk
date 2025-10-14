@@ -1136,9 +1136,11 @@ def export_html(
 
             console.print(f"[blue]Copying files to {copy_dest}...[/blue]")
             files_copied = 0
+            covers_copied = 0
             total_size = 0
 
             for book in books:
+                # Copy ebook files
                 for file in book.files:
                     src = library_path / file.path
                     dest = copy_dest / file.path
@@ -1149,7 +1151,18 @@ def export_html(
                         files_copied += 1
                         total_size += file.size_bytes
 
-            console.print(f"[green]✓ Copied {files_copied} files ({total_size / (1024**2):.1f} MB)[/green]")
+                # Copy cover images
+                for cover in book.covers:
+                    src = library_path / cover.path
+                    dest = copy_dest / cover.path
+
+                    if src.exists():
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src, dest)
+                        covers_copied += 1
+                        total_size += src.stat().st_size
+
+            console.print(f"[green]✓ Copied {files_copied} files and {covers_copied} covers ({total_size / (1024**2):.1f} MB)[/green]")
 
         export_to_html(books, output_file, include_stats=include_stats, base_url=base_url)
 
@@ -1676,8 +1689,11 @@ def enrich(
 
                         # Get extracted text if available
                         text_sample = None
-                        if book.extracted_texts:
-                            text_sample = book.extracted_texts[0].full_text[:5000]
+                        if book.files:
+                            for file in book.files:
+                                if file.extracted_text and file.extracted_text.content:
+                                    text_sample = file.extracted_text.content[:5000]
+                                    break
 
                         # Generate tags
                         if generate_tags:

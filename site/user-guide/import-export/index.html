@@ -749,6 +749,141 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#importing-books" class="md-nav__link">
+    <span class="md-ellipsis">
+      Importing Books
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Importing Books">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-individual-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      From Individual Files
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#from-calibre" class="md-nav__link">
+    <span class="md-ellipsis">
+      From Calibre
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exporting-libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      Exporting Libraries
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exporting Libraries">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#html-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      HTML Export
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#json-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      JSON Export
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#csv-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      CSV Export
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#zip-archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      ZIP Archive
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#importexport-use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      Import/Export Use Cases
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Import/Export Use Cases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#backup-and-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backup and Migration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#web-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Web Deployment
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#library-sharing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Library Sharing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data Analysis
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See Also
@@ -1347,9 +1482,141 @@
 
 <h1 id="importexport">Import/Export<a class="headerlink" href="#importexport" title="Permanent link">&para;</a></h1>
 <p>Guide to importing and exporting ebook libraries.</p>
+<h2 id="importing-books">Importing Books<a class="headerlink" href="#importing-books" title="Permanent link">&para;</a></h2>
+<h3 id="from-individual-files">From Individual Files<a class="headerlink" href="#from-individual-files" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Import a single ebook</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ebk<span class="w"> </span>import<span class="w"> </span>book.pdf<span class="w"> </span>~/my-library
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Import multiple files with glob patterns</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>ebk<span class="w"> </span>import<span class="w"> </span>~/books/*.epub<span class="w"> </span>~/my-library
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Import with text extraction</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>ebk<span class="w"> </span>import<span class="w"> </span>book.pdf<span class="w"> </span>~/my-library<span class="w"> </span>--extract-text
+</code></pre></div>
+<h3 id="from-calibre">From Calibre<a class="headerlink" href="#from-calibre" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Import entire Calibre library</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ebk<span class="w"> </span>import-calibre<span class="w"> </span>~/Calibre/Library<span class="w"> </span>--output<span class="w"> </span>~/my-library
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Import with filters</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>ebk<span class="w"> </span>import-calibre<span class="w"> </span>~/Calibre/Library<span class="w"> </span>--output<span class="w"> </span>~/my-library<span class="w"> </span>--language<span class="w"> </span>en
+</code></pre></div>
+<h2 id="exporting-libraries">Exporting Libraries<a class="headerlink" href="#exporting-libraries" title="Permanent link">&para;</a></h2>
+<h3 id="html-export">HTML Export<a class="headerlink" href="#html-export" title="Permanent link">&para;</a></h3>
+<p>Export your library as a self-contained HTML file with <strong>pagination</strong> and interactive features:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Basic HTML export (50 books per page)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>html<span class="w"> </span>~/my-library<span class="w"> </span>~/library.html
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Export for web deployment (copies files and covers)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>html<span class="w"> </span>~/my-library<span class="w"> </span>~/site/library.html<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span>--base-url<span class="w"> </span>/library<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span>--copy
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="c1"># Export with filters</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>html<span class="w"> </span>~/my-library<span class="w"> </span>~/library.html<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span>--language<span class="w"> </span>en<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span>--format<span class="w"> </span>pdf<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span>--min-rating<span class="w"> </span><span class="m">4</span>
+</code></pre></div>
+<p><strong>HTML Export Features:</strong></p>
+<ul>
+<li><strong>Pagination</strong>: Automatically pages through books (50 per page)</li>
+<li><strong>URL State Tracking</strong>: Bookmarkable pages with filters and page numbers in URL</li>
+<li><strong>Client-side Filtering</strong>: Fast filtering by language, format, series, favorites, rating</li>
+<li><strong>Sorting</strong>: Sort by title, author, rating, or date added</li>
+<li><strong>Search Bar</strong>: Basic text search across titles, authors, and subjects</li>
+<li><strong>Responsive Design</strong>: Works on desktop and mobile</li>
+<li><strong>Offline Capable</strong>: Fully self-contained, no server required</li>
+</ul>
+<p><strong>File Copying with <code>--copy</code>:</strong></p>
+<p>The <code>--copy</code> flag copies both ebook files AND cover images to the output directory:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Copies to: ~/site/library/ (based on --base-url)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>html<span class="w"> </span>~/my-library<span class="w"> </span>~/site/library.html<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--base-url<span class="w"> </span>/library<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--copy
+</code></pre></div>
+<p>This creates:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>~/site/
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>├── library.html           # HTML catalog
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>└── library/               # Copied files (based on --base-url)
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    ├── files/            # Ebook files
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    │   ├── ab/
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    │   │   └── abc123.pdf
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    │   └── cd/
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    │       └── cde456.epub
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    └── covers/           # Cover images
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>        ├── ab/
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>        │   └── abc123.jpg
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>        └── thumbnails/
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>            └── abc123_thumb.jpg
+</code></pre></div></p>
+<p><strong>Important</strong>: HTML export uses <strong>simple client-side filtering</strong>, not advanced search syntax. For advanced search (field-specific queries, boolean logic), use:</p>
+<ul>
+<li>CLI: <code>ebk search "title:Python rating:&gt;=4"</code></li>
+<li>Web server: <code>ebk serve ~/my-library</code></li>
+<li>Python API: <code>lib.search("title:Python rating:&gt;=4")</code></li>
+</ul>
+<h3 id="json-export">JSON Export<a class="headerlink" href="#json-export" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Export metadata to JSON</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>json<span class="w"> </span>~/my-library<span class="w"> </span>~/metadata.json
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Pretty-printed JSON</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>json<span class="w"> </span>~/my-library<span class="w"> </span>~/metadata.json<span class="w"> </span>--indent<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<h3 id="csv-export">CSV Export<a class="headerlink" href="#csv-export" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Export to CSV format</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>csv<span class="w"> </span>~/my-library<span class="w"> </span>~/books.csv
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Export with specific columns</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>csv<span class="w"> </span>~/my-library<span class="w"> </span>~/books.csv<span class="w"> </span>--columns<span class="w"> </span>title,author,isbn
+</code></pre></div>
+<h3 id="zip-archive">ZIP Archive<a class="headerlink" href="#zip-archive" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Create backup archive</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>zip<span class="w"> </span>~/my-library<span class="w"> </span>~/backup.zip
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Include covers in archive</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>zip<span class="w"> </span>~/my-library<span class="w"> </span>~/backup.zip<span class="w"> </span>--include-covers
+</code></pre></div>
+<h2 id="importexport-use-cases">Import/Export Use Cases<a class="headerlink" href="#importexport-use-cases" title="Permanent link">&para;</a></h2>
+<h3 id="backup-and-migration">Backup and Migration<a class="headerlink" href="#backup-and-migration" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Full backup</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>zip<span class="w"> </span>~/my-library<span class="w"> </span>~/backup-<span class="k">$(</span>date<span class="w"> </span>+%Y%m%d<span class="k">)</span>.zip
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Restore to new location</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>ebk<span class="w"> </span>init<span class="w"> </span>~/new-library
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>ebk<span class="w"> </span>import<span class="w"> </span>~/backup.zip<span class="w"> </span>~/new-library
+</code></pre></div>
+<h3 id="web-deployment">Web Deployment<a class="headerlink" href="#web-deployment" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Export for Hugo static site</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>html<span class="w"> </span>~/my-library<span class="w"> </span>~/hugo/static/library.html<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span>--base-url<span class="w"> </span>/library<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span>--copy<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span>--language<span class="w"> </span>en<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span>--has-files
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="c1"># Deploy to web server</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>rsync<span class="w"> </span>-av<span class="w"> </span>~/hugo/<span class="w"> </span>user@server:/var/www/site/
+</code></pre></div>
+<h3 id="library-sharing">Library Sharing<a class="headerlink" href="#library-sharing" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Export filtered subset</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>html<span class="w"> </span>~/my-library<span class="w"> </span>~/shared.html<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span>--subject<span class="w"> </span><span class="s2">&quot;Computer Science&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span>--format<span class="w"> </span>pdf<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span>--min-rating<span class="w"> </span><span class="m">4</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># Share the single HTML file (no server needed)</span>
+</code></pre></div>
+<h3 id="data-analysis">Data Analysis<a class="headerlink" href="#data-analysis" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Export to JSON for analysis</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>ebk<span class="w"> </span><span class="nb">export</span><span class="w"> </span>json<span class="w"> </span>~/my-library<span class="w"> </span>~/data.json
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Use with jq, pandas, or other tools</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>cat<span class="w"> </span>~/data.json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.books[] | select(.rating &gt;= 4) | .title&#39;</span>
+</code></pre></div>
 <h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../cli/">CLI Reference</a> - Import/export commands</li>
+<li><a href="../cli/">CLI Reference</a> - Full import/export command options</li>
+<li><a href="../search/">Search &amp; Query</a> - Filtering books before export</li>
+<li><a href="../server/">Server</a> - Web server for dynamic browsing</li>
 </ul>
 
 

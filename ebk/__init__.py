@@ -31,5 +31,5 @@ Main API:
 
 from .library_db import Library
 
-__version__ = "0.4.0"
+__version__ = "0.3.1"
 __all__ = ["Library"]

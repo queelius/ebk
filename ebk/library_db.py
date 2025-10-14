@@ -16,6 +16,7 @@ from .db.models import Book, Author, Subject, File, ExtractedText, PersonalMetad
 from .db.session import init_db, get_session, close_db
 from .services.import_service import ImportService
 from .services.text_extraction import TextExtractionService
+from .search_parser import parse_search_query
 
 logger = logging.getLogger(__name__)
 
@@ -137,40 +138,115 @@ class Library:
 
     def search(self, query: str, limit: int = 50) -> List[Book]:
         """
-        Full-text search across books.
+        Advanced search across books with field-specific queries and boolean logic.
+
+        Supports:
+            - Field searches: title:Python, author:Knuth, tag:programming
+            - Phrases: "machine learning"
+            - Boolean: AND (implicit), OR (explicit), NOT/-prefix (negation)
+            - Comparisons: rating:>=4, rating:3-5
+            - Filters: language:en, format:pdf, favorite:true
+
+        Examples:
+            title:Python rating:>=4 format:pdf
+            author:"Donald Knuth" series:TAOCP
+            tag:programming favorite:true NOT java
 
         Args:
-            query: Search query
+            query: Search query (supports advanced syntax or plain text)
             limit: Maximum number of results
 
         Returns:
             List of matching books
         """
         try:
-            result = self.session.execute(
-                text("""
-                SELECT book_id, rank
-                FROM books_fts
-                WHERE books_fts MATCH :query
-                ORDER BY rank
-                LIMIT :limit
-                """),
-                {"query": query, "limit": limit}
-            )
+            # Parse the query
+            parsed = parse_search_query(query)
 
-            book_ids = [row[0] for row in result]
-
-            if not book_ids:
+            # If no FTS terms and no filters, return empty
+            if not parsed.has_fts_terms() and not parsed.has_filters():
                 return []
 
-            # Fetch books maintaining search order
-            books = self.session.query(Book).filter(Book.id.in_(book_ids)).all()
-            books_dict = {b.id: b for b in books}
-            return [books_dict[bid] for bid in book_ids if bid in books_dict]
+            # Build the query
+            book_ids = []
+
+            # If we have FTS terms, search FTS5 first
+            if parsed.has_fts_terms():
+                result = self.session.execute(
+                    text("""
+                    SELECT book_id, rank
+                    FROM books_fts
+                    WHERE books_fts MATCH :query
+                    ORDER BY rank
+                    LIMIT :limit
+                    """),
+                    {"query": parsed.fts_query, "limit": limit * 2}  # Get more for filtering
+                )
+                book_ids = [row[0] for row in result]
+
+                if not book_ids:
+                    return []
+
+            # Build filter conditions
+            from .search_parser import SearchQueryParser
+            parser = SearchQueryParser()
+            where_clause, params = parser.to_sql_conditions(parsed)
+
+            # If we have both FTS and filters, combine them
+            if book_ids and where_clause:
+                # Start with FTS results and apply filters
+                books_query = self.session.query(Book).filter(
+                    Book.id.in_(book_ids)
+                )
+
+                # Apply additional SQL filters
+                if where_clause:
+                    books_query = books_query.filter(text(where_clause).bindparams(**params))
+
+                books = books_query.limit(limit).all()
+
+                # Maintain FTS ranking order
+                books_dict = {b.id: b for b in books}
+                return [books_dict[bid] for bid in book_ids if bid in books_dict][:limit]
+
+            # If only FTS (no additional filters)
+            elif book_ids:
+                books = self.session.query(Book).filter(Book.id.in_(book_ids)).all()
+                books_dict = {b.id: b for b in books}
+                return [books_dict[bid] for bid in book_ids if bid in books_dict][:limit]
+
+            # If only filters (no FTS)
+            elif where_clause:
+                books_query = self.session.query(Book)
+                books_query = books_query.filter(text(where_clause).bindparams(**params))
+                return books_query.limit(limit).all()
+
+            return []
 
         except Exception as e:
             logger.error(f"Search error: {e}")
-            return []
+            logger.exception(e)
+            # Fallback to original simple FTS search
+            try:
+                result = self.session.execute(
+                    text("""
+                    SELECT book_id, rank
+                    FROM books_fts
+                    WHERE books_fts MATCH :query
+                    ORDER BY rank
+                    LIMIT :limit
+                    """),
+                    {"query": query, "limit": limit}
+                )
+                book_ids = [row[0] for row in result]
+                if not book_ids:
+                    return []
+                books = self.session.query(Book).filter(Book.id.in_(book_ids)).all()
+                books_dict = {b.id: b for b in books}
+                return [books_dict[bid] for bid in book_ids if bid in books_dict]
+            except Exception as fallback_error:
+                logger.error(f"Fallback search also failed: {fallback_error}")
+                return []
 
     def stats(self) -> Dict[str, Any]:
         """
@@ -343,6 +419,31 @@ class Library:
             personal.personal_tags = [t for t in personal.personal_tags if t not in tags]
             self.session.commit()
             logger.info(f"Removed tags from book {book_id}: {tags}")
+
+    def add_subject(self, book_id: int, subject_name: str):
+        """
+        Add a subject/tag to a book.
+
+        Args:
+            book_id: Book ID
+            subject_name: Subject/tag name to add
+        """
+        book = self.session.query(Book).filter_by(id=book_id).first()
+        if not book:
+            logger.warning(f"Book {book_id} not found")
+            return
+
+        # Check if subject already exists
+        subject = self.session.query(Subject).filter_by(name=subject_name).first()
+        if not subject:
+            subject = Subject(name=subject_name)
+            self.session.add(subject)
+
+        # Add subject to book if not already present
+        if subject not in book.subjects:
+            book.subjects.append(subject)
+            self.session.commit()
+            logger.info(f"Added subject '{subject_name}' to book {book_id}")
 
     def add_annotation(self, book_id: int, content: str,
                       page: Optional[int] = None,

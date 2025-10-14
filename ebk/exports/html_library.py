@@ -490,6 +490,23 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
                 gap: 8px;
             }}
         }}
+
+        code {{
+            background: rgba(37, 99, 235, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: var(--primary);
+        }}
+
+        #search-help ul {{
+            list-style-type: none;
+        }}
+
+        #search-help li {{
+            padding: 3px 0;
+        }}
     </style>
 </head>
 <body>
@@ -519,12 +536,64 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
 
     <div class="container">
         <div class="controls">
-            <input
-                type="text"
-                class="search-bar"
-                id="search-input"
-                placeholder="Search books by title, author, subject, or keywords..."
-            >
+            <div style="position: relative; display: flex; align-items: center; gap: 8px;">
+                <input
+                    type="text"
+                    class="search-bar"
+                    id="search-input"
+                    placeholder="Search books... (try: title:Python rating:>=4)"
+                    style="flex: 1;"
+                >
+                <button
+                    onclick="toggleSearchHelp()"
+                    style="background: var(--secondary); color: white; border: none; border-radius: 6px; width: 36px; height: 36px; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center;"
+                    title="Search Help"
+                >
+                    ?
+                </button>
+            </div>
+
+            <div id="search-help" style="display: none; margin-top: 10px; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 2px solid var(--primary); font-size: 0.875rem;">
+                <h4 style="margin-top: 0; color: var(--primary);">Advanced Search Syntax</h4>
+
+                <p style="margin: 5px 0;"><strong>Field Searches:</strong></p>
+                <ul style="margin: 5px 0 10px 20px; padding: 0;">
+                    <li><code>title:Python</code> - Search in title only</li>
+                    <li><code>author:Knuth</code> - Search author name</li>
+                    <li><code>tag:programming</code> - Search subjects/tags</li>
+                    <li><code>description:algorithms</code> - Search description</li>
+                    <li><code>series:TAOCP</code> - Search series name</li>
+                </ul>
+
+                <p style="margin: 5px 0;"><strong>Filters:</strong></p>
+                <ul style="margin: 5px 0 10px 20px; padding: 0;">
+                    <li><code>language:en</code> - Language code</li>
+                    <li><code>format:pdf</code> - File format</li>
+                    <li><code>rating:5</code> or <code>rating:>=4</code> - Rating filter</li>
+                    <li><code>favorite:true</code> - Favorites only</li>
+                    <li><code>status:reading</code> - Reading status</li>
+                </ul>
+
+                <p style="margin: 5px 0;"><strong>Boolean Logic:</strong></p>
+                <ul style="margin: 5px 0 10px 20px; padding: 0;">
+                    <li><code>python java</code> - Both terms (implicit AND)</li>
+                    <li><code>python OR java</code> - Either term</li>
+                    <li><code>NOT java</code> or <code>-java</code> - Exclude term</li>
+                </ul>
+
+                <p style="margin: 5px 0;"><strong>Quotes:</strong></p>
+                <ul style="margin: 5px 0 10px 20px; padding: 0;">
+                    <li><code>"machine learning"</code> - Exact phrase</li>
+                    <li><code>author:"Donald Knuth"</code> - Field with phrase</li>
+                </ul>
+
+                <p style="margin: 5px 0;"><strong>Examples:</strong></p>
+                <ul style="margin: 5px 0 0 20px; padding: 0;">
+                    <li><code>title:Python rating:>=4 format:pdf</code></li>
+                    <li><code>author:"Donald Knuth" series:TAOCP</code></li>
+                    <li><code>tag:programming favorite:true NOT java</code></li>
+                </ul>
+            </div>
 
             <div class="filters">
                 <div class="filter-group">
@@ -591,6 +660,8 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
             <button onclick="clearFilters()" style="margin-top: 10px; padding: 8px 16px; background: var(--secondary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Clear Filters</button>
         </div>
 
+        <div id="results-info" style="margin-bottom: 15px; color: var(--text-light); font-size: 0.9rem;"></div>
+
         <div class="book-grid" id="book-grid"></div>
 
         <div class="no-results" id="no-results" style="display: none;">
@@ -598,6 +669,8 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
             <h2>No books found</h2>
             <p>Try adjusting your search or filters</p>
         </div>
+
+        <div id="pagination" style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 30px; flex-wrap: wrap;"></div>
     </div>
 
     <div class="modal" id="book-modal">
@@ -623,13 +696,22 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
         let filteredBooks = [...BOOKS];
         let editMode = false;
         let currentBookId = null;
+        let currentPage = 1;
+        const booksPerPage = 50;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {{
             populateStats();
             populateFilters();
-            renderBooks();
+            restoreStateFromURL();
+            applyFilters();
             setupEventListeners();
+
+            // Handle browser back/forward
+            window.addEventListener('popstate', () => {{
+                restoreStateFromURL();
+                applyFilters();
+            }});
         }});
 
         function populateStats() {{
@@ -679,15 +761,87 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
             return book;
         }}
 
+        // URL State Management
+        function updateURL() {{
+            const params = new URLSearchParams();
+
+            if (currentPage > 1) params.set('page', currentPage);
+
+            const searchQuery = document.getElementById('search-input').value;
+            if (searchQuery) params.set('q', searchQuery);
+
+            const language = document.getElementById('language-filter').value;
+            if (language) params.set('language', language);
+
+            const format = document.getElementById('format-filter').value;
+            if (format) params.set('format', format);
+
+            const series = document.getElementById('series-filter').value;
+            if (series) params.set('series', series);
+
+            const favorite = document.getElementById('favorite-filter').value;
+            if (favorite) params.set('favorite', favorite);
+
+            const rating = document.getElementById('rating-filter').value;
+            if (rating) params.set('rating', rating);
+
+            const sortField = document.getElementById('sort-field').value;
+            if (sortField !== 'title') params.set('sort', sortField);
+
+            const sortOrder = document.getElementById('sort-order').value;
+            if (sortOrder !== 'asc') params.set('order', sortOrder);
+
+            const newURL = params.toString() ? `?${{params.toString()}}` : window.location.pathname;
+            window.history.pushState({{}}, '', newURL);
+        }}
+
+        function restoreStateFromURL() {{
+            const params = new URLSearchParams(window.location.search);
+
+            currentPage = parseInt(params.get('page')) || 1;
+
+            document.getElementById('search-input').value = params.get('q') || '';
+            document.getElementById('language-filter').value = params.get('language') || '';
+            document.getElementById('format-filter').value = params.get('format') || '';
+            document.getElementById('series-filter').value = params.get('series') || '';
+            document.getElementById('favorite-filter').value = params.get('favorite') || '';
+            document.getElementById('rating-filter').value = params.get('rating') || '';
+            document.getElementById('sort-field').value = params.get('sort') || 'title';
+            document.getElementById('sort-order').value = params.get('order') || 'asc';
+        }}
+
+        function applyFilters() {{
+            filterBooks();
+            updateURL();
+        }}
+
         function setupEventListeners() {{
-            document.getElementById('search-input').addEventListener('input', filterBooks);
-            document.getElementById('language-filter').addEventListener('change', filterBooks);
-            document.getElementById('format-filter').addEventListener('change', filterBooks);
-            document.getElementById('series-filter').addEventListener('change', filterBooks);
-            document.getElementById('favorite-filter').addEventListener('change', filterBooks);
-            document.getElementById('rating-filter').addEventListener('change', filterBooks);
-            document.getElementById('sort-field').addEventListener('change', filterBooks);
-            document.getElementById('sort-order').addEventListener('change', filterBooks);
+            document.getElementById('search-input').addEventListener('input', () => {{
+                currentPage = 1;  // Reset to page 1 on new search
+                applyFilters();
+            }});
+            document.getElementById('language-filter').addEventListener('change', () => {{
+                currentPage = 1;
+                applyFilters();
+            }});
+            document.getElementById('format-filter').addEventListener('change', () => {{
+                currentPage = 1;
+                applyFilters();
+            }});
+            document.getElementById('series-filter').addEventListener('change', () => {{
+                currentPage = 1;
+                applyFilters();
+            }});
+            document.getElementById('favorite-filter').addEventListener('change', () => {{
+                currentPage = 1;
+                applyFilters();
+            }});
+            document.getElementById('rating-filter').addEventListener('change', () => {{
+                currentPage = 1;
+                applyFilters();
+            }});
+            document.getElementById('sort-field').addEventListener('change', applyFilters);
+            document.getElementById('sort-order').addEventListener('change', applyFilters);
 
             // Close modal on outside click
             document.getElementById('book-modal').addEventListener('click', (e) => {{
@@ -790,21 +944,35 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
         function renderBooks() {{
             const grid = document.getElementById('book-grid');
             const noResults = document.getElementById('no-results');
+            const resultsInfo = document.getElementById('results-info');
+            const pagination = document.getElementById('pagination');
 
             if (filteredBooks.length === 0) {{
                 grid.style.display = 'none';
                 noResults.style.display = 'block';
+                resultsInfo.style.display = 'none';
+                pagination.style.display = 'none';
                 return;
             }}
 
             grid.style.display = 'grid';
             noResults.style.display = 'none';
+            resultsInfo.style.display = 'block';
 
-            grid.innerHTML = filteredBooks.map(book => `
+            // Pagination
+            const totalPages = Math.ceil(filteredBooks.length / booksPerPage);
+            const startIdx = (currentPage - 1) * booksPerPage;
+            const endIdx = Math.min(startIdx + booksPerPage, filteredBooks.length);
+            const booksToShow = filteredBooks.slice(startIdx, endIdx);
+
+            // Update results info
+            resultsInfo.textContent = `Showing ${{startIdx + 1}}-${{endIdx}} of ${{filteredBooks.length}} books`;
+
+            grid.innerHTML = booksToShow.map(book => `
                 <div class="book-card" onclick="showBookDetails(${{book.id}})">
                     ${{book.cover_path ? `
                         <div style="text-align: center; margin-bottom: 12px;">
-                            <img src="${{'{base_url}' + '/' if '{base_url}' else ''}}${{book.cover_path}}"
+                            <img src="${{BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path}}"
                                  alt="Cover"
                                  style="max-width: 100%; max-height: 220px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
                                  onerror="this.style.display='none'">
@@ -829,6 +997,76 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
                     </div>
                 </div>
             `).join('');
+
+            // Render pagination controls
+            renderPagination(totalPages);
+        }}
+
+        function renderPagination(totalPages) {{
+            const pagination = document.getElementById('pagination');
+
+            if (totalPages <= 1) {{
+                pagination.style.display = 'none';
+                return;
+            }}
+
+            pagination.style.display = 'flex';
+
+            let html = '';
+
+            // Previous button
+            html += `<button onclick="goToPage(${{currentPage - 1}})" ${{currentPage === 1 ? 'disabled' : ''}}
+                style="padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem; ${{currentPage === 1 ? 'opacity: 0.5; cursor: not-allowed;' : ''}}">
+                ← Previous
+            </button>`;
+
+            // Page numbers
+            const maxButtons = 7;
+            let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+            if (endPage - startPage < maxButtons - 1) {{
+                startPage = Math.max(1, endPage - maxButtons + 1);
+            }}
+
+            if (startPage > 1) {{
+                html += `<button onclick="goToPage(1)" style="padding: 8px 12px; background: white; color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.875rem;">1</button>`;
+                if (startPage > 2) {{
+                    html += `<span style="padding: 8px;">...</span>`;
+                }}
+            }}
+
+            for (let i = startPage; i <= endPage; i++) {{
+                const isActive = i === currentPage;
+                html += `<button onclick="goToPage(${{i}})"
+                    style="padding: 8px 12px; background: ${{isActive ? 'var(--primary)' : 'white'}}; color: ${{isActive ? 'white' : 'var(--text)'}}; border: 1px solid ${{isActive ? 'var(--primary)' : 'var(--border)'}}; border-radius: 6px; cursor: pointer; font-size: 0.875rem; font-weight: ${{isActive ? '600' : '400'}};">
+                    ${{i}}
+                </button>`;
+            }}
+
+            if (endPage < totalPages) {{
+                if (endPage < totalPages - 1) {{
+                    html += `<span style="padding: 8px;">...</span>`;
+                }}
+                html += `<button onclick="goToPage(${{totalPages}})" style="padding: 8px 12px; background: white; color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.875rem;">${{totalPages}}</button>`;
+            }}
+
+            // Next button
+            html += `<button onclick="goToPage(${{currentPage + 1}})" ${{currentPage === totalPages ? 'disabled' : ''}}
+                style="padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem; ${{currentPage === totalPages ? 'opacity: 0.5; cursor: not-allowed;' : ''}}">
+                Next →
+            </button>`;
+
+            pagination.innerHTML = html;
+        }}
+
+        function goToPage(page) {{
+            const totalPages = Math.ceil(filteredBooks.length / booksPerPage);
+            if (page < 1 || page > totalPages) return;
+            currentPage = page;
+            renderBooks();
+            updateURL();
+            window.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
 
         function showBookDetails(bookId) {{
@@ -851,7 +1089,7 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
             if (book.cover_path) {{
                 html += `
                     <div style="text-align: center; margin-bottom: 20px;">
-                        <img src="${{'{base_url}' + '/' if '{base_url}' else ''}}${{book.cover_path}}"
+                        <img src="${{BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path}}"
                              alt="Cover"
                              style="max-width: 300px; max-height: 400px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);"
                              onerror="this.style.display='none'">
@@ -1007,6 +1245,15 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
             document.getElementById('book-modal').classList.remove('active');
             editMode = false;
             currentBookId = null;
+        }}
+
+        function toggleSearchHelp() {{
+            const helpDiv = document.getElementById('search-help');
+            if (helpDiv.style.display === 'none') {{
+                helpDiv.style.display = 'block';
+            }} else {{
+                helpDiv.style.display = 'none';
+            }}
         }}
 
         function toggleEditMode() {{

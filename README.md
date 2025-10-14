@@ -42,7 +42,13 @@
   - Same file (same hash) = skipped
   - Same book, different format = added as additional format
   - Hash-prefixed directory storage for scalability
-- **Full-Text Search**: Fast FTS5-powered search across titles, descriptions, and extracted text
+- **Advanced Search**: Powerful search with field-specific queries and boolean logic
+  - Field searches: `title:Python`, `author:Knuth`, `tag:programming`
+  - Boolean operators: `AND` (implicit), `OR`, `NOT`/`-prefix`
+  - Comparison filters: `rating:>=4`, `rating:3-5`
+  - Exact filters: `language:en`, `format:pdf`, `favorite:true`
+  - Phrase searches: `"machine learning"`
+  - Fast FTS5-powered full-text search across titles, descriptions, and extracted text
 - **Import from Multiple Sources**:
   - Calibre libraries (reads metadata.opf files)
   - Individual ebook files with auto-metadata extraction
@@ -64,6 +70,10 @@
   - Clickable covers and file formats to open books
   - Book details modal with comprehensive metadata display
 - **Flexible Exports**:
+  - **HTML Export**: Self-contained interactive catalog with pagination (50 books/page)
+    - Client-side search and filtering
+    - URL state tracking for bookmarkable pages
+    - Optional file copying with `--copy` flag (includes covers)
   - Export to ZIP archives
   - Hugo-compatible Markdown with multiple organization options
   - Jinja2 template support for customizable export formats
@@ -292,9 +302,12 @@ ebk import book.pdf ~/my-library
 ebk import ~/books/*.epub ~/my-library
 ebk import-calibre ~/Calibre/Library --output ~/my-library
 
-# Search with full-text search (FTS5)
-ebk search "machine learning" ~/my-library
-ebk search "author:Knuth" ~/my-library
+# Search with advanced syntax
+ebk search "machine learning" ~/my-library              # Plain full-text search
+ebk search "title:Python rating:>=4" ~/my-library       # Field-specific with filters
+ebk search "author:Knuth format:pdf" ~/my-library       # Multiple criteria
+ebk search "tag:programming NOT java" ~/my-library      # Boolean operators
+ebk search '"deep learning" language:en' ~/my-library   # Phrase search with filter
 
 # List and filter
 ebk list ~/my-library
@@ -386,6 +399,8 @@ ebk config get llm.model
 
 ```bash
 # Export library
+ebk export html ~/my-library ~/library.html                    # Self-contained HTML with pagination
+ebk export html ~/my-library ~/site/lib.html --copy --base-url /library  # Copy files + covers
 ebk export zip ~/my-library ~/backup.zip
 ebk export json ~/my-library ~/metadata.json
 

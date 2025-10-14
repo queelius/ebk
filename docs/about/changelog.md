@@ -2,6 +2,39 @@
 
 Project changelog and release notes.
 
+## v0.3.1 (2025-01-14)
+
+### New Features
+- 🔍 **Advanced Search**: Field-specific queries with boolean logic
+  - Field searches: `title:`, `author:`, `tag:`, `description:`, `text:`
+  - Filter fields: `language:`, `format:`, `rating:`, `favorite:`, `status:`
+  - Boolean operators: `AND` (implicit), `OR`, `NOT`/`-prefix`
+  - Rating comparisons: `rating:>=4`, `rating:3-5`
+  - Phrase searches: `"exact phrase"`
+- 📄 **HTML Export Pagination**: 50 books per page with navigation controls
+  - URL state tracking for bookmarkable pages
+  - Page numbers in URL query parameters
+  - Previous/Next buttons with page number links
+- 📋 **Cover Copying**: `--copy` flag now copies both files AND covers
+
+### Improvements
+- Search parser with FTS5 column-specific queries (`title:term`)
+- Author and subject filtering via SQL JOINs (not in FTS table)
+- HTML export with URL-based state management (filters, search, page)
+- Fixed `ExtractedText.content` attribute name (was incorrectly using `full_text`)
+- Added missing `Library.add_subject()` method for metadata enrichment
+
+### Bug Fixes
+- Fixed `ebk enrich` command attribute error with extracted text
+- Fixed HTML export `--copy` not copying cover images
+- Fixed field searches not working (FTS5 column prefixes)
+
+### Documentation
+- Comprehensive search guide with all syntax and examples
+- Updated README with advanced search features
+- Import/export guide with pagination documentation
+- Clear notes about HTML export limitations (client-side filtering only)
+
 ## v0.3.0 (2025-01-XX)
 
 ### New Features

@@ -1279,6 +1279,57 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#v031-2025-01-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      v0.3.1 (2025-01-14)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v0.3.1 (2025-01-14)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      New Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Improvements
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bug Fixes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#v030-2025-01-xx" class="md-nav__link">
     <span class="md-ellipsis">
       v0.3.0 (2025-01-XX)
@@ -1289,7 +1340,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features" class="md-nav__link">
+  <a href="#new-features_1" class="md-nav__link">
     <span class="md-ellipsis">
       New Features
     </span>
@@ -1325,7 +1376,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation" class="md-nav__link">
+  <a href="#documentation_1" class="md-nav__link">
     <span class="md-ellipsis">
       Documentation
     </span>
@@ -1416,8 +1467,44 @@
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>Project changelog and release notes.</p>
-<h2 id="v030-2025-01-xx">v0.3.0 (2025-01-XX)<a class="headerlink" href="#v030-2025-01-xx" title="Permanent link">&para;</a></h2>
+<h2 id="v031-2025-01-14">v0.3.1 (2025-01-14)<a class="headerlink" href="#v031-2025-01-14" title="Permanent link">&para;</a></h2>
 <h3 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li>🔍 <strong>Advanced Search</strong>: Field-specific queries with boolean logic</li>
+<li>Field searches: <code>title:</code>, <code>author:</code>, <code>tag:</code>, <code>description:</code>, <code>text:</code></li>
+<li>Filter fields: <code>language:</code>, <code>format:</code>, <code>rating:</code>, <code>favorite:</code>, <code>status:</code></li>
+<li>Boolean operators: <code>AND</code> (implicit), <code>OR</code>, <code>NOT</code>/<code>-prefix</code></li>
+<li>Rating comparisons: <code>rating:&gt;=4</code>, <code>rating:3-5</code></li>
+<li>Phrase searches: <code>"exact phrase"</code></li>
+<li>📄 <strong>HTML Export Pagination</strong>: 50 books per page with navigation controls</li>
+<li>URL state tracking for bookmarkable pages</li>
+<li>Page numbers in URL query parameters</li>
+<li>Previous/Next buttons with page number links</li>
+<li>📋 <strong>Cover Copying</strong>: <code>--copy</code> flag now copies both files AND covers</li>
+</ul>
+<h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Search parser with FTS5 column-specific queries (<code>title:term</code>)</li>
+<li>Author and subject filtering via SQL JOINs (not in FTS table)</li>
+<li>HTML export with URL-based state management (filters, search, page)</li>
+<li>Fixed <code>ExtractedText.content</code> attribute name (was incorrectly using <code>full_text</code>)</li>
+<li>Added missing <code>Library.add_subject()</code> method for metadata enrichment</li>
+</ul>
+<h3 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Fixed <code>ebk enrich</code> command attribute error with extracted text</li>
+<li>Fixed HTML export <code>--copy</code> not copying cover images</li>
+<li>Fixed field searches not working (FTS5 column prefixes)</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Comprehensive search guide with all syntax and examples</li>
+<li>Updated README with advanced search features</li>
+<li>Import/export guide with pagination documentation</li>
+<li>Clear notes about HTML export limitations (client-side filtering only)</li>
+</ul>
+<h2 id="v030-2025-01-xx">v0.3.0 (2025-01-XX)<a class="headerlink" href="#v030-2025-01-xx" title="Permanent link">&para;</a></h2>
+<h3 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>✨ Configuration system at <code>~/.config/ebk/config.json</code></li>
 <li>🤖 LLM provider abstraction with Ollama support (local and remote)</li>
@@ -1448,7 +1535,7 @@
 <li>Auto-open browser feature</li>
 <li>REST API improvements</li>
 </ul>
-<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>New user guides: Configuration, LLM Features, Web Server, CLI Reference</li>
 <li>Updated README with quickstart and modern examples</li>
