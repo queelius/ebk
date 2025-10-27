@@ -19,11 +19,6 @@ setup(
         "console_scripts": [
             "ebk=ebk.cli:app"
         ],
-        # Plugin entry points for automatic discovery
-        "ebk.plugins": [
-            "google_books = integrations.metadata:GoogleBooksExtractor",
-            "network_analyzer = integrations.network:NetworkAnalyzer",
-        ]
     },
     install_requires=[
         # Core dependencies only

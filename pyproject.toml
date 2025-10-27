@@ -56,10 +56,10 @@ Changelog = "https://github.com/queelius/ebk/blob/main/CHANGELOG.md"
 [project.scripts]
 ebk = "ebk.cli:app"
 
-[project.entry-points."ebk.plugins"]
-# Bundled plugins - automatically discovered
-google_books = "integrations.metadata:GoogleBooksExtractor"
-network_analyzer = "integrations.network:NetworkAnalyzer"
+# Plugin entry points removed - integrations are optional extras
+# [project.entry-points."ebk.plugins"]
+# google_books = "integrations.metadata:GoogleBooksExtractor"
+# network_analyzer = "integrations.network:NetworkAnalyzer"
 
 [project.optional-dependencies]
 # AI-powered features (knowledge graph, semantic search, reading companion)
@@ -155,17 +155,18 @@ all = [
 viz = ["ebk[network-advanced]"]
 
 [tool.setuptools]
-packages = ["ebk", "ebk.plugins", "integrations"]
+# Use find directive to discover all subpackages
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ebk*"]
+exclude = ["tests*", "docs*", "examples*", "archive*"]
 
 [tool.setuptools.package-data]
 ebk = [
     "templates/**/*",
     "static/**/*",
-]
-integrations = [
-    "*/templates/**/*",
-    "*/static/**/*",
 ]
 
 [tool.black]
