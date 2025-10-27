@@ -3,6 +3,8 @@
 ## Overview
 This document outlines the development roadmap and pending tasks for the ebk project. Items are organized by priority and category.
 
+See also: [Contributing Guide](contributing.md)
+
 ## ✅ Recently Completed
 - [x] Plugin system architecture with abstract base classes
 - [x] Plugin registry with automatic discovery
@@ -104,7 +106,7 @@ This document outlines the development roadmap and pending tasks for the ebk pro
 
 ## 🤝 Community
 
-- [ ] Contribution guidelines (CONTRIBUTING.md)
+- [ ] Contribution guidelines (contributing.md)
 - [ ] Code of conduct (CODE_OF_CONDUCT.md)
 - [ ] Issue templates for GitHub
 - [ ] Pull request templates
@@ -133,7 +135,7 @@ This document outlines the development roadmap and pending tasks for the ebk pro
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) (coming soon) for details on how to get started.
+We welcome contributions! Please see our [Contributing Guide](contributing.md) (coming soon) for details on how to get started.
 
 ## Feedback
 

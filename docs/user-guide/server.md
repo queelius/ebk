@@ -577,4 +577,4 @@ app.add_middleware(
 - [Configuration Guide](../getting-started/configuration.md) - Configure server defaults
 - [CLI Reference](cli.md) - All server options
 - [Python API](api.md) - Programmatic server control
-- [REST API Documentation](api.md#rest-api) - Complete API reference
+- [Python API Documentation](api.md) - Complete API reference

@@ -627,6 +627,113 @@ class Library:
         self.session.commit()
         logger.info(f"Deleted book: {book.title}")
 
+    def find_similar(
+        self,
+        book_id: int,
+        top_k: int = 10,
+        similarity_config: Optional[Any] = None,
+        filter_language: bool = True,
+    ) -> List[Tuple[Book, float]]:
+        """
+        Find books similar to the given book.
+
+        Uses semantic similarity based on content, metadata, etc.
+
+        Args:
+            book_id: ID of the query book
+            top_k: Number of similar books to return (default 10)
+            similarity_config: Optional BookSimilarity instance
+                             (default: balanced preset)
+            filter_language: If True, only return books in same language
+
+        Returns:
+            List of (book, similarity_score) tuples, sorted by similarity
+
+        Example:
+            >>> similar = lib.find_similar(42, top_k=5)
+            >>> for book, score in similar:
+            ...     print(f"{book.title}: {score:.2f}")
+        """
+        from ebk.similarity import BookSimilarity
+
+        # Get query book
+        query_book = self.get_book(book_id)
+        if not query_book:
+            logger.warning(f"Book {book_id} not found")
+            return []
+
+        # Get candidate books
+        candidates_query = self.query()
+        if filter_language and query_book.language:
+            candidates_query = candidates_query.filter_by_language(query_book.language)
+
+        candidates = candidates_query.all()
+
+        if not candidates:
+            return []
+
+        # Configure similarity
+        if similarity_config is None:
+            similarity_config = BookSimilarity().balanced()
+
+        # Fit on all candidates for performance
+        similarity_config.fit(candidates)
+
+        # Find similar books
+        results = similarity_config.find_similar(query_book, candidates, top_k=top_k)
+
+        logger.info(
+            f"Found {len(results)} similar books to '{query_book.title}'"
+        )
+
+        return results
+
+    def compute_similarity_matrix(
+        self,
+        book_ids: Optional[List[int]] = None,
+        similarity_config: Optional[Any] = None,
+    ) -> Tuple[List[Book], Any]:
+        """
+        Compute pairwise similarity matrix for books.
+
+        Args:
+            book_ids: Optional list of book IDs (default: all books)
+            similarity_config: Optional BookSimilarity instance
+                             (default: balanced preset)
+
+        Returns:
+            Tuple of (books, similarity_matrix)
+            where similarity_matrix[i][j] = similarity(books[i], books[j])
+
+        Example:
+            >>> books, matrix = lib.compute_similarity_matrix()
+            >>> # matrix[0][1] is similarity between books[0] and books[1]
+        """
+        from ebk.similarity import BookSimilarity
+
+        # Get books
+        if book_ids:
+            books = [self.get_book(book_id) for book_id in book_ids]
+            books = [b for b in books if b is not None]  # Filter None
+        else:
+            books = self.query().all()
+
+        if not books:
+            logger.warning("No books found for similarity matrix")
+            return [], None
+
+        # Configure similarity
+        if similarity_config is None:
+            similarity_config = BookSimilarity().balanced()
+
+        # Fit and compute matrix
+        similarity_config.fit(books)
+        matrix = similarity_config.similarity_matrix(books)
+
+        logger.info(f"Computed {len(books)}x{len(books)} similarity matrix")
+
+        return books, matrix
+
 
 class QueryBuilder:
     """Fluent query builder for books."""
@@ -665,6 +772,54 @@ class QueryBuilder:
     def filter_by_publisher(self, publisher: str) -> 'QueryBuilder':
         """Filter by publisher."""
         self._query = self._query.filter(Book.publisher.ilike(f"%{publisher}%"))
+        return self
+
+    def filter_by_year(self, year: int) -> 'QueryBuilder':
+        """Filter by publication year.
+
+        Args:
+            year: Publication year (e.g., 1975)
+
+        Returns:
+            Self for chaining
+        """
+        # publication_date can be "YYYY", "YYYY-MM", or "YYYY-MM-DD"
+        # So we match if it starts with the year
+        year_str = str(year)
+        self._query = self._query.filter(Book.publication_date.like(f"{year_str}%"))
+        return self
+
+    def filter_by_text(self, search_text: str) -> 'QueryBuilder':
+        """Filter by full-text search.
+
+        Uses FTS5 to search across title, description, and extracted text.
+
+        Args:
+            search_text: Text to search for
+
+        Returns:
+            Self for chaining
+        """
+        from sqlalchemy import text as sql_text
+
+        # Query FTS5 table for matching book IDs
+        result = self.session.execute(
+            sql_text("""
+            SELECT book_id
+            FROM books_fts
+            WHERE books_fts MATCH :query
+            ORDER BY rank
+            """),
+            {"query": search_text}
+        )
+        book_ids = [row[0] for row in result]
+
+        if book_ids:
+            self._query = self._query.filter(Book.id.in_(book_ids))
+        else:
+            # No matches - ensure query returns empty
+            self._query = self._query.filter(Book.id == -1)
+
         return self
 
     def filter_by_reading_status(self, status: str) -> 'QueryBuilder':

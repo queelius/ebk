@@ -39,6 +39,14 @@ book_subjects = Table(
     Column('source', String(50), default='user')  # calibre, ai_extracted, user_added
 )
 
+book_tags = Table(
+    'book_tags',
+    Base.metadata,
+    Column('book_id', Integer, ForeignKey('books.id', ondelete='CASCADE'), primary_key=True),
+    Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True),
+    Column('created_at', DateTime, default=datetime.utcnow)  # When tag was added
+)
+
 
 class Book(Base):
     """Core book entity with metadata."""
@@ -70,6 +78,9 @@ class Book(Base):
     word_count = Column(Integer)  # From extracted text
     keywords = Column(JSON)  # Array of keyword strings from PDF/metadata
 
+    # User customization
+    color = Column(String(7))  # Hex color code (e.g., #FF5733)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -77,6 +88,7 @@ class Book(Base):
     # Relationships
     authors = relationship('Author', secondary=book_authors, back_populates='books', lazy='selectin')
     subjects = relationship('Subject', secondary=book_subjects, back_populates='books', lazy='selectin')
+    tags = relationship('Tag', secondary=book_tags, back_populates='books', lazy='selectin')
     contributors = relationship('Contributor', back_populates='book', cascade='all, delete-orphan')
     identifiers = relationship('Identifier', back_populates='book', cascade='all, delete-orphan')
     files = relationship('File', back_populates='book', cascade='all, delete-orphan')
@@ -154,6 +166,63 @@ class Subject(Base):
 
     def __repr__(self):
         return f"<Subject(id={self.id}, name='{self.name}', type='{self.type}')>"
+
+
+class Tag(Base):
+    """User-defined hierarchical tags for organizing books.
+
+    Tags are separate from Subjects:
+    - Subjects: Bibliographic metadata (what the book is about)
+    - Tags: User-defined organization (how you use/categorize the book)
+
+    Examples:
+    - path="Work/Project-2024"
+    - path="Personal/To-Read"
+    - path="Reference/Programming/Python"
+    """
+    __tablename__ = 'tags'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False, index=True)  # Name at this level (e.g., "Python")
+    path = Column(String(500), nullable=False, unique=True, index=True)  # Full path (e.g., "Programming/Python")
+    parent_id = Column(Integer, ForeignKey('tags.id', ondelete='CASCADE'))
+
+    # Metadata
+    description = Column(Text)  # Optional description of the tag
+    color = Column(String(7))  # Hex color code for UI display (e.g., "#FF5733")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Self-referential relationship for hierarchy
+    parent = relationship('Tag', remote_side=[id], backref='children')
+    books = relationship('Book', secondary=book_tags, back_populates='tags')
+
+    __table_args__ = (
+        Index('idx_tag_path', 'path'),
+        Index('idx_tag_parent', 'parent_id'),
+    )
+
+    @property
+    def depth(self) -> int:
+        """Calculate depth in hierarchy (root=0)."""
+        return self.path.count('/')
+
+    @property
+    def ancestors(self) -> List['Tag']:
+        """Get list of ancestor tags from root to parent."""
+        ancestors = []
+        current = self.parent
+        while current:
+            ancestors.insert(0, current)
+            current = current.parent
+        return ancestors
+
+    @property
+    def full_path_parts(self) -> List[str]:
+        """Split path into components."""
+        return self.path.split('/')
+
+    def __repr__(self):
+        return f"<Tag(id={self.id}, path='{self.path}')>"
 
 
 class Contributor(Base):

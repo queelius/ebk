@@ -48,14 +48,20 @@ logger = logging.getLogger(__name__)
 app = typer.Typer()
 
 # Command groups
+import_app = typer.Typer(help="Import books from various sources")
 export_app = typer.Typer(help="Export library data to various formats")
 vlib_app = typer.Typer(help="Manage virtual libraries (collection views)")
 note_app = typer.Typer(help="Manage book annotations and notes")
+tag_app = typer.Typer(help="Manage hierarchical tags for organizing books")
+vfs_app = typer.Typer(help="VFS commands (ln, mv, rm, ls, cat, mkdir)")
 
 # Register command groups
+app.add_typer(import_app, name="import")
 app.add_typer(export_app, name="export")
 app.add_typer(vlib_app, name="vlib")
 app.add_typer(note_app, name="note")
+app.add_typer(tag_app, name="tag")
+app.add_typer(vfs_app, name="vfs")
 
 @app.callback()
 def main(
@@ -99,6 +105,7 @@ def about():
     console.print("  ebk export <subcommand>      Export library data")
     console.print("  ebk vlib <subcommand>        Manage virtual libraries")
     console.print("  ebk note <subcommand>        Manage annotations")
+    console.print("  ebk tag <subcommand>         Manage hierarchical tags")
     console.print("")
     console.print("[bold]Getting Started:[/bold]")
     console.print("  1. Initialize: ebk init ~/my-library")
@@ -111,6 +118,46 @@ def about():
 # ============================================================================
 # Core Library Commands
 # ============================================================================
+
+@app.command()
+def shell(
+    library_path: Path = typer.Argument(..., help="Path to the library"),
+):
+    """
+    Launch interactive shell for navigating the library.
+
+    The shell provides a Linux-like interface for browsing and
+    managing your library through a virtual filesystem.
+
+    Commands:
+        cd, pwd, ls    - Navigate the VFS
+        cat            - Read file content
+        grep, find     - Search and query
+        open           - Open files
+        !<bash>        - Execute bash commands
+        !ebk <cmd>     - Pass through to ebk CLI
+        help           - Show help
+
+    Example:
+        ebk shell ~/my-library
+    """
+    from .repl import LibraryShell
+
+    library_path = Path(library_path)
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        console.print("Use 'ebk init' to create a new library.")
+        raise typer.Exit(code=1)
+
+    try:
+        shell = LibraryShell(library_path)
+        shell.run()
+    except Exception as e:
+        from rich.markup import escape
+        console.print(f"[red]Error launching shell: {escape(str(e))}[/red]")
+        raise typer.Exit(code=1)
+
 
 @app.command()
 def init(
@@ -146,8 +193,69 @@ def init(
         raise typer.Exit(code=1)
 
 
-@app.command(name="import")
-def import_book(
+@app.command()
+def migrate(
+    library_path: Path = typer.Argument(..., help="Path to the library"),
+    check_only: bool = typer.Option(False, "--check", help="Check which migrations are needed without applying"),
+):
+    """
+    Run database migrations on an existing library.
+
+    This upgrades the database schema to support new features without losing data.
+    Currently supports:
+      - Adding hierarchical tags table (for user-defined organization)
+
+    Example:
+        ebk migrate ~/my-library
+        ebk migrate ~/my-library --check
+    """
+    from .db.migrations import run_all_migrations, check_migrations
+
+    library_path = Path(library_path)
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    db_path = library_path / 'library.db'
+    if not db_path.exists():
+        console.print(f"[red]Error: Database not found at {db_path}[/red]")
+        console.print("Use 'ebk init' to create a new library.")
+        raise typer.Exit(code=1)
+
+    try:
+        if check_only:
+            console.print(f"[cyan]Checking migrations for {library_path}...[/cyan]")
+            results = check_migrations(library_path)
+
+            if not any(results.values()):
+                console.print("[green]✓ Database is up-to-date, no migrations needed[/green]")
+            else:
+                console.print("[yellow]Migrations needed:[/yellow]")
+                for name, needed in results.items():
+                    if needed:
+                        console.print(f"  • {name}")
+        else:
+            console.print(f"[cyan]Running migrations on {library_path}...[/cyan]")
+            results = run_all_migrations(library_path)
+
+            applied = [name for name, was_applied in results.items() if was_applied]
+
+            if not applied:
+                console.print("[green]✓ Database is up-to-date, no migrations applied[/green]")
+            else:
+                console.print("[green]✓ Migrations completed successfully:[/green]")
+                for name in applied:
+                    console.print(f"  • {name}")
+
+    except Exception as e:
+        console.print(f"[red]Error during migration: {e}[/red]")
+        logger.exception("Migration failed")
+        raise typer.Exit(code=1)
+
+
+@import_app.command(name="add")
+def import_add(
     file_path: Path = typer.Argument(..., help="Path to ebook file"),
     library_path: Path = typer.Argument(..., help="Path to library"),
     title: Optional[str] = typer.Option(None, "--title", "-t", help="Book title"),
@@ -159,14 +267,14 @@ def import_book(
     auto_metadata: bool = typer.Option(True, "--auto-metadata/--no-auto-metadata", help="Extract metadata from file")
 ):
     """
-    Import an ebook file into a database-backed library.
+    Import a single ebook file into the library.
 
     Extracts metadata, text, and cover images automatically unless disabled.
     Supports PDF, EPUB, MOBI, and plaintext files.
 
     Examples:
-        ebk import book.pdf ~/my-library
-        ebk import book.epub ~/my-library --title "My Book" --authors "Author Name"
+        ebk import add book.pdf ~/my-library
+        ebk import add book.epub ~/my-library --title "My Book" --authors "Author Name"
     """
     from .library_db import Library
     from .extract_metadata import extract_metadata
@@ -229,21 +337,21 @@ def import_book(
         raise typer.Exit(code=1)
 
 
-@app.command(name="import-calibre")
+@import_app.command(name="calibre")
 def import_calibre(
     calibre_path: Path = typer.Argument(..., help="Path to Calibre library"),
     library_path: Path = typer.Argument(..., help="Path to ebk library"),
     limit: Optional[int] = typer.Option(None, "--limit", help="Limit number of books to import")
 ):
     """
-    Import books from a Calibre library into database-backed library.
+    Import books from a Calibre library.
 
     Reads Calibre's metadata.opf files and imports ebooks with full metadata.
     Supports all Calibre-managed formats (PDF, EPUB, MOBI, etc.).
 
     Examples:
-        ebk import-calibre ~/Calibre/Library ~/my-library
-        ebk import-calibre ~/Calibre/Library ~/my-library --limit 100
+        ebk import calibre ~/Calibre/Library ~/my-library
+        ebk import calibre ~/Calibre/Library ~/my-library --limit 100
     """
     from .library_db import Library
 
@@ -302,6 +410,125 @@ def import_calibre(
     except Exception as e:
         console.print(f"[red]Error importing Calibre library: {e}[/red]")
         logger.exception("Calibre import error details:")
+        raise typer.Exit(code=1)
+
+
+@import_app.command(name="folder")
+def import_folder(
+    folder_path: Path = typer.Argument(..., help="Path to folder containing ebooks"),
+    library_path: Path = typer.Argument(..., help="Path to ebk library"),
+    recursive: bool = typer.Option(True, "--recursive/--no-recursive", "-r", help="Search subdirectories recursively"),
+    extensions: Optional[str] = typer.Option("pdf,epub,mobi,azw3,txt", "--extensions", "-e", help="File extensions to import (comma-separated)"),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Limit number of books to import"),
+    no_text: bool = typer.Option(False, "--no-text", help="Skip text extraction"),
+    no_cover: bool = typer.Option(False, "--no-cover", help="Skip cover extraction"),
+):
+    """
+    Import all ebook files from a folder (batch import).
+
+    Scans a directory for ebook files and imports them with automatic
+    metadata extraction. Useful for importing large collections.
+
+    Examples:
+        ebk import folder ~/Downloads/Books ~/my-library
+        ebk import folder ~/Books ~/my-library --no-recursive
+        ebk import folder ~/Books ~/my-library --extensions pdf,epub --limit 100
+    """
+    from .library_db import Library
+    from .extract_metadata import extract_metadata
+
+    if not folder_path.exists():
+        console.print(f"[red]Error: Folder not found: {folder_path}[/red]")
+        raise typer.Exit(code=1)
+
+    if not folder_path.is_dir():
+        console.print(f"[red]Error: Not a directory: {folder_path}[/red]")
+        raise typer.Exit(code=1)
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        console.print(f"[yellow]Initialize a library first with: ebk init {library_path}[/yellow]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        # Parse extensions
+        ext_list = [f".{ext.strip().lower()}" for ext in extensions.split(",")]
+
+        # Find all ebook files
+        console.print(f"Scanning folder for ebooks...")
+        ebook_files = []
+
+        if recursive:
+            for ext in ext_list:
+                ebook_files.extend(folder_path.rglob(f"*{ext}"))
+        else:
+            for ext in ext_list:
+                ebook_files.extend(folder_path.glob(f"*{ext}"))
+
+        # Remove duplicates and sort
+        ebook_files = sorted(set(ebook_files))
+
+        if limit:
+            ebook_files = ebook_files[:limit]
+
+        console.print(f"Found {len(ebook_files)} ebook files")
+
+        if len(ebook_files) == 0:
+            console.print("[yellow]No ebook files found.[/yellow]")
+            lib.close()
+            raise typer.Exit(code=0)
+
+        imported = 0
+        failed = 0
+        skipped = 0
+
+        with Progress() as progress:
+            task = progress.add_task("[cyan]Importing books...", total=len(ebook_files))
+
+            for file_path in ebook_files:
+                progress.update(task, description=f"[cyan]Importing: {file_path.name}")
+
+                try:
+                    # Extract metadata
+                    metadata = extract_metadata(str(file_path))
+
+                    # Ensure title exists
+                    if 'title' not in metadata or not metadata['title']:
+                        metadata['title'] = file_path.stem
+
+                    # Import book
+                    book = lib.add_book(
+                        file_path,
+                        metadata,
+                        extract_text=not no_text,
+                        extract_cover=not no_cover
+                    )
+
+                    if book:
+                        imported += 1
+                    else:
+                        skipped += 1  # Already exists
+
+                except Exception as e:
+                    failed += 1
+                    logger.debug(f"Failed to import {file_path}: {e}")
+
+                progress.advance(task)
+
+        # Summary
+        console.print(f"\n[bold]Import Summary:[/bold]")
+        console.print(f"  Imported: {imported}")
+        console.print(f"  Skipped (duplicates): {skipped}")
+        if failed > 0:
+            console.print(f"  Failed: {failed}")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error importing folder: {e}[/red]")
+        logger.exception("Folder import error details:")
         raise typer.Exit(code=1)
 
 
@@ -1933,6 +2160,867 @@ def config(
         )
         console.print("[green]✓ Configuration updated![/green]")
         console.print("[dim]Use 'ebk config --show' to view current settings[/dim]")
+
+
+# ============================================================================
+# Similarity Search Commands
+# ============================================================================
+
+@app.command(name="similar")
+def find_similar(
+    book_id: int = typer.Argument(..., help="Book ID to find similar books for"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    top_k: int = typer.Option(10, "--top-k", "-k", help="Number of similar books to return"),
+    same_language: bool = typer.Option(True, "--same-language", help="Filter by same language"),
+    preset: Optional[str] = typer.Option(None, "--preset", "-p", help="Similarity preset (balanced, content_only, metadata_only)"),
+    content_weight: Optional[float] = typer.Option(None, "--content-weight", help="Custom content similarity weight"),
+    authors_weight: Optional[float] = typer.Option(None, "--authors-weight", help="Custom authors similarity weight"),
+    subjects_weight: Optional[float] = typer.Option(None, "--subjects-weight", help="Custom subjects similarity weight"),
+    temporal_weight: Optional[float] = typer.Option(None, "--temporal-weight", help="Custom temporal similarity weight"),
+    show_scores: bool = typer.Option(True, "--show-scores/--hide-scores", help="Show similarity scores"),
+):
+    """
+    Find books similar to the given book using semantic similarity.
+
+    Uses a combination of content similarity (TF-IDF), author overlap,
+    subject overlap, temporal proximity, and other features.
+
+    Examples:
+        # Find 10 similar books using balanced preset
+        ebk similar 42 ~/my-library
+
+        # Find 20 similar books using content-only similarity
+        ebk similar 42 ~/my-library --top-k 20 --preset content_only
+
+        # Custom weights
+        ebk similar 42 ~/my-library --content-weight 4.0 --authors-weight 2.0
+    """
+    from .library_db import Library
+    from .similarity import BookSimilarity
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        # Get query book
+        query_book = lib.get_book(book_id)
+        if not query_book:
+            console.print(f"[red]Error: Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        console.print(f"\n[bold]Finding books similar to:[/bold]")
+        console.print(f"  {query_book.title}")
+        if query_book.authors:
+            authors_str = ", ".join(a.name for a in query_book.authors)
+            console.print(f"  [dim]by {authors_str}[/dim]")
+        console.print()
+
+        # Configure similarity
+        sim_config = None
+
+        if preset == "balanced":
+            sim_config = BookSimilarity().balanced()
+        elif preset == "content_only":
+            sim_config = BookSimilarity().content_only()
+        elif preset == "metadata_only":
+            sim_config = BookSimilarity().metadata_only()
+        elif any([content_weight, authors_weight, subjects_weight, temporal_weight]):
+            # Custom weights
+            sim_config = BookSimilarity()
+            if content_weight is not None:
+                sim_config = sim_config.content(weight=content_weight)
+            if authors_weight is not None:
+                sim_config = sim_config.authors(weight=authors_weight)
+            if subjects_weight is not None:
+                sim_config = sim_config.subjects(weight=subjects_weight)
+            if temporal_weight is not None:
+                sim_config = sim_config.temporal(weight=temporal_weight)
+
+        # Find similar books
+        with Progress() as progress:
+            task = progress.add_task("[cyan]Computing similarities...", total=None)
+            results = lib.find_similar(
+                book_id,
+                top_k=top_k,
+                similarity_config=sim_config,
+                filter_language=same_language,
+            )
+            progress.update(task, completed=True)
+
+        if not results:
+            console.print("[yellow]No similar books found[/yellow]")
+            lib.close()
+            return
+
+        # Display results in table
+        table = Table(title=f"Top {len(results)} Similar Books")
+        table.add_column("ID", style="cyan", no_wrap=True)
+        table.add_column("Title", style="green")
+        table.add_column("Authors", style="blue")
+        if show_scores:
+            table.add_column("Score", justify="right", style="magenta")
+        table.add_column("Year", justify="center", style="yellow")
+        table.add_column("Language", justify="center", style="dim")
+
+        for book, score in results:
+            authors_str = ", ".join(a.name for a in book.authors) if book.authors else ""
+            year_str = str(book.published_date)[:4] if book.published_date else ""
+            lang_str = book.language or ""
+
+            row = [
+                str(book.id),
+                book.title or "(No title)",
+                authors_str[:40] + "..." if len(authors_str) > 40 else authors_str,
+            ]
+            if show_scores:
+                row.append(f"{score:.3f}")
+            row.extend([year_str, lang_str])
+
+            table.add_row(*row)
+
+        console.print(table)
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error finding similar books: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+# ============================================================================
+# Tag Management Commands
+# ============================================================================
+
+@tag_app.command(name="list")
+def tag_list(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    tag_path: Optional[str] = typer.Option(None, "--tag", "-t", help="List books with specific tag"),
+    include_subtags: bool = typer.Option(False, "--subtags", "-s", help="Include books from subtags"),
+):
+    """
+    List all tags or books with a specific tag.
+
+    Examples:
+        ebk tag list ~/my-library              - List all tags
+        ebk tag list ~/my-library -t Work      - List books tagged with "Work"
+        ebk tag list ~/my-library -t Work -s   - Include books from Work/* subtags
+    """
+    from ebk.library_db import Library
+    from ebk.services.tag_service import TagService
+
+    library_path = Path(library_path)
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        tag_service = TagService(lib.session)
+
+        if tag_path:
+            # List books with specific tag
+            books = tag_service.get_books_with_tag(tag_path, include_subtags=include_subtags)
+
+            if not books:
+                console.print(f"[yellow]No books found with tag '{tag_path}'[/yellow]")
+                lib.close()
+                raise typer.Exit(code=0)
+
+            table = Table(title=f"Books with tag '{tag_path}'", show_header=True, header_style="bold magenta")
+            table.add_column("ID", style="cyan", width=6)
+            table.add_column("Title", style="white")
+            table.add_column("Authors", style="green")
+
+            for book in books:
+                authors = ", ".join([a.name for a in book.authors]) if book.authors else "Unknown"
+                table.add_row(str(book.id), book.title or "Untitled", authors)
+
+            console.print(table)
+            console.print(f"\n[cyan]Total:[/cyan] {len(books)} books")
+
+        else:
+            # List all tags
+            tags = tag_service.get_all_tags()
+
+            if not tags:
+                console.print("[yellow]No tags found in library[/yellow]")
+                lib.close()
+                raise typer.Exit(code=0)
+
+            table = Table(title="All Tags", show_header=True, header_style="bold magenta")
+            table.add_column("Path", style="cyan")
+            table.add_column("Books", style="white", justify="right")
+            table.add_column("Subtags", style="green", justify="right")
+            table.add_column("Description", style="yellow")
+
+            for tag in tags:
+                stats = tag_service.get_tag_stats(tag.path)
+                desc = tag.description[:50] + "..." if tag.description and len(tag.description) > 50 else tag.description or ""
+                table.add_row(
+                    tag.path,
+                    str(stats.get('book_count', 0)),
+                    str(stats.get('subtag_count', 0)),
+                    desc
+                )
+
+            console.print(table)
+            console.print(f"\n[cyan]Total:[/cyan] {len(tags)} tags")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error listing tags: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@tag_app.command(name="tree")
+def tag_tree(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    root: Optional[str] = typer.Option(None, "--root", "-r", help="Root tag to display (default: all)"),
+):
+    """
+    Display hierarchical tag tree.
+
+    Examples:
+        ebk tag tree ~/my-library              - Show all tags as tree
+        ebk tag tree ~/my-library -r Work      - Show Work tag subtree
+    """
+    from ebk.library_db import Library
+    from ebk.services.tag_service import TagService
+
+    library_path = Path(library_path)
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    def print_tree(tag, tag_service, prefix="", is_last=True):
+        """Recursively print tag tree."""
+        # Tree characters
+        connector = "└── " if is_last else "├── "
+        extension = "    " if is_last else "│   "
+
+        # Get stats
+        stats = tag_service.get_tag_stats(tag.path)
+        book_count = stats.get('book_count', 0)
+
+        # Format tag name with book count
+        tag_display = f"[cyan]{tag.name}[/cyan]"
+        if book_count > 0:
+            tag_display += f" [dim]({book_count} books)[/dim]"
+
+        console.print(f"{prefix}{connector}{tag_display}")
+
+        # Get and print children
+        children = tag_service.get_children(tag)
+        for i, child in enumerate(children):
+            is_last_child = (i == len(children) - 1)
+            print_tree(child, tag_service, prefix + extension, is_last_child)
+
+    try:
+        lib = Library.open(library_path)
+        tag_service = TagService(lib.session)
+
+        if root:
+            # Display specific subtree
+            root_tag = tag_service.get_tag(root)
+            if not root_tag:
+                console.print(f"[red]Tag '{root}' not found[/red]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+            console.print(f"[bold]Tag Tree: {root}[/bold]\n")
+            print_tree(root_tag, tag_service, "", True)
+
+        else:
+            # Display entire tree
+            root_tags = tag_service.get_root_tags()
+
+            if not root_tags:
+                console.print("[yellow]No tags found in library[/yellow]")
+                lib.close()
+                raise typer.Exit(code=0)
+
+            console.print("[bold]Tag Tree[/bold]\n")
+            for i, tag in enumerate(root_tags):
+                is_last = (i == len(root_tags) - 1)
+                print_tree(tag, tag_service, "", is_last)
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error displaying tag tree: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@tag_app.command(name="add")
+def tag_add(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    tag_path: str = typer.Argument(..., help="Tag path (e.g., 'Work/Project-2024')"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    description: Optional[str] = typer.Option(None, "--description", "-d", help="Tag description (for new tags)"),
+    color: Optional[str] = typer.Option(None, "--color", "-c", help="Tag color in hex (e.g., '#FF5733')"),
+):
+    """
+    [DEPRECATED] Add a tag to a book.
+
+    This command is deprecated. Use VFS commands instead:
+        ebk vfs ln <library> /books/<id> /tags/<tag-path>/
+
+    Creates tag hierarchy automatically if it doesn't exist.
+
+    Examples:
+        ebk tag add 42 Work ~/my-library
+        ebk tag add 42 Work/Project-2024 ~/my-library -d "2024 project books"
+        ebk tag add 42 Reading-List ~/my-library -c "#3498db"
+
+    Migrating to VFS:
+        ebk vfs ln ~/my-library /books/42 /tags/Work/
+        ebk vfs mkdir ~/my-library /tags/Work/Project-2024/
+        ebk vfs ln ~/my-library /books/42 /tags/Work/Project-2024/
+    """
+    console.print("[yellow]⚠ Warning: 'ebk tag add' is deprecated. Use 'ebk vfs ln' instead.[/yellow]")
+    console.print(f"[yellow]  Example: ebk vfs ln {library_path} /books/{book_id} /tags/{tag_path}/[/yellow]\n")
+    from ebk.library_db import Library
+    from ebk.services.tag_service import TagService
+    from ebk.db.models import Book
+
+    library_path = Path(library_path)
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        tag_service = TagService(lib.session)
+
+        # Get book
+        book = lib.session.query(Book).filter_by(id=book_id).first()
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Add tag to book
+        tag = tag_service.add_tag_to_book(book, tag_path)
+
+        # Update tag metadata if provided (only for leaf tag)
+        if description and tag.description != description:
+            tag.description = description
+            lib.session.commit()
+
+        if color and tag.color != color:
+            tag.color = color
+            lib.session.commit()
+
+        console.print(f"[green]✓ Added tag '{tag.path}' to book {book.id}[/green]")
+        if book.title:
+            console.print(f"  Book: {book.title}")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error adding tag: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@tag_app.command(name="remove")
+def tag_remove(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    tag_path: str = typer.Argument(..., help="Tag path (e.g., 'Work/Project-2024')"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+):
+    """
+    [DEPRECATED] Remove a tag from a book.
+
+    This command is deprecated. Use VFS commands instead:
+        ebk vfs rm <library> /tags/<tag-path>/<book-id>
+
+    Examples:
+        ebk tag remove 42 Work ~/my-library
+        ebk tag remove 42 Work/Project-2024 ~/my-library
+
+    Migrating to VFS:
+        ebk vfs rm ~/my-library /tags/Work/42
+        ebk vfs rm ~/my-library /tags/Work/Project-2024/42
+    """
+    console.print("[yellow]⚠ Warning: 'ebk tag remove' is deprecated. Use 'ebk vfs rm' instead.[/yellow]")
+    console.print(f"[yellow]  Example: ebk vfs rm {library_path} /tags/{tag_path}/{book_id}[/yellow]\n")
+    from ebk.library_db import Library
+    from ebk.services.tag_service import TagService
+    from ebk.db.models import Book
+
+    library_path = Path(library_path)
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        tag_service = TagService(lib.session)
+
+        # Get book
+        book = lib.session.query(Book).filter_by(id=book_id).first()
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Remove tag from book
+        removed = tag_service.remove_tag_from_book(book, tag_path)
+
+        if removed:
+            console.print(f"[green]✓ Removed tag '{tag_path}' from book {book.id}[/green]")
+            if book.title:
+                console.print(f"  Book: {book.title}")
+        else:
+            console.print(f"[yellow]Book {book.id} didn't have tag '{tag_path}'[/yellow]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error removing tag: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@tag_app.command(name="rename")
+def tag_rename(
+    old_path: str = typer.Argument(..., help="Current tag path"),
+    new_path: str = typer.Argument(..., help="New tag path"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+):
+    """
+    Rename a tag and update all descendant paths.
+
+    Examples:
+        ebk tag rename Work Archive ~/my-library
+        ebk tag rename Work/Old Work/Completed ~/my-library
+    """
+    from ebk.library_db import Library
+    from ebk.services.tag_service import TagService
+
+    library_path = Path(library_path)
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        tag_service = TagService(lib.session)
+
+        # Get tag stats before rename
+        old_tag = tag_service.get_tag(old_path)
+        if not old_tag:
+            console.print(f"[red]Tag '{old_path}' not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        stats = tag_service.get_tag_stats(old_path)
+        book_count = stats.get('book_count', 0)
+        subtag_count = stats.get('subtag_count', 0)
+
+        # Rename tag
+        tag = tag_service.rename_tag(old_path, new_path)
+
+        console.print(f"[green]✓ Renamed tag '{old_path}' → '{new_path}'[/green]")
+        if book_count > 0:
+            console.print(f"  Books: {book_count}")
+        if subtag_count > 0:
+            console.print(f"  Subtags updated: {subtag_count}")
+
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error renaming tag: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@tag_app.command(name="delete")
+def tag_delete(
+    tag_path: str = typer.Argument(..., help="Tag path to delete"),
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Delete tag and all children"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """
+    [DEPRECATED] Delete a tag.
+
+    This command is deprecated. Use VFS commands instead:
+        ebk vfs rm <library> /tags/<tag-path>/ [-r]
+
+    Examples:
+        ebk tag delete OldTag ~/my-library
+        ebk tag delete OldProject ~/my-library -r     - Delete with children
+        ebk tag delete Archive ~/my-library -r -f     - Delete without confirmation
+
+    Migrating to VFS:
+        ebk vfs rm ~/my-library /tags/OldTag/
+        ebk vfs rm ~/my-library /tags/OldProject/ -r
+    """
+    console.print("[yellow]⚠ Warning: 'ebk tag delete' is deprecated. Use 'ebk vfs rm' instead.[/yellow]")
+    console.print(f"[yellow]  Example: ebk vfs rm {library_path} /tags/{tag_path}/{ ' -r' if recursive else ''}[/yellow]\n")
+    from ebk.library_db import Library
+    from ebk.services.tag_service import TagService
+
+    library_path = Path(library_path)
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        tag_service = TagService(lib.session)
+
+        # Get tag stats
+        tag = tag_service.get_tag(tag_path)
+        if not tag:
+            console.print(f"[red]Tag '{tag_path}' not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        stats = tag_service.get_tag_stats(tag_path)
+        book_count = stats.get('book_count', 0)
+        subtag_count = stats.get('subtag_count', 0)
+
+        # Confirm deletion if not forced
+        if not force:
+            console.print(f"[yellow]About to delete tag:[/yellow] {tag_path}")
+            if book_count > 0:
+                console.print(f"  Books: {book_count}")
+            if subtag_count > 0:
+                console.print(f"  Subtags: {subtag_count}")
+                if not recursive:
+                    console.print(f"[red]Error: Tag has {subtag_count} children. Use -r to delete recursively.[/red]")
+                    lib.close()
+                    raise typer.Exit(code=1)
+
+            if not Confirm.ask("Are you sure?"):
+                console.print("[cyan]Cancelled[/cyan]")
+                lib.close()
+                raise typer.Exit(code=0)
+
+        # Delete tag
+        deleted = tag_service.delete_tag(tag_path, delete_children=recursive)
+
+        if deleted:
+            console.print(f"[green]✓ Deleted tag '{tag_path}'[/green]")
+        else:
+            console.print(f"[yellow]Tag '{tag_path}' not found[/yellow]")
+
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        console.print(f"[yellow]Hint: Use -r flag to delete tag with children[/yellow]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error deleting tag: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@tag_app.command(name="stats")
+def tag_stats(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    tag_path: Optional[str] = typer.Option(None, "--tag", "-t", help="Specific tag to show stats for"),
+):
+    """
+    Show tag statistics.
+
+    Examples:
+        ebk tag stats ~/my-library              - Overall tag statistics
+        ebk tag stats ~/my-library -t Work      - Stats for specific tag
+    """
+    from ebk.library_db import Library
+    from ebk.services.tag_service import TagService
+    from ebk.db.models import Tag
+
+    library_path = Path(library_path)
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found at {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        tag_service = TagService(lib.session)
+
+        if tag_path:
+            # Show stats for specific tag
+            tag = tag_service.get_tag(tag_path)
+            if not tag:
+                console.print(f"[red]Tag '{tag_path}' not found[/red]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+            stats = tag_service.get_tag_stats(tag_path)
+
+            console.print(f"[bold cyan]Tag Statistics: {tag_path}[/bold cyan]\n")
+            console.print(f"Name:        {tag.name}")
+            console.print(f"Path:        {tag.path}")
+            console.print(f"Depth:       {stats.get('depth', 0)}")
+            console.print(f"Books:       {stats.get('book_count', 0)}")
+            console.print(f"Subtags:     {stats.get('subtag_count', 0)}")
+
+            if tag.description:
+                console.print(f"Description: {tag.description}")
+
+            if tag.color:
+                console.print(f"Color:       {tag.color}")
+
+            if stats.get('created_at'):
+                console.print(f"Created:     {stats['created_at']}")
+
+        else:
+            # Show overall statistics
+            total_tags = lib.session.query(Tag).count()
+            root_tags = len(tag_service.get_root_tags())
+
+            # Count tagged books
+            from ebk.db.models import book_tags
+            tagged_books = lib.session.query(book_tags.c.book_id).distinct().count()
+
+            console.print("[bold cyan]Tag Statistics[/bold cyan]\n")
+            console.print(f"Total tags:    {total_tags}")
+            console.print(f"Root tags:     {root_tags}")
+            console.print(f"Tagged books:  {tagged_books}")
+
+            if total_tags > 0:
+                # Find most popular tags
+                all_tags = tag_service.get_all_tags()
+                tags_with_counts = [(tag, len(tag.books)) for tag in all_tags]
+                tags_with_counts.sort(key=lambda x: x[1], reverse=True)
+
+                console.print("\n[bold]Most Popular Tags:[/bold]")
+                for tag, count in tags_with_counts[:10]:
+                    if count > 0:
+                        console.print(f"  {tag.path:<40} {count:>3} books")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error getting tag statistics: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+# ==============================================================================
+# VFS Commands - Operate on VFS paths
+# ==============================================================================
+
+@vfs_app.command(name="ln")
+def vfs_ln(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    source: str = typer.Argument(..., help="Source path (e.g., /books/42 or /tags/Work/42)"),
+    dest: str = typer.Argument(..., help="Destination tag path (e.g., /tags/Archive/)"),
+):
+    """Link a book to a tag.
+
+    Examples:
+        ebk vfs ln ~/library /books/42 /tags/Work/
+        ebk vfs ln ~/library /tags/Work/42 /tags/Archive/
+        ebk vfs ln ~/library /subjects/computers/42 /tags/Reading/
+    """
+    from .library_db import Library
+    from .repl.shell import LibraryShell
+
+    try:
+        lib = Library.open(library_path)
+        shell = LibraryShell(lib)
+
+        # Execute ln command in silent mode to capture output
+        shell.cmd_ln([source, dest], silent=False)
+
+        shell.cleanup()
+        lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vfs_app.command(name="mv")
+def vfs_mv(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    source: str = typer.Argument(..., help="Source path (e.g., /tags/Work/42)"),
+    dest: str = typer.Argument(..., help="Destination tag path (e.g., /tags/Archive/)"),
+):
+    """Move a book between tags.
+
+    Examples:
+        ebk vfs mv ~/library /tags/Work/42 /tags/Archive/
+    """
+    from .library_db import Library
+    from .repl.shell import LibraryShell
+
+    try:
+        lib = Library.open(library_path)
+        shell = LibraryShell(lib)
+
+        shell.cmd_mv([source, dest], silent=False)
+
+        shell.cleanup()
+        lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vfs_app.command(name="rm")
+def vfs_rm(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    path: str = typer.Argument(..., help="Path to remove (e.g., /tags/Work/42 or /books/42/)"),
+    recursive: bool = typer.Option(False, "-r", "--recursive", help="Recursively delete tag and children"),
+):
+    """Remove tag from book, delete tag, or DELETE book.
+
+    Examples:
+        ebk vfs rm ~/library /tags/Work/42          # Remove tag from book
+        ebk vfs rm ~/library /tags/Work/            # Delete tag
+        ebk vfs rm ~/library /tags/Work/ -r         # Delete tag recursively
+        ebk vfs rm ~/library /books/42/             # DELETE book (with confirmation)
+    """
+    from .library_db import Library
+    from .repl.shell import LibraryShell
+
+    try:
+        lib = Library.open(library_path)
+        shell = LibraryShell(lib)
+
+        args = [path]
+        if recursive:
+            args.insert(0, '-r')
+
+        shell.cmd_rm(args, silent=False)
+
+        shell.cleanup()
+        lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vfs_app.command(name="mkdir")
+def vfs_mkdir(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    path: str = typer.Argument(..., help="Tag path to create (e.g., /tags/Work/Project-2024/)"),
+):
+    """Create a new tag directory.
+
+    Examples:
+        ebk vfs mkdir ~/library /tags/Work/
+        ebk vfs mkdir ~/library /tags/Work/Project-2024/
+        ebk vfs mkdir ~/library /tags/Reading/Fiction/Sci-Fi/
+    """
+    from .library_db import Library
+    from .repl.shell import LibraryShell
+
+    try:
+        lib = Library.open(library_path)
+        shell = LibraryShell(lib)
+
+        shell.cmd_mkdir([path], silent=False)
+
+        shell.cleanup()
+        lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vfs_app.command(name="ls")
+def vfs_ls(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    path: str = typer.Argument("/", help="VFS path to list (e.g., /books/ or /tags/Work/)"),
+):
+    """List contents of a VFS directory.
+
+    Examples:
+        ebk vfs ls ~/library /
+        ebk vfs ls ~/library /books/
+        ebk vfs ls ~/library /tags/Work/
+        ebk vfs ls ~/library /books/42/
+    """
+    from .library_db import Library
+    from .repl.shell import LibraryShell
+
+    try:
+        lib = Library.open(library_path)
+        shell = LibraryShell(lib)
+
+        shell.cmd_ls([path], silent=False)
+
+        shell.cleanup()
+        lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vfs_app.command(name="cat")
+def vfs_cat(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    path: str = typer.Argument(..., help="VFS file path (e.g., /books/42/title or /tags/Work/description)"),
+):
+    """Read contents of a VFS file.
+
+    Examples:
+        ebk vfs cat ~/library /books/42/title
+        ebk vfs cat ~/library /tags/Work/description
+        ebk vfs cat ~/library /tags/Work/color
+    """
+    from .library_db import Library
+    from .repl.shell import LibraryShell
+
+    try:
+        lib = Library.open(library_path)
+        shell = LibraryShell(lib)
+
+        shell.cmd_cat([path], silent=False)
+
+        shell.cleanup()
+        lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@vfs_app.command(name="exec")
+def vfs_exec(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    command: str = typer.Argument(..., help="Shell command to execute"),
+):
+    """Execute a shell command with VFS context.
+
+    This runs a command in the shell environment, allowing you to use
+    shell syntax like pipes, redirection, and multiple commands.
+
+    Examples:
+        ebk vfs exec ~/library "ls /tags/"
+        ebk vfs exec ~/library "cat /books/42/title"
+        ebk vfs exec ~/library "echo 'My notes' > /tags/Work/description"
+        ebk vfs exec ~/library "find author:Knuth | wc -l"
+        ebk vfs exec ~/library "cat /tags/Work/description | grep -i project"
+    """
+    from .library_db import Library
+    from .repl.shell import LibraryShell
+
+    try:
+        lib = Library.open(library_path)
+        shell = LibraryShell(lib)
+
+        # Execute the command
+        shell.execute(command)
+
+        shell.cleanup()
+        lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

@@ -82,3 +82,7 @@ test_library/
 temp_library/
 output/
 *.ebk
+
+# MkDocs build output
+site/
+archive/
