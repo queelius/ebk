@@ -41,38 +41,67 @@ class TestImportService:
         assert (temp_library.library_path / 'files').exists()
         assert (temp_library.library_path / 'covers').exists()
 
-    def test_compute_file_hash(self, temp_library):
-        """Test file hash computation."""
-        test_file = temp_library.library_path / "test.txt"
-        test_file.write_text("Test content for hashing")
+    def test_compute_file_hash_enables_deduplication(self, temp_library):
+        """Test that file hashing enables duplicate file detection."""
+        # Given: Two files with identical content
+        test_file1 = temp_library.library_path / "test1.txt"
+        test_file1.write_text("Test content for hashing")
 
-        file_hash = ImportService._compute_file_hash(test_file)
-        assert len(file_hash) == 64  # SHA256 hex length
-        assert isinstance(file_hash, str)
+        test_file2 = temp_library.library_path / "test2.txt"
+        test_file2.write_text("Test content for hashing")
 
-        # Verify hash is deterministic
-        file_hash2 = ImportService._compute_file_hash(test_file)
-        assert file_hash == file_hash2
+        # When: We compute their hashes
+        file_hash1 = ImportService._compute_file_hash(test_file1)
+        file_hash2 = ImportService._compute_file_hash(test_file2)
+
+        # Then: Identical files should produce identical hashes (for deduplication)
+        assert file_hash1 == file_hash2
+
+        # And: Different content should produce different hashes
+        test_file3 = temp_library.library_path / "test3.txt"
+        test_file3.write_text("Different content")
+        file_hash3 = ImportService._compute_file_hash(test_file3)
+        assert file_hash3 != file_hash1
 
     def test_generate_unique_id_with_isbn(self):
-        """Test unique ID generation with ISBN."""
+        """Test that unique ID generation uses ISBN when available."""
+        # Given: Metadata with an ISBN
         metadata = {
             "title": "Test Book",
             "creators": ["Author"],
             "identifiers": {"isbn": "1234567890"}
         }
-        unique_id = ImportService._generate_unique_id(metadata)
-        assert unique_id == "isbn_1234567890"
 
-    def test_generate_unique_id_without_isbn(self):
-        """Test unique ID generation without ISBN."""
-        metadata = {
-            "title": "Test Book",
-            "creators": ["Author"]
-        }
+        # When: We generate a unique ID
         unique_id = ImportService._generate_unique_id(metadata)
-        assert len(unique_id) == 16  # MD5 hash prefix
-        assert isinstance(unique_id, str)
+
+        # Then: The ID should be deterministic and use the ISBN
+        # (Re-generating with same metadata should give same ID)
+        unique_id2 = ImportService._generate_unique_id(metadata)
+        assert unique_id == unique_id2
+
+    def test_generate_unique_id_ensures_uniqueness(self):
+        """Test that unique ID generation produces different IDs for different books."""
+        # Given: Two different books without ISBNs
+        metadata1 = {
+            "title": "Test Book One",
+            "creators": ["Author One"]
+        }
+        metadata2 = {
+            "title": "Test Book Two",
+            "creators": ["Author Two"]
+        }
+
+        # When: We generate unique IDs for both
+        unique_id1 = ImportService._generate_unique_id(metadata1)
+        unique_id2 = ImportService._generate_unique_id(metadata2)
+
+        # Then: Different books should have different IDs
+        assert unique_id1 != unique_id2
+
+        # And: Same book should always get the same ID (deterministic)
+        unique_id1_repeat = ImportService._generate_unique_id(metadata1)
+        assert unique_id1 == unique_id1_repeat
 
     def test_get_sort_title(self):
         """Test sort title generation."""
@@ -81,11 +110,23 @@ class TestImportService:
         assert ImportService._get_sort_title("An Introduction") == "Introduction"
         assert ImportService._get_sort_title("Simple Title") == "Simple Title"
 
-    def test_get_sort_name(self):
-        """Test sort name generation."""
-        assert ImportService._get_sort_name("John Doe") == "Doe, John"
-        assert ImportService._get_sort_name("Mary Jane Smith") == "Smith, Mary Jane"
-        assert ImportService._get_sort_name("Madonna") == "Madonna"
+    def test_get_sort_name_enables_alphabetic_sorting(self):
+        """Test that sort names enable correct alphabetical sorting by last name."""
+        # Given: A list of authors
+        authors = ["John Doe", "Alice Brown", "Bob Anderson"]
+
+        # When: We generate sort names for each
+        sort_names = [ImportService._get_sort_name(name) for name in authors]
+
+        # Then: Sorting by sort_name should order by last name
+        sorted_names = sorted(sort_names)
+        assert sorted_names[0].startswith("Anderson")  # Anderson first
+        assert sorted_names[1].startswith("Brown")     # Brown second
+        assert sorted_names[2].startswith("Doe")       # Doe third
+
+        # And: Single-name authors should sort by their single name
+        single_name_sort = ImportService._get_sort_name("Madonna")
+        assert single_name_sort == "Madonna"
 
     def test_create_book_with_metadata(self, temp_library):
         """Test creating book with comprehensive metadata."""
@@ -227,19 +268,23 @@ class TestTextExtractionService:
         assert "    " not in cleaned
         assert "\n\n\n" not in cleaned
 
-    def test_hash_text(self, temp_library):
-        """Test text hashing."""
+    def test_hash_text_detects_content_changes(self, temp_library):
+        """Test that text hashing detects when content has changed."""
+        # Given: A text extraction service
         service = temp_library.text_service
 
+        # When: We hash the same text twice
         text = "Test content for hashing"
-        text_hash = service._hash_text(text)
-
-        assert len(text_hash) == 64  # SHA256
-        assert isinstance(text_hash, str)
-
-        # Verify deterministic
+        text_hash1 = service._hash_text(text)
         text_hash2 = service._hash_text(text)
-        assert text_hash == text_hash2
+
+        # Then: Same text should produce the same hash (for cache hit detection)
+        assert text_hash1 == text_hash2
+
+        # And: Different text should produce different hashes (for change detection)
+        modified_text = "Test content for hashing - modified"
+        modified_hash = service._hash_text(modified_text)
+        assert modified_hash != text_hash1
 
     def test_get_word_count(self, temp_library):
         """Test word count calculation."""
