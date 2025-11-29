@@ -497,6 +497,9 @@ class PersonalMetadata(Base):
     favorite = Column(Boolean, default=False)
     owned = Column(Boolean, default=True)  # vs borrowed/library
 
+    # Reading queue
+    queue_position = Column(Integer)  # Position in reading queue (1-based, NULL = not queued)
+
     # Dates
     date_added = Column(DateTime, default=datetime.utcnow, nullable=False)
     date_started = Column(DateTime)
@@ -510,6 +513,7 @@ class PersonalMetadata(Base):
     __table_args__ = (
         Index('idx_personal_status', 'reading_status', 'rating'),
         Index('idx_personal_favorite', 'favorite'),
+        Index('idx_personal_queue', 'queue_position'),
     )
 
 

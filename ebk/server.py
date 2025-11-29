@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from .library_db import Library
 from .extract_metadata import extract_metadata
+from . import opds
 
 
 # Pydantic models for API
@@ -63,6 +64,13 @@ class LibraryStats(BaseModel):
     formats: List[str]
 
 
+class PaginatedBooksResponse(BaseModel):
+    items: List[BookResponse]
+    total: int
+    offset: int
+    limit: int
+
+
 # Global library instance
 _library: Optional[Library] = None
 _library_path: Optional[Path] = None
@@ -87,6 +95,9 @@ def create_app(library_path: Path) -> FastAPI:
     # Initialize library
     init_library(library_path)
 
+    # Initialize OPDS with the same library
+    opds.set_library(_library)
+
     # Return the pre-configured app with all routes
     return app
 
@@ -107,6 +118,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include OPDS router
+app.include_router(opds.router)
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -114,7 +128,7 @@ async def root():
     return get_web_interface()
 
 
-@app.get("/api/books", response_model=List[BookResponse])
+@app.get("/api/books", response_model=PaginatedBooksResponse)
 async def list_books(
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
@@ -133,7 +147,7 @@ async def list_books(
 
     query = lib.query()
 
-    # Apply filters
+    # Apply filters BEFORE pagination
     if author:
         query = query.filter_by_author(author)
     if subject:
@@ -144,6 +158,13 @@ async def list_books(
         query = query.filter_by_favorite(favorite)
     if format_filter:
         query = query.filter_by_format(format_filter)
+    if min_rating is not None:
+        query = query.filter_by_rating(int(min_rating))
+    if search:
+        query = query.filter_by_text(search)
+
+    # Get total count BEFORE pagination
+    total = query.count()
 
     # Apply sorting before pagination
     if sort_by:
@@ -153,29 +174,17 @@ async def list_books(
         # Default sort by title
         query = query.order_by("title", desc=False)
 
-    # Apply pagination after sorting
+    # Apply pagination AFTER all filters and sorting
     query = query.limit(limit).offset(offset)
     books = query.all()
 
-    # Search if provided (in-memory after fetching)
-    if search:
-        search_lower = search.lower()
-        books = [
-            b for b in books
-            if search_lower in b.title.lower() or
-               any(search_lower in a.name.lower() for a in b.authors) or
-               (b.description and search_lower in b.description.lower())
-        ]
-
-    # Apply rating filter (in-memory for now)
-    if min_rating is not None:
-        books = [
-            b for b in books
-            if b.personal and b.personal.rating and b.personal.rating >= min_rating
-        ]
-
-    # Convert to response format
-    return [_book_to_response(book) for book in books]
+    # Convert to paginated response format
+    return PaginatedBooksResponse(
+        items=[_book_to_response(book) for book in books],
+        total=total,
+        offset=offset,
+        limit=limit
+    )
 
 
 @app.get("/api/books/{book_id}", response_model=BookResponse)
@@ -1169,12 +1178,11 @@ def get_web_interface() -> str:
             try {
                 const queryParams = buildQueryParams();
                 const response = await fetch(`/api/books?${queryParams}`);
-                books = await response.json();
+                const data = await response.json();
 
-                // Get total count from stats (approximate for filtered results)
-                const statsResponse = await fetch('/api/stats');
-                const stats = await statsResponse.json();
-                totalBooks = stats.total_books;
+                // Paginated response: { items, total, offset, limit }
+                books = data.items;
+                totalBooks = data.total;
 
                 renderBooks(books);
                 updatePagination();

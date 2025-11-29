@@ -44,6 +44,43 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def resolve_library_path(library_path: Optional[Path]) -> Path:
+    """
+    Resolve library path with config fallback.
+
+    If library_path is None, attempts to use the default from config.
+    Validates that the path exists.
+
+    Args:
+        library_path: Optional path provided by user
+
+    Returns:
+        Resolved Path to library
+
+    Raises:
+        typer.Exit: If no path provided and no default configured,
+                   or if path doesn't exist
+    """
+    from .config import load_config
+
+    if library_path is None:
+        config = load_config()
+        if config.library.default_path:
+            library_path = Path(config.library.default_path)
+        else:
+            console.print("[red]Error: No library path specified[/red]")
+            console.print("[yellow]Either provide a path or set default with:[/yellow]")
+            console.print("[yellow]  ebk config --library-path ~/my-library[/yellow]")
+            raise typer.Exit(code=1)
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    return library_path
+
+
 # Main app
 app = typer.Typer()
 
@@ -54,6 +91,7 @@ vlib_app = typer.Typer(help="Manage virtual libraries (collection views)")
 note_app = typer.Typer(help="Manage book annotations and notes")
 tag_app = typer.Typer(help="Manage hierarchical tags for organizing books")
 vfs_app = typer.Typer(help="VFS commands (ln, mv, rm, ls, cat, mkdir)")
+queue_app = typer.Typer(help="Manage reading queue")
 
 # Register command groups
 app.add_typer(import_app, name="import")
@@ -62,6 +100,7 @@ app.add_typer(vlib_app, name="vlib")
 app.add_typer(note_app, name="note")
 app.add_typer(tag_app, name="tag")
 app.add_typer(vfs_app, name="vfs")
+app.add_typer(queue_app, name="queue")
 
 @app.callback()
 def main(
@@ -121,13 +160,14 @@ def about():
 
 @app.command()
 def shell(
-    library_path: Path = typer.Argument(..., help="Path to the library"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to the library (uses config default if not specified)"),
 ):
     """
     Launch interactive shell for navigating the library.
 
     The shell provides a Linux-like interface for browsing and
     managing your library through a virtual filesystem.
+    If no library path is specified, uses the default from config.
 
     Commands:
         cd, pwd, ls    - Navigate the VFS
@@ -139,16 +179,12 @@ def shell(
         help           - Show help
 
     Example:
+        ebk shell               # Uses config default
         ebk shell ~/my-library
     """
     from .repl import LibraryShell
 
-    library_path = Path(library_path)
-
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found at {library_path}[/red]")
-        console.print("Use 'ebk init' to create a new library.")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         shell = LibraryShell(library_path)
@@ -257,7 +293,7 @@ def migrate(
 @import_app.command(name="add")
 def import_add(
     file_path: Path = typer.Argument(..., help="Path to ebook file"),
-    library_path: Path = typer.Argument(..., help="Path to library"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     title: Optional[str] = typer.Option(None, "--title", "-t", help="Book title"),
     authors: Optional[str] = typer.Option(None, "--authors", "-a", help="Authors (comma-separated)"),
     subjects: Optional[str] = typer.Option(None, "--subjects", "-s", help="Subjects/tags (comma-separated)"),
@@ -271,10 +307,12 @@ def import_add(
 
     Extracts metadata, text, and cover images automatically unless disabled.
     Supports PDF, EPUB, MOBI, and plaintext files.
+    If no library path is specified, uses the default from config.
 
     Examples:
+        ebk import add book.pdf                    # Uses config default
         ebk import add book.pdf ~/my-library
-        ebk import add book.epub ~/my-library --title "My Book" --authors "Author Name"
+        ebk import add book.epub --title "My Book" --authors "Author Name"
     """
     from .library_db import Library
     from .extract_metadata import extract_metadata
@@ -283,10 +321,7 @@ def import_add(
         console.print(f"[red]Error: File not found: {file_path}[/red]")
         raise typer.Exit(code=1)
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        console.print(f"[yellow]Initialize a library first with: ebk init {library_path}[/yellow]")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
@@ -535,32 +570,37 @@ def import_folder(
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query"),
-    library_path: Path = typer.Argument(..., help="Path to library"),
-    limit: int = typer.Option(20, "--limit", "-n", help="Maximum number of results")
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Maximum number of results"),
+    offset: int = typer.Option(0, "--offset", help="Skip first N results (for pagination)")
 ):
     """
     Search books in database-backed library using full-text search.
 
     Searches across titles, descriptions, and extracted text content using
     SQLite's FTS5 engine for fast, relevance-ranked results.
+    If no library path is specified, uses the default from config.
 
     Examples:
+        ebk search "python programming"                  # Uses config default
         ebk search "python programming" ~/my-library
-        ebk search "machine learning" ~/my-library --limit 50
+        ebk search "machine learning" --limit 50
+        ebk search "python" --offset 20 --limit 20       # Page 2
     """
     from .library_db import Library
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
 
-        results = lib.search(query, limit=limit)
+        results = lib.search(query, limit=limit, offset=offset)
 
         if not results:
-            console.print(f"[yellow]No results found for: {query}[/yellow]")
+            if offset > 0:
+                console.print(f"[yellow]No more results for: {query}[/yellow]")
+            else:
+                console.print(f"[yellow]No results found for: {query}[/yellow]")
         else:
             table = Table(title=f"Search Results: '{query}'")
             table.add_column("ID", style="cyan")
@@ -581,7 +621,17 @@ def search(
                 )
 
             console.print(table)
-            console.print(f"\n[dim]Showing {len(results)} results[/dim]")
+
+            # Display pagination info
+            start = offset + 1
+            end = offset + len(results)
+            if len(results) < limit:
+                # We got fewer than requested, so we know the total
+                total = offset + len(results)
+                console.print(f"\n[dim]Showing {start}-{end} of {total} results[/dim]")
+            else:
+                # More results may exist
+                console.print(f"\n[dim]Showing {start}-{end} (more results may exist, use --offset {end} for next page)[/dim]")
 
         lib.close()
 
@@ -592,22 +642,22 @@ def search(
 
 @app.command()
 def stats(
-    library_path: Path = typer.Argument(..., help="Path to library")
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)")
 ):
     """
     Show statistics for database-backed library.
 
     Displays book counts, author counts, language distribution,
     format distribution, and reading progress.
+    If no library path is specified, uses the default from config.
 
     Example:
+        ebk stats                # Uses config default
         ebk stats ~/my-library
     """
     from .library_db import Library
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
@@ -648,7 +698,7 @@ def stats(
 
 @app.command(name="list")
 def list_books(
-    library_path: Path = typer.Argument(..., help="Path to library"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum number of books to show"),
     offset: int = typer.Option(0, "--offset", help="Starting offset"),
     author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author"),
@@ -659,17 +709,17 @@ def list_books(
     List books in database-backed library with optional filtering.
 
     Supports pagination and filtering by author, subject, or language.
+    If no library path is specified, uses the default from config.
 
     Examples:
+        ebk list                           # Uses config default
         ebk list ~/my-library
-        ebk list ~/my-library --author "Knuth"
-        ebk list ~/my-library --subject "Python" --limit 20
+        ebk list --author "Knuth"
+        ebk list --subject "Python" --limit 20
     """
     from .library_db import Library
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
@@ -684,10 +734,11 @@ def list_books(
         if language:
             query = query.filter_by_language(language)
 
-        query = query.order_by('title').limit(limit).offset(offset)
-
-        books = query.all()
+        # Get total count before applying limit/offset
         total = query.count()
+
+        query = query.order_by('title').limit(limit).offset(offset)
+        books = query.all()
 
         if not books:
             console.print("[yellow]No books found[/yellow]")
@@ -715,7 +766,11 @@ def list_books(
                 )
 
             console.print(table)
-            console.print(f"\n[dim]Showing {len(books)} of {total} books (offset: {offset})[/dim]")
+
+            # Display pagination info
+            start = offset + 1
+            end = offset + len(books)
+            console.print(f"\n[dim]Showing {start}-{end} of {total} books[/dim]")
 
         lib.close()
 
@@ -1102,6 +1157,156 @@ def note_list(
 
     except Exception as e:
         console.print(f"[red]Error listing notes: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@note_app.command(name="extract")
+def note_extract(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+    format_filter: Optional[str] = typer.Option(None, "--format", "-f", help="Extract from specific format (pdf, epub)")
+):
+    """
+    Extract annotations/highlights from book files (PDF, EPUB).
+
+    This extracts highlights, notes, and bookmarks embedded in the actual
+    ebook files by reading apps and saves them to the library database.
+
+    Examples:
+        ebk note extract 42                    # Extract from all formats
+        ebk note extract 42 --format pdf       # Extract only from PDF
+    """
+    from .library_db import Library
+    from .services.annotation_extraction import extract_and_save_annotations
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        console.print(f"[cyan]Extracting annotations from: {book.title}[/cyan]")
+
+        # Show available files
+        for f in book.files:
+            filename = Path(f.path).name if f.path else "unknown"
+            console.print(f"  [dim]- {f.format.upper()}: {filename}[/dim]")
+
+        count = extract_and_save_annotations(lib, book_id, format_filter)
+
+        if count > 0:
+            console.print(f"[green]✓ Extracted and saved {count} annotation(s)[/green]")
+        else:
+            console.print("[yellow]No new annotations found to extract[/yellow]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error extracting annotations: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@note_app.command(name="export")
+def note_export(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file (default: stdout)"),
+    format_type: str = typer.Option("markdown", "--format", "-f", help="Output format (markdown, json, txt)")
+):
+    """
+    Export annotations for a book.
+
+    Examples:
+        ebk note export 42                          # Print to stdout as markdown
+        ebk note export 42 -o notes.md              # Save as markdown
+        ebk note export 42 -o notes.json -f json    # Save as JSON
+    """
+    from .library_db import Library
+    import json
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        annotations = lib.get_annotations(book_id)
+
+        if not annotations:
+            console.print(f"[yellow]No annotations for '{book.title}'[/yellow]")
+            lib.close()
+            return
+
+        # Format output
+        if format_type == "json":
+            data = {
+                "book": {
+                    "id": book.id,
+                    "title": book.title,
+                    "authors": [a.name for a in book.authors]
+                },
+                "annotations": [
+                    {
+                        "type": a.annotation_type,
+                        "content": a.content,
+                        "page": a.page_number,
+                        "color": a.color,
+                        "created_at": a.created_at.isoformat()
+                    }
+                    for a in annotations
+                ]
+            }
+            result = json.dumps(data, indent=2)
+
+        elif format_type == "txt":
+            lines = [f"Annotations: {book.title}", "=" * 50, ""]
+            for a in annotations:
+                page = f" (p.{a.page_number})" if a.page_number else ""
+                lines.append(f"[{a.annotation_type}]{page}")
+                lines.append(a.content)
+                lines.append("")
+            result = "\n".join(lines)
+
+        else:  # markdown
+            authors = ", ".join(a.name for a in book.authors) or "Unknown"
+            lines = [f"# Annotations: {book.title}", f"*{authors}*", ""]
+
+            # Group by type
+            by_type = {}
+            for a in annotations:
+                by_type.setdefault(a.annotation_type, []).append(a)
+
+            for atype, items in by_type.items():
+                lines.append(f"## {atype.title()}s")
+                lines.append("")
+                for a in items:
+                    page = f" *(page {a.page_number})*" if a.page_number else ""
+                    lines.append(f"- {a.content}{page}")
+                lines.append("")
+
+            result = "\n".join(lines)
+
+        # Output
+        if output:
+            output.write_text(result)
+            console.print(f"[green]✓ Exported {len(annotations)} annotations to {output}[/green]")
+        else:
+            console.print(result)
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error exporting annotations: {e}[/red]")
         raise typer.Exit(code=1)
 
 
@@ -1547,7 +1752,7 @@ def vlib_list(
 @app.command()
 def view(
     book_id: int = typer.Argument(..., help="Book ID to view"),
-    library_path: Path = typer.Argument(..., help="Path to library"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     text: bool = typer.Option(False, "--text", help="Display extracted text in console"),
     page: Optional[int] = typer.Option(None, "--page", help="View specific page (for text mode)"),
     format_choice: Optional[str] = typer.Option(None, "--format", help="Choose specific format (pdf, epub, txt, etc.)")
@@ -1557,11 +1762,14 @@ def view(
 
     Without --text: Opens the ebook file in the default application.
     With --text: Displays extracted text in the console with paging.
+    If no library path is specified, uses the default from config.
     """
     import subprocess
     import platform
     from .library_db import Library
     from .db.models import ExtractedText
+
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
@@ -2169,7 +2377,7 @@ def config(
 @app.command(name="similar")
 def find_similar(
     book_id: int = typer.Argument(..., help="Book ID to find similar books for"),
-    library_path: Path = typer.Argument(..., help="Path to library"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     top_k: int = typer.Option(10, "--top-k", "-k", help="Number of similar books to return"),
     same_language: bool = typer.Option(True, "--same-language", help="Filter by same language"),
     preset: Optional[str] = typer.Option(None, "--preset", "-p", help="Similarity preset (balanced, content_only, metadata_only)"),
@@ -2184,23 +2392,22 @@ def find_similar(
 
     Uses a combination of content similarity (TF-IDF), author overlap,
     subject overlap, temporal proximity, and other features.
+    If no library path is specified, uses the default from config.
 
     Examples:
         # Find 10 similar books using balanced preset
-        ebk similar 42 ~/my-library
+        ebk similar 42
 
         # Find 20 similar books using content-only similarity
-        ebk similar 42 ~/my-library --top-k 20 --preset content_only
+        ebk similar 42 --top-k 20 --preset content_only
 
         # Custom weights
-        ebk similar 42 ~/my-library --content-weight 4.0 --authors-weight 2.0
+        ebk similar 42 --content-weight 4.0 --authors-weight 2.0
     """
     from .library_db import Library
     from .similarity import BookSimilarity
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
@@ -2268,7 +2475,7 @@ def find_similar(
 
         for book, score in results:
             authors_str = ", ".join(a.name for a in book.authors) if book.authors else ""
-            year_str = str(book.published_date)[:4] if book.published_date else ""
+            year_str = str(book.publication_date)[:4] if book.publication_date else ""
             lang_str = book.language or ""
 
             row = [
@@ -3018,6 +3225,252 @@ def vfs_exec(
 
         shell.cleanup()
         lib.close()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+# ============================================================================
+# Queue Commands
+# ============================================================================
+
+@queue_app.command(name="list")
+def queue_list(
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+):
+    """
+    Show the current reading queue.
+
+    Examples:
+        ebk queue list
+        ebk queue list ~/my-library
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        queue = lib.get_reading_queue()
+
+        if not queue:
+            console.print("[yellow]Reading queue is empty[/yellow]")
+            console.print("Add books with: ebk queue add <book_id>")
+            lib.close()
+            return
+
+        table = Table(title="Reading Queue", show_header=True)
+        table.add_column("#", style="cyan", width=4)
+        table.add_column("ID", style="dim", width=6)
+        table.add_column("Title", style="green")
+        table.add_column("Authors")
+        table.add_column("Progress", width=10)
+
+        for book in queue:
+            progress = ""
+            if book.personal:
+                if book.personal.reading_progress:
+                    progress = f"{book.personal.reading_progress}%"
+                if book.personal.reading_status == "reading":
+                    progress = f"📖 {progress}" if progress else "📖"
+
+            table.add_row(
+                str(book.personal.queue_position),
+                str(book.id),
+                book.title[:50] + "..." if len(book.title) > 50 else book.title,
+                ", ".join(a.name for a in book.authors[:2]) or "-",
+                progress
+            )
+
+        console.print(table)
+        console.print(f"\n[dim]{len(queue)} book(s) in queue[/dim]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@queue_app.command(name="add")
+def queue_add(
+    book_id: int = typer.Argument(..., help="Book ID to add"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+    position: Optional[int] = typer.Option(None, "--position", "-p", help="Position (1=top)"),
+):
+    """
+    Add a book to the reading queue.
+
+    Examples:
+        ebk queue add 42                    # Add to end of queue
+        ebk queue add 42 --position 1       # Add to top of queue
+        ebk queue add 42 -p 3               # Add at position 3
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        lib.add_to_queue(book_id, position)
+
+        pos = position or len(lib.get_reading_queue())
+        console.print(f"[green]✓ Added to queue at #{pos}: '{book.title}'[/green]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@queue_app.command(name="remove")
+def queue_remove(
+    book_id: int = typer.Argument(..., help="Book ID to remove"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+):
+    """
+    Remove a book from the reading queue.
+
+    Examples:
+        ebk queue remove 42
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        lib.remove_from_queue(book_id)
+        console.print(f"[green]✓ Removed from queue: '{book.title}'[/green]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@queue_app.command(name="move")
+def queue_move(
+    book_id: int = typer.Argument(..., help="Book ID to move"),
+    position: int = typer.Argument(..., help="New position (1=top)"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+):
+    """
+    Move a book to a different position in the queue.
+
+    Examples:
+        ebk queue move 42 1         # Move to top
+        ebk queue move 42 3         # Move to position 3
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        lib.reorder_queue(book_id, position)
+        console.print(f"[green]✓ Moved '{book.title}' to position #{position}[/green]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@queue_app.command(name="clear")
+def queue_clear(
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """
+    Clear all books from the reading queue.
+
+    Examples:
+        ebk queue clear
+        ebk queue clear --yes
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    if not yes:
+        confirm = typer.confirm("Clear the entire reading queue?")
+        if not confirm:
+            console.print("[yellow]Cancelled[/yellow]")
+            raise typer.Exit()
+
+    try:
+        lib = Library.open(library_path)
+        lib.clear_queue()
+        console.print("[green]✓ Reading queue cleared[/green]")
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@queue_app.command(name="next")
+def queue_next(
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+):
+    """
+    Show the next book in the reading queue.
+
+    Examples:
+        ebk queue next
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        queue = lib.get_reading_queue()
+
+        if not queue:
+            console.print("[yellow]Reading queue is empty[/yellow]")
+            lib.close()
+            return
+
+        book = queue[0]
+        console.print(f"\n[bold cyan]Up Next:[/bold cyan]")
+        console.print(f"  [green]{book.title}[/green]")
+        if book.authors:
+            console.print(f"  by {', '.join(a.name for a in book.authors)}")
+        if book.personal and book.personal.reading_progress:
+            console.print(f"  Progress: {book.personal.reading_progress}%")
+        console.print(f"\n  [dim]Book ID: {book.id}[/dim]")
+
+        if len(queue) > 1:
+            console.print(f"\n[dim]{len(queue) - 1} more book(s) in queue[/dim]")
+
+        lib.close()
+
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)

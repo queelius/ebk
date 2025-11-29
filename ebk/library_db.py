@@ -136,7 +136,7 @@ class Library:
         """Start a fluent query."""
         return QueryBuilder(self.session)
 
-    def search(self, query: str, limit: int = 50) -> List[Book]:
+    def search(self, query: str, limit: int = 50, offset: int = 0) -> List[Book]:
         """
         Advanced search across books with field-specific queries and boolean logic.
 
@@ -155,6 +155,7 @@ class Library:
         Args:
             query: Search query (supports advanced syntax or plain text)
             limit: Maximum number of results
+            offset: Number of results to skip (for pagination)
 
         Returns:
             List of matching books
@@ -178,9 +179,9 @@ class Library:
                     FROM books_fts
                     WHERE books_fts MATCH :query
                     ORDER BY rank
-                    LIMIT :limit
+                    LIMIT :limit OFFSET :offset
                     """),
-                    {"query": parsed.fts_query, "limit": limit * 2}  # Get more for filtering
+                    {"query": parsed.fts_query, "limit": limit + offset + limit, "offset": 0}  # Get more for filtering
                 )
                 book_ids = [row[0] for row in result]
 
@@ -203,23 +204,25 @@ class Library:
                 if where_clause:
                     books_query = books_query.filter(text(where_clause).bindparams(**params))
 
-                books = books_query.limit(limit).all()
+                books = books_query.all()
 
-                # Maintain FTS ranking order
+                # Maintain FTS ranking order and apply offset/limit
                 books_dict = {b.id: b for b in books}
-                return [books_dict[bid] for bid in book_ids if bid in books_dict][:limit]
+                ordered = [books_dict[bid] for bid in book_ids if bid in books_dict]
+                return ordered[offset:offset + limit]
 
             # If only FTS (no additional filters)
             elif book_ids:
                 books = self.session.query(Book).filter(Book.id.in_(book_ids)).all()
                 books_dict = {b.id: b for b in books}
-                return [books_dict[bid] for bid in book_ids if bid in books_dict][:limit]
+                ordered = [books_dict[bid] for bid in book_ids if bid in books_dict]
+                return ordered[offset:offset + limit]
 
             # If only filters (no FTS)
             elif where_clause:
                 books_query = self.session.query(Book)
                 books_query = books_query.filter(text(where_clause).bindparams(**params))
-                return books_query.limit(limit).all()
+                return books_query.offset(offset).limit(limit).all()
 
             return []
 
@@ -374,6 +377,137 @@ class Library:
 
         self.session.commit()
         logger.info(f"Set favorite for book {book_id}: {favorite}")
+
+    # Reading Queue Methods
+
+    def get_reading_queue(self) -> List[Book]:
+        """
+        Get all books in the reading queue, ordered by position.
+
+        Returns:
+            List of books in queue order
+        """
+        from .db.models import PersonalMetadata
+
+        return self.session.query(Book).join(Book.personal).filter(
+            PersonalMetadata.queue_position.isnot(None)
+        ).order_by(PersonalMetadata.queue_position).all()
+
+    def add_to_queue(self, book_id: int, position: Optional[int] = None):
+        """
+        Add a book to the reading queue.
+
+        Args:
+            book_id: Book ID to add
+            position: Position in queue (1-based). If None, adds to end.
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if not personal:
+            personal = PersonalMetadata(book_id=book_id)
+            self.session.add(personal)
+            self.session.flush()
+
+        # Get current max position
+        max_pos = self.session.query(func.max(PersonalMetadata.queue_position)).scalar() or 0
+
+        if position is None:
+            # Add to end
+            personal.queue_position = max_pos + 1
+        else:
+            # Insert at specific position, shift others down
+            position = max(1, position)  # Ensure positive
+            self.session.query(PersonalMetadata).filter(
+                PersonalMetadata.queue_position >= position,
+                PersonalMetadata.queue_position.isnot(None)
+            ).update({PersonalMetadata.queue_position: PersonalMetadata.queue_position + 1})
+            personal.queue_position = position
+
+        self.session.commit()
+        logger.info(f"Added book {book_id} to queue at position {personal.queue_position}")
+
+    def remove_from_queue(self, book_id: int):
+        """
+        Remove a book from the reading queue.
+
+        Args:
+            book_id: Book ID to remove
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if personal and personal.queue_position is not None:
+            old_position = personal.queue_position
+            personal.queue_position = None
+
+            # Shift other items up to fill gap
+            self.session.query(PersonalMetadata).filter(
+                PersonalMetadata.queue_position > old_position
+            ).update({PersonalMetadata.queue_position: PersonalMetadata.queue_position - 1})
+
+            self.session.commit()
+            logger.info(f"Removed book {book_id} from queue")
+
+    def reorder_queue(self, book_id: int, new_position: int):
+        """
+        Move a book to a new position in the queue.
+
+        Args:
+            book_id: Book ID to move
+            new_position: New position (1-based)
+        """
+        from .db.models import PersonalMetadata
+
+        personal = self.session.query(PersonalMetadata).filter_by(
+            book_id=book_id
+        ).first()
+
+        if not personal or personal.queue_position is None:
+            # Not in queue, add it
+            self.add_to_queue(book_id, new_position)
+            return
+
+        old_position = personal.queue_position
+        new_position = max(1, new_position)
+
+        if old_position == new_position:
+            return  # No change needed
+
+        if old_position < new_position:
+            # Moving down: shift items between old and new up
+            self.session.query(PersonalMetadata).filter(
+                PersonalMetadata.queue_position > old_position,
+                PersonalMetadata.queue_position <= new_position,
+                PersonalMetadata.queue_position.isnot(None)
+            ).update({PersonalMetadata.queue_position: PersonalMetadata.queue_position - 1})
+        else:
+            # Moving up: shift items between new and old down
+            self.session.query(PersonalMetadata).filter(
+                PersonalMetadata.queue_position >= new_position,
+                PersonalMetadata.queue_position < old_position,
+                PersonalMetadata.queue_position.isnot(None)
+            ).update({PersonalMetadata.queue_position: PersonalMetadata.queue_position + 1})
+
+        personal.queue_position = new_position
+        self.session.commit()
+        logger.info(f"Moved book {book_id} from position {old_position} to {new_position}")
+
+    def clear_queue(self):
+        """Clear all books from the reading queue."""
+        from .db.models import PersonalMetadata
+
+        self.session.query(PersonalMetadata).filter(
+            PersonalMetadata.queue_position.isnot(None)
+        ).update({PersonalMetadata.queue_position: None})
+        self.session.commit()
+        logger.info("Cleared reading queue")
 
     def add_tags(self, book_id: int, tags: List[str]):
         """
@@ -841,9 +975,20 @@ class QueryBuilder:
 
     def filter_by_favorite(self, is_favorite: bool = True) -> 'QueryBuilder':
         """Filter by favorite status."""
-        self._query = self._query.join(Book.personal).filter(
-            PersonalMetadata.favorite == is_favorite
-        )
+        from sqlalchemy import or_
+        if is_favorite:
+            # Only books explicitly marked as favorite
+            self._query = self._query.join(Book.personal).filter(
+                PersonalMetadata.favorite == True
+            )
+        else:
+            # Books not favorited (including those without PersonalMetadata)
+            self._query = self._query.outerjoin(Book.personal).filter(
+                or_(
+                    PersonalMetadata.favorite == False,
+                    PersonalMetadata.favorite.is_(None)
+                )
+            )
         return self
 
     def filter_by_format(self, format_name: str) -> 'QueryBuilder':
