@@ -2929,7 +2929,7 @@ def get_web_interface() -> str:
             }
             html += '</div>';
             html += '<div class="btn-group">';
-            html += '<button class="btn btn-primary" onclick="closeModal(\'import-modal\'); refreshBooks();">Done</button>';
+            html += '<button class="btn btn-primary" onclick="closeModal(&apos;import-modal&apos;); refreshBooks();">Done</button>';
             html += '</div>';
 
             resultsDiv.innerHTML = html;
