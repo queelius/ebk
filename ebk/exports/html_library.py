@@ -3,6 +3,16 @@ Export library to a self-contained HTML5 file with embedded CSS and JavaScript.
 
 Creates an interactive, searchable, filterable library catalog that works offline.
 All metadata, including contributors, series, keywords, etc., is preserved.
+
+Features:
+- Dark/light mode toggle
+- Grid/list/table view modes
+- Advanced search syntax (field:value, boolean operators)
+- Sidebar navigation (authors, subjects, series)
+- Keyboard shortcuts (/, Escape, j/k navigation)
+- Print-friendly styling
+- Reading queue display
+- Responsive mobile design
 """
 
 from pathlib import Path
@@ -25,12 +35,35 @@ def export_to_html(books: List, output_path: Path, include_stats: bool = True, b
 
     # Serialize books to JSON-compatible format
     books_data = []
+    authors_set = set()
+    subjects_set = set()
+    series_set = set()
+    languages_set = set()
+    formats_set = set()
+
     for book in books:
         # Get primary cover if available
         cover_path = None
         if book.covers:
             primary_cover = next((c for c in book.covers if c.is_primary), book.covers[0])
             cover_path = primary_cover.path
+
+        # Collect for sidebar navigation
+        for author in book.authors:
+            authors_set.add(author.name)
+        for subject in book.subjects:
+            subjects_set.add(subject.name)
+        if book.series:
+            series_set.add(book.series)
+        if book.language:
+            languages_set.add(book.language)
+        for file in book.files:
+            formats_set.add(file.format.upper())
+
+        # Get queue position if available
+        queue_position = None
+        if book.personal and hasattr(book.personal, 'queue_position'):
+            queue_position = book.personal.queue_position
 
         book_data = {
             'id': book.id,
@@ -65,7 +98,7 @@ def export_to_html(books: List, output_path: Path, include_stats: bool = True, b
                     'creator_application': f.creator_application,
                     'created_date': f.created_date.isoformat() if f.created_date else None,
                     'modified_date': f.modified_date.isoformat() if f.modified_date else None,
-                    'path': f.path,  # Store relative path from library root
+                    'path': f.path,
                 }
                 for f in book.files
             ],
@@ -74,824 +107,1288 @@ def export_to_html(books: List, output_path: Path, include_stats: bool = True, b
                 'rating': book.personal.rating if book.personal else None,
                 'favorite': book.personal.favorite if book.personal else False,
                 'reading_status': book.personal.reading_status if book.personal else 'unread',
+                'reading_progress': book.personal.reading_progress if book.personal else 0,
+                'queue_position': queue_position,
                 'tags': book.personal.personal_tags or [] if book.personal else [],
             },
             'created_at': book.created_at.isoformat(),
         }
         books_data.append(book_data)
 
-    # Generate statistics
-    stats = {}
-    if include_stats:
-        all_authors = set()
-        all_subjects = set()
-        all_languages = set()
-        all_formats = set()
-        series_count = 0
+    # Generate statistics and navigation data
+    stats = {
+        'total_books': len(books),
+        'total_authors': len(authors_set),
+        'total_subjects': len(subjects_set),
+        'total_series': len(series_set),
+        'languages': sorted(list(languages_set)),
+        'formats': sorted(list(formats_set)),
+    }
 
-        for book in books:
-            for author in book.authors:
-                all_authors.add(author.name)
-            for subject in book.subjects:
-                all_subjects.add(subject.name)
-            if book.language:
-                all_languages.add(book.language)
-            for file in book.files:
-                all_formats.add(file.format)
-            if book.series:
-                series_count += 1
-
-        stats = {
-            'total_books': len(books),
-            'total_authors': len(all_authors),
-            'total_subjects': len(all_subjects),
-            'languages': list(all_languages),
-            'formats': list(all_formats),
-            'books_in_series': series_count,
-        }
+    nav_data = {
+        'authors': sorted(list(authors_set)),
+        'subjects': sorted(list(subjects_set)),
+        'series': sorted(list(series_set)),
+    }
 
     # Create HTML content
-    html_content = _generate_html_template(books_data, stats, base_url)
+    html_content = _generate_html_template(books_data, stats, nav_data, base_url)
 
     # Write to file
     output_path.write_text(html_content, encoding='utf-8')
 
 
-def _generate_html_template(books_data: List[dict], stats: dict, base_url: str = "") -> str:
+def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict, base_url: str = "") -> str:
     """Generate the complete HTML template with embedded CSS and JavaScript."""
 
-    books_json = json.dumps(books_data, indent=2, ensure_ascii=False)
-    stats_json = json.dumps(stats, indent=2, ensure_ascii=False)
+    books_json = json.dumps(books_data, indent=None, ensure_ascii=False)
+    stats_json = json.dumps(stats, indent=None, ensure_ascii=False)
+    nav_json = json.dumps(nav_data, indent=None, ensure_ascii=False)
     base_url_json = json.dumps(base_url, ensure_ascii=False)
-    export_date = datetime.now().isoformat()
+    export_date = datetime.now().strftime('%Y-%m-%d %H:%M')
 
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>eBook Library Catalog</title>
+    <title>ebk Library</title>
     <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
+        *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
         :root {{
-            --primary: #2563eb;
-            --primary-dark: #1e40af;
-            --secondary: #64748b;
-            --background: #f8fafc;
-            --surface: #ffffff;
-            --text: #1e293b;
-            --text-light: #64748b;
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f1f5f9;
+            --bg-hover: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
             --border: #e2e8f0;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --accent-light: #eef2ff;
             --success: #10b981;
+            --success-light: #d1fae5;
             --warning: #f59e0b;
+            --warning-light: #fef3c7;
             --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1);
+            --shadow-lg: 0 4px 12px rgba(0,0,0,0.1);
+            --radius: 8px;
+            --radius-lg: 12px;
+            --transition: 0.15s ease;
+        }}
+
+        [data-theme="dark"] {{
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --bg-hover: #475569;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #64748b;
+            --border: #334155;
+            --accent-light: #312e81;
+            --success-light: #064e3b;
+            --warning-light: #78350f;
+            --danger-light: #7f1d1d;
+            --shadow: 0 1px 3px rgba(0,0,0,0.3);
+            --shadow-lg: 0 4px 12px rgba(0,0,0,0.3);
         }}
 
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: var(--background);
-            color: var(--text);
+            background: var(--bg-primary);
+            color: var(--text-primary);
             line-height: 1.6;
+            min-height: 100vh;
         }}
 
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-
-        header {{
-            background: var(--surface);
-            border-bottom: 2px solid var(--border);
-            padding: 20px 0;
-            margin-bottom: 30px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }}
-
-        h1 {{
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--primary);
-            margin-bottom: 10px;
-        }}
-
-        .stats {{
+        /* Layout */
+        .app-container {{
             display: flex;
-            gap: 30px;
-            flex-wrap: wrap;
-            margin-top: 15px;
-            color: var(--text-light);
+            min-height: 100vh;
+        }}
+
+        .sidebar {{
+            width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            z-index: 100;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+        }}
+
+        .sidebar.open {{
+            transform: translateX(0);
+        }}
+
+        @media (min-width: 1024px) {{
+            .sidebar {{
+                transform: translateX(0);
+                position: sticky;
+                height: 100vh;
+            }}
+        }}
+
+        .sidebar-header {{
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }}
+
+        .sidebar-logo {{
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+
+        .logo-icon {{
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            color: white;
+        }}
+
+        .sidebar-nav {{
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }}
+
+        .nav-section {{
+            margin-bottom: 16px;
+        }}
+
+        .nav-section-title {{
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            padding: 8px 12px;
+        }}
+
+        .nav-item {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
             font-size: 0.9rem;
+        }}
+
+        .nav-item:hover {{
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }}
+
+        .nav-item.active {{
+            background: var(--accent);
+            color: white;
+        }}
+
+        .nav-item-count {{
+            margin-left: auto;
+            font-size: 0.75rem;
+            background: var(--bg-tertiary);
+            padding: 2px 8px;
+            border-radius: 12px;
+            color: var(--text-muted);
+        }}
+
+        .nav-item.active .nav-item-count {{
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }}
+
+        /* Main Content */
+        .main-content {{
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }}
+
+        @media (min-width: 1024px) {{
+            .main-content {{
+                margin-left: 0;
+            }}
+        }}
+
+        /* Header */
+        .header {{
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }}
+
+        .menu-toggle {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius);
+            cursor: pointer;
+            color: var(--text-primary);
+            font-size: 1.25rem;
+        }}
+
+        @media (min-width: 1024px) {{
+            .menu-toggle {{
+                display: none;
+            }}
+        }}
+
+        .search-container {{
+            flex: 1;
+            max-width: 600px;
+            position: relative;
+        }}
+
+        .search-input {{
+            width: 100%;
+            padding: 10px 16px 10px 44px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            transition: border-color 0.2s;
+        }}
+
+        .search-input:focus {{
+            outline: none;
+            border-color: var(--accent);
+        }}
+
+        .search-input::placeholder {{
+            color: var(--text-muted);
+        }}
+
+        .search-icon {{
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+        }}
+
+        .header-actions {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .icon-btn {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius);
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            transition: all 0.15s ease;
+        }}
+
+        .icon-btn:hover {{
+            background: var(--accent);
+            color: white;
+        }}
+
+        .icon-btn.active {{
+            background: var(--accent);
+            color: white;
+        }}
+
+        /* Toolbar */
+        .toolbar {{
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }}
+
+        .filter-group {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .filter-label {{
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }}
+
+        .filter-select {{
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            cursor: pointer;
+        }}
+
+        .results-info {{
+            margin-left: auto;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }}
+
+        /* Stats Bar */
+        .stats-bar {{
+            display: flex;
+            gap: 16px;
+            padding: 16px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
         }}
 
         .stat-item {{
             display: flex;
             align-items: center;
-            gap: 5px;
-        }}
-
-        .stat-value {{
-            font-weight: 600;
-            color: var(--text);
-        }}
-
-        .controls {{
-            background: var(--surface);
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }}
-
-        .search-bar {{
-            width: 100%;
+            gap: 12px;
             padding: 12px 16px;
-            font-size: 1rem;
-            border: 2px solid var(--border);
-            border-radius: 6px;
-            margin-bottom: 15px;
-            transition: border-color 0.2s;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius);
+            min-width: fit-content;
         }}
 
-        .search-bar:focus {{
-            outline: none;
-            border-color: var(--primary);
-        }}
-
-        .filters {{
+        .stat-icon {{
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius);
             display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
         }}
 
-        .filter-group {{
+        .stat-icon.books {{ background: var(--accent-light); color: var(--accent); }}
+        .stat-icon.authors {{ background: var(--success-light); color: var(--success); }}
+        .stat-icon.subjects {{ background: var(--warning-light); color: var(--warning); }}
+        .stat-icon.series {{ background: var(--danger-light); color: var(--danger); }}
+
+        .stat-content {{ display: flex; flex-direction: column; }}
+        .stat-value {{ font-size: 1.25rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }}
+        .stat-label {{ font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }}
+
+        /* Content Area */
+        .content {{
             flex: 1;
-            min-width: 200px;
+            padding: 24px;
+            overflow-y: auto;
         }}
 
-        .filter-group label {{
-            display: block;
-            font-size: 0.875rem;
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: var(--text-light);
-        }}
-
-        .filter-group select {{
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 0.9rem;
-            background: white;
-            cursor: pointer;
-        }}
-
+        /* Grid View */
         .book-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
             gap: 20px;
         }}
 
         .book-card {{
-            background: var(--surface);
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow);
             transition: transform 0.2s, box-shadow 0.2s;
             cursor: pointer;
         }}
 
         .book-card:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
         }}
 
-        .book-header {{
+        .book-cover {{
+            aspect-ratio: 2/3;
+            background: var(--bg-tertiary);
             display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 12px;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }}
+
+        .book-cover img {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }}
+
+        .book-cover-placeholder {{
+            font-size: 3rem;
+            color: var(--text-muted);
+        }}
+
+        .book-info {{
+            padding: 12px;
         }}
 
         .book-title {{
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--text);
-            line-height: 1.3;
-            flex: 1;
-        }}
-
-        .favorite-badge {{
-            color: var(--warning);
-            font-size: 1.2rem;
-            margin-left: 8px;
-        }}
-
-        .book-subtitle {{
             font-size: 0.9rem;
-            color: var(--text-light);
-            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }}
 
-        .book-authors {{
-            font-size: 0.95rem;
-            color: var(--text-light);
-            margin-bottom: 8px;
+        .book-author {{
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }}
 
         .book-meta {{
             display: flex;
-            flex-wrap: wrap;
+            align-items: center;
             gap: 8px;
-            margin-top: 12px;
+            margin-top: 8px;
+            flex-wrap: wrap;
         }}
 
-        .badge {{
-            display: inline-block;
-            padding: 3px 8px;
+        .book-badge {{
+            font-size: 0.7rem;
+            padding: 2px 6px;
             border-radius: 4px;
-            font-size: 0.75rem;
             font-weight: 600;
             text-transform: uppercase;
         }}
 
-        .badge-series {{
-            background: #dbeafe;
-            color: var(--primary);
-        }}
-
         .badge-format {{
-            background: #f3f4f6;
-            color: var(--secondary);
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
         }}
 
-        .badge-language {{
+        .badge-favorite {{
             background: #fef3c7;
             color: #92400e;
         }}
 
-        .rating {{
+        .badge-queue {{
+            background: #dbeafe;
+            color: #1e40af;
+        }}
+
+        .book-rating {{
             color: var(--warning);
+            font-size: 0.75rem;
+        }}
+
+        /* List View */
+        .book-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }}
+
+        .book-list-item {{
+            background: var(--bg-secondary);
+            border-radius: var(--radius);
+            padding: 16px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+        }}
+
+        .book-list-item:hover {{
+            box-shadow: var(--shadow-lg);
+        }}
+
+        .book-list-cover {{
+            width: 60px;
+            height: 90px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }}
+
+        .book-list-cover img {{
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }}
+
+        .book-list-info {{
+            flex: 1;
+            min-width: 0;
+        }}
+
+        .book-list-title {{
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }}
+
+        .book-list-author {{
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }}
+
+        .book-list-meta {{
+            display: flex;
+            gap: 16px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }}
+
+        /* Table View */
+        .book-table {{
+            width: 100%;
+            border-collapse: collapse;
             font-size: 0.9rem;
         }}
 
-        .modal {{
+        .book-table th {{
+            text-align: left;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border);
+            cursor: pointer;
+            user-select: none;
+        }}
+
+        .book-table th:hover {{
+            background: var(--border);
+        }}
+
+        .book-table td {{
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }}
+
+        .book-table tr:hover td {{
+            background: var(--bg-tertiary);
+        }}
+
+        .table-title {{
+            font-weight: 500;
+            cursor: pointer;
+        }}
+
+        .table-title:hover {{
+            color: var(--accent);
+        }}
+
+        /* Modal */
+        .modal-overlay {{
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 1000;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 200;
             padding: 20px;
             overflow-y: auto;
         }}
 
-        .modal.active {{
+        .modal-overlay.active {{
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }}
+
+        .modal {{
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            max-width: 800px;
+            width: 100%;
+            margin-top: 40px;
+            box-shadow: var(--shadow-lg);
+        }}
+
+        .modal-header {{
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+        }}
+
+        .modal-title {{
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }}
+
+        .modal-close {{
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 1.25rem;
+            color: var(--text-secondary);
             display: flex;
             align-items: center;
             justify-content: center;
         }}
 
-        .modal-content {{
-            background: var(--surface);
-            border-radius: 12px;
-            max-width: 800px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
-        }}
-
-        .modal-header {{
-            padding: 24px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-        }}
-
-        .modal-title {{
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--text);
-            flex: 1;
-        }}
-
-        .close-btn {{
-            background: none;
-            border: none;
-            font-size: 2rem;
-            color: var(--text-light);
-            cursor: pointer;
-            padding: 0;
-            width: 30px;
-            height: 30px;
-            line-height: 1;
-        }}
-
-        .close-btn:hover {{
-            color: var(--text);
+        .modal-close:hover {{
+            background: var(--danger);
+            color: white;
         }}
 
         .modal-body {{
             padding: 24px;
+            max-height: 70vh;
+            overflow-y: auto;
         }}
 
-        .detail-section {{
+        .modal-cover {{
+            text-align: center;
             margin-bottom: 24px;
         }}
 
+        .modal-cover img {{
+            max-width: 200px;
+            max-height: 300px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+        }}
+
+        .detail-section {{
+            margin-bottom: 20px;
+        }}
+
         .detail-label {{
+            font-size: 0.75rem;
             font-weight: 600;
-            color: var(--text-light);
-            font-size: 0.875rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            margin-bottom: 8px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
         }}
 
         .detail-value {{
-            color: var(--text);
-            margin-bottom: 8px;
+            color: var(--text-primary);
         }}
 
-        .contributors-list, .identifiers-list {{
-            list-style: none;
-            padding: 0;
-        }}
-
-        .contributors-list li, .identifiers-list li {{
-            padding: 4px 0;
-            color: var(--text);
-        }}
-
-        .contributor-role {{
-            color: var(--text-light);
-            font-size: 0.875rem;
-            margin-left: 8px;
-        }}
-
-        .file-link {{
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.2s;
-        }}
-
-        .file-link:hover {{
-            color: var(--primary-dark);
-            text-decoration: underline;
-        }}
-
-        .tags {{
+        .detail-tags {{
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
         }}
 
         .tag {{
-            background: #e0e7ff;
-            color: var(--primary);
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
             padding: 4px 10px;
-            border-radius: 12px;
+            border-radius: 16px;
             font-size: 0.8rem;
         }}
 
-        .no-results {{
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-light);
+        .file-list {{
+            list-style: none;
         }}
 
-        .no-results-icon {{
+        .file-item {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }}
+
+        .file-item:last-child {{
+            border-bottom: none;
+        }}
+
+        .file-link {{
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 500;
+        }}
+
+        .file-link:hover {{
+            text-decoration: underline;
+        }}
+
+        .file-size {{
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }}
+
+        /* Empty State */
+        .empty-state {{
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }}
+
+        .empty-state-icon {{
             font-size: 4rem;
             margin-bottom: 16px;
         }}
 
-        @media (max-width: 768px) {{
-            .book-grid {{
-                grid-template-columns: 1fr;
-            }}
-
-            .filters {{
-                flex-direction: column;
-            }}
-
-            .stats {{
-                flex-direction: column;
-                gap: 8px;
-            }}
+        .empty-state h3 {{
+            color: var(--text-secondary);
+            margin-bottom: 8px;
         }}
 
-        code {{
-            background: rgba(37, 99, 235, 0.1);
-            padding: 2px 6px;
+        /* Pagination */
+        .pagination {{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: 24px;
+            flex-wrap: wrap;
+        }}
+
+        .page-btn {{
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.15s ease;
+        }}
+
+        .page-btn:hover:not(:disabled) {{
+            border-color: var(--accent);
+            color: var(--accent);
+        }}
+
+        .page-btn.active {{
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }}
+
+        .page-btn:disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
+        }}
+
+        /* Keyboard shortcuts hint */
+        .keyboard-hint {{
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            box-shadow: var(--shadow-lg);
+            z-index: 50;
+        }}
+
+        .kbd {{
+            display: inline-block;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
             border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            color: var(--primary);
+            padding: 2px 6px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            margin: 0 2px;
         }}
 
-        #search-help ul {{
-            list-style-type: none;
+        /* Sidebar overlay for mobile */
+        .sidebar-overlay {{
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 99;
         }}
 
-        #search-help li {{
-            padding: 3px 0;
+        .sidebar-overlay.active {{
+            display: block;
+        }}
+
+        /* Print styles */
+        @media print {{
+            .sidebar, .header, .toolbar, .stats-bar, .pagination, .keyboard-hint {{
+                display: none !important;
+            }}
+            .main-content {{
+                margin-left: 0 !important;
+            }}
+            .book-card, .book-list-item {{
+                break-inside: avoid;
+            }}
+        }}
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {{
+            width: 8px;
+            height: 8px;
+        }}
+
+        ::-webkit-scrollbar-track {{
+            background: var(--bg-primary);
+        }}
+
+        ::-webkit-scrollbar-thumb {{
+            background: var(--border);
+            border-radius: 4px;
+        }}
+
+        ::-webkit-scrollbar-thumb:hover {{
+            background: var(--text-muted);
         }}
     </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>📚 eBook Library</h1>
-            <div class="stats">
-                <div class="stat-item">
-                    <span>Total Books:</span>
-                    <span class="stat-value" id="total-books">0</span>
-                </div>
-                <div class="stat-item">
-                    <span>Authors:</span>
-                    <span class="stat-value" id="total-authors">0</span>
-                </div>
-                <div class="stat-item">
-                    <span>Subjects:</span>
-                    <span class="stat-value" id="total-subjects">0</span>
-                </div>
-                <div class="stat-item">
-                    <span>Exported:</span>
-                    <span class="stat-value">{export_date[:10]}</span>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <div class="app-container">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <div class="logo-icon">📚</div>
+                    <span>ebk Library</span>
                 </div>
             </div>
-        </div>
-    </header>
-
-    <div class="container">
-        <div class="controls">
-            <div style="position: relative; display: flex; align-items: center; gap: 8px;">
-                <input
-                    type="text"
-                    class="search-bar"
-                    id="search-input"
-                    placeholder="Search books... (try: title:Python rating:>=4)"
-                    style="flex: 1;"
-                >
-                <button
-                    onclick="toggleSearchHelp()"
-                    style="background: var(--secondary); color: white; border: none; border-radius: 6px; width: 36px; height: 36px; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center;"
-                    title="Search Help"
-                >
-                    ?
-                </button>
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Library</div>
+                    <div class="nav-item active" data-filter="all" onclick="setFilter('all')">
+                        <span>📖</span> All Books
+                        <span class="nav-item-count" id="count-all">0</span>
+                    </div>
+                    <div class="nav-item" data-filter="favorites" onclick="setFilter('favorites')">
+                        <span>⭐</span> Favorites
+                        <span class="nav-item-count" id="count-favorites">0</span>
+                    </div>
+                    <div class="nav-item" data-filter="queue" onclick="setFilter('queue')">
+                        <span>📋</span> Reading Queue
+                        <span class="nav-item-count" id="count-queue">0</span>
+                    </div>
+                    <div class="nav-item" data-filter="reading" onclick="setFilter('reading')">
+                        <span>📖</span> Currently Reading
+                        <span class="nav-item-count" id="count-reading">0</span>
+                    </div>
+                </div>
+                <div class="nav-section">
+                    <div class="nav-section-title">Browse</div>
+                    <div class="nav-item" data-filter="authors" onclick="toggleSubnav('authors')">
+                        <span>👤</span> Authors
+                        <span class="nav-item-count" id="count-authors">0</span>
+                    </div>
+                    <div id="subnav-authors" class="subnav" style="display:none; max-height: 200px; overflow-y: auto; margin-left: 20px;"></div>
+                    <div class="nav-item" data-filter="subjects" onclick="toggleSubnav('subjects')">
+                        <span>🏷️</span> Subjects
+                        <span class="nav-item-count" id="count-subjects">0</span>
+                    </div>
+                    <div id="subnav-subjects" class="subnav" style="display:none; max-height: 200px; overflow-y: auto; margin-left: 20px;"></div>
+                    <div class="nav-item" data-filter="series" onclick="toggleSubnav('series')">
+                        <span>📚</span> Series
+                        <span class="nav-item-count" id="count-series">0</span>
+                    </div>
+                    <div id="subnav-series" class="subnav" style="display:none; max-height: 200px; overflow-y: auto; margin-left: 20px;"></div>
+                </div>
+            </nav>
+            <div style="padding: 16px; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted);">
+                Exported: {export_date}
             </div>
+        </aside>
 
-            <div id="search-help" style="display: none; margin-top: 10px; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 2px solid var(--primary); font-size: 0.875rem;">
-                <h4 style="margin-top: 0; color: var(--primary);">Advanced Search Syntax</h4>
+        <main class="main-content">
+            <header class="header">
+                <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+                <div class="search-container">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-input" id="search" placeholder="Search... (try title:python or author:knuth)" autocomplete="off">
+                </div>
+                <div class="header-actions">
+                    <button class="icon-btn active" id="view-grid" onclick="setView('grid')" title="Grid View">▦</button>
+                    <button class="icon-btn" id="view-list" onclick="setView('list')" title="List View">☰</button>
+                    <button class="icon-btn" id="view-table" onclick="setView('table')" title="Table View">▤</button>
+                    <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">🌓</button>
+                </div>
+            </header>
 
-                <p style="margin: 5px 0;"><strong>Field Searches:</strong></p>
-                <ul style="margin: 5px 0 10px 20px; padding: 0;">
-                    <li><code>title:Python</code> - Search in title only</li>
-                    <li><code>author:Knuth</code> - Search author name</li>
-                    <li><code>tag:programming</code> - Search subjects/tags</li>
-                    <li><code>description:algorithms</code> - Search description</li>
-                    <li><code>series:TAOCP</code> - Search series name</li>
-                </ul>
-
-                <p style="margin: 5px 0;"><strong>Filters:</strong></p>
-                <ul style="margin: 5px 0 10px 20px; padding: 0;">
-                    <li><code>language:en</code> - Language code</li>
-                    <li><code>format:pdf</code> - File format</li>
-                    <li><code>rating:5</code> or <code>rating:>=4</code> - Rating filter</li>
-                    <li><code>favorite:true</code> - Favorites only</li>
-                    <li><code>status:reading</code> - Reading status</li>
-                </ul>
-
-                <p style="margin: 5px 0;"><strong>Boolean Logic:</strong></p>
-                <ul style="margin: 5px 0 10px 20px; padding: 0;">
-                    <li><code>python java</code> - Both terms (implicit AND)</li>
-                    <li><code>python OR java</code> - Either term</li>
-                    <li><code>NOT java</code> or <code>-java</code> - Exclude term</li>
-                </ul>
-
-                <p style="margin: 5px 0;"><strong>Quotes:</strong></p>
-                <ul style="margin: 5px 0 10px 20px; padding: 0;">
-                    <li><code>"machine learning"</code> - Exact phrase</li>
-                    <li><code>author:"Donald Knuth"</code> - Field with phrase</li>
-                </ul>
-
-                <p style="margin: 5px 0;"><strong>Examples:</strong></p>
-                <ul style="margin: 5px 0 0 20px; padding: 0;">
-                    <li><code>title:Python rating:>=4 format:pdf</code></li>
-                    <li><code>author:"Donald Knuth" series:TAOCP</code></li>
-                    <li><code>tag:programming favorite:true NOT java</code></li>
-                </ul>
-            </div>
-
-            <div class="filters">
+            <div class="toolbar">
                 <div class="filter-group">
-                    <label for="sort-field">Sort By</label>
-                    <select id="sort-field">
+                    <span class="filter-label">Sort:</span>
+                    <select class="filter-select" id="sort-field" onchange="applyFilters()">
                         <option value="title">Title</option>
-                        <option value="created_at">Date Added</option>
+                        <option value="author">Author</option>
+                        <option value="date_added">Date Added</option>
                         <option value="publication_date">Publication Date</option>
                         <option value="rating">Rating</option>
                     </select>
-                </div>
-
-                <div class="filter-group">
-                    <label for="sort-order">Order</label>
-                    <select id="sort-order">
-                        <option value="asc">Ascending</option>
-                        <option value="desc">Descending</option>
+                    <select class="filter-select" id="sort-order" onchange="applyFilters()">
+                        <option value="asc">A-Z</option>
+                        <option value="desc">Z-A</option>
                     </select>
                 </div>
-
                 <div class="filter-group">
-                    <label for="language-filter">Language</label>
-                    <select id="language-filter">
-                        <option value="">All Languages</option>
+                    <span class="filter-label">Language:</span>
+                    <select class="filter-select" id="filter-language" onchange="applyFilters()">
+                        <option value="">All</option>
                     </select>
                 </div>
-
                 <div class="filter-group">
-                    <label for="format-filter">Format</label>
-                    <select id="format-filter">
-                        <option value="">All Formats</option>
+                    <span class="filter-label">Format:</span>
+                    <select class="filter-select" id="filter-format" onchange="applyFilters()">
+                        <option value="">All</option>
                     </select>
                 </div>
+                <div class="results-info" id="results-info"></div>
+            </div>
 
-                <div class="filter-group">
-                    <label for="series-filter">Series</label>
-                    <select id="series-filter">
-                        <option value="">All Books</option>
-                        <option value="has-series">In Series</option>
-                        <option value="no-series">Not in Series</option>
-                    </select>
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <div class="stat-icon books">📚</div>
+                    <div class="stat-content">
+                        <span class="stat-value" id="stat-books">0</span>
+                        <span class="stat-label">Books</span>
+                    </div>
                 </div>
-
-                <div class="filter-group">
-                    <label for="favorite-filter">Favorites</label>
-                    <select id="favorite-filter">
-                        <option value="">All Books</option>
-                        <option value="true">Favorites Only</option>
-                    </select>
+                <div class="stat-item">
+                    <div class="stat-icon authors">👤</div>
+                    <div class="stat-content">
+                        <span class="stat-value" id="stat-authors">0</span>
+                        <span class="stat-label">Authors</span>
+                    </div>
                 </div>
-
-                <div class="filter-group">
-                    <label for="rating-filter">Min Rating</label>
-                    <select id="rating-filter">
-                        <option value="">Any Rating</option>
-                        <option value="1">1+ Stars</option>
-                        <option value="2">2+ Stars</option>
-                        <option value="3">3+ Stars</option>
-                        <option value="4">4+ Stars</option>
-                        <option value="5">5 Stars</option>
-                    </select>
+                <div class="stat-item">
+                    <div class="stat-icon subjects">🏷️</div>
+                    <div class="stat-content">
+                        <span class="stat-value" id="stat-subjects">0</span>
+                        <span class="stat-label">Subjects</span>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-icon series">📖</div>
+                    <div class="stat-content">
+                        <span class="stat-value" id="stat-series">0</span>
+                        <span class="stat-label">Series</span>
+                    </div>
                 </div>
             </div>
-            <button onclick="clearFilters()" style="margin-top: 10px; padding: 8px 16px; background: var(--secondary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">Clear Filters</button>
-        </div>
 
-        <div id="results-info" style="margin-bottom: 15px; color: var(--text-light); font-size: 0.9rem;"></div>
-
-        <div class="book-grid" id="book-grid"></div>
-
-        <div class="no-results" id="no-results" style="display: none;">
-            <div class="no-results-icon">🔍</div>
-            <h2>No books found</h2>
-            <p>Try adjusting your search or filters</p>
-        </div>
-
-        <div id="pagination" style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 30px; flex-wrap: wrap;"></div>
+            <div class="content">
+                <div id="book-container"></div>
+                <div class="empty-state" id="empty-state" style="display:none;">
+                    <div class="empty-state-icon">📭</div>
+                    <h3>No books found</h3>
+                    <p>Try adjusting your search or filters</p>
+                </div>
+                <div class="pagination" id="pagination"></div>
+            </div>
+        </main>
     </div>
 
-    <div class="modal" id="book-modal">
-        <div class="modal-content">
+    <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
             <div class="modal-header">
                 <h2 class="modal-title" id="modal-title"></h2>
-                <div style="display: flex; gap: 10px; align-items: center;">
-                    <button class="btn-primary" onclick="toggleEditMode()" id="edit-mode-btn" style="padding: 6px 12px; font-size: 0.875rem;">Edit Metadata</button>
-                    <button class="close-btn" onclick="closeModal()">&times;</button>
-                </div>
+                <button class="modal-close" onclick="closeModal()">×</button>
             </div>
             <div class="modal-body" id="modal-body"></div>
         </div>
     </div>
 
+    <div class="keyboard-hint" id="keyboard-hint">
+        <kbd>/</kbd> Search &nbsp; <kbd>Esc</kbd> Close &nbsp; <kbd>j</kbd><kbd>k</kbd> Navigate
+    </div>
+
     <script>
-        // Embedded data
+        // Data
         const BOOKS = {books_json};
         const STATS = {stats_json};
+        const NAV = {nav_json};
         const BASE_URL = {base_url_json};
 
         // State
+        let currentView = 'grid';
+        let currentFilter = 'all';
+        let currentSubfilter = null;
         let filteredBooks = [...BOOKS];
-        let editMode = false;
-        let currentBookId = null;
         let currentPage = 1;
-        const booksPerPage = 50;
+        const perPage = 48;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {{
-            populateStats();
+            initTheme();
             populateFilters();
-            restoreStateFromURL();
+            updateCounts();
             applyFilters();
-            setupEventListeners();
-
-            // Handle browser back/forward
-            window.addEventListener('popstate', () => {{
-                restoreStateFromURL();
-                applyFilters();
-            }});
+            setupKeyboardShortcuts();
         }});
 
-        function populateStats() {{
-            document.getElementById('total-books').textContent = STATS.total_books;
-            document.getElementById('total-authors').textContent = STATS.total_authors;
-            document.getElementById('total-subjects').textContent = STATS.total_subjects;
+        function initTheme() {{
+            const saved = localStorage.getItem('ebk_theme');
+            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {{
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }}
+        }}
+
+        function toggleTheme() {{
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+            localStorage.setItem('ebk_theme', isDark ? 'light' : 'dark');
+        }}
+
+        function toggleSidebar() {{
+            document.getElementById('sidebar').classList.toggle('open');
+            document.querySelector('.sidebar-overlay').classList.toggle('active');
         }}
 
         function populateFilters() {{
-            // Languages
-            const languageSelect = document.getElementById('language-filter');
-            STATS.languages.forEach(lang => {{
-                const option = document.createElement('option');
-                option.value = lang;
-                option.textContent = lang.toUpperCase();
-                languageSelect.appendChild(option);
+            const langSelect = document.getElementById('filter-language');
+            STATS.languages.forEach(l => {{
+                const opt = document.createElement('option');
+                opt.value = l;
+                opt.textContent = l.toUpperCase();
+                langSelect.appendChild(opt);
             }});
 
-            // Formats
-            const formatSelect = document.getElementById('format-filter');
-            STATS.formats.forEach(fmt => {{
-                const option = document.createElement('option');
-                option.value = fmt;
-                option.textContent = fmt.toUpperCase();
-                formatSelect.appendChild(option);
+            const formatSelect = document.getElementById('filter-format');
+            STATS.formats.forEach(f => {{
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                formatSelect.appendChild(opt);
             }});
         }}
 
-        // localStorage helpers
-        function loadMetadataOverrides() {{
-            const overrides = localStorage.getItem('ebk_metadata_overrides');
-            return overrides ? JSON.parse(overrides) : {{}};
+        function updateCounts() {{
+            // Update sidebar counts
+            document.getElementById('count-all').textContent = BOOKS.length;
+            document.getElementById('count-favorites').textContent = BOOKS.filter(b => b.personal?.favorite).length;
+            document.getElementById('count-queue').textContent = BOOKS.filter(b => b.personal?.queue_position).length;
+            document.getElementById('count-reading').textContent = BOOKS.filter(b => b.personal?.reading_status === 'reading').length;
+            document.getElementById('count-authors').textContent = NAV.authors.length;
+            document.getElementById('count-subjects').textContent = NAV.subjects.length;
+            document.getElementById('count-series').textContent = NAV.series.length;
+
+            // Update stats bar
+            document.getElementById('stat-books').textContent = STATS.total_books.toLocaleString();
+            document.getElementById('stat-authors').textContent = STATS.total_authors.toLocaleString();
+            document.getElementById('stat-subjects').textContent = STATS.total_subjects.toLocaleString();
+            document.getElementById('stat-series').textContent = STATS.total_series.toLocaleString();
         }}
 
-        function saveMetadataOverride(bookId, field, value) {{
-            const overrides = loadMetadataOverrides();
-            if (!overrides[bookId]) overrides[bookId] = {{}};
-            overrides[bookId][field] = value;
-            localStorage.setItem('ebk_metadata_overrides', JSON.stringify(overrides));
-        }}
-
-        function applyMetadataOverrides(book) {{
-            const overrides = loadMetadataOverrides();
-            if (overrides[book.id]) {{
-                return {{ ...book, ...overrides[book.id] }};
+        function toggleSubnav(type) {{
+            const el = document.getElementById('subnav-' + type);
+            if (el.style.display === 'none') {{
+                el.style.display = 'block';
+                const items = NAV[type].slice(0, 50);
+                el.innerHTML = items.map(item =>
+                    `<div class="nav-item" style="padding: 6px 12px; font-size: 0.8rem;" onclick="setSubfilter('${{type}}', '${{item.replace(/'/g, "\\\\'")}}')">
+                        ${{item.length > 30 ? item.substring(0, 30) + '...' : item}}
+                    </div>`
+                ).join('');
+                if (NAV[type].length > 50) {{
+                    el.innerHTML += `<div style="padding: 6px 12px; font-size: 0.75rem; color: var(--text-muted);">+ ${{NAV[type].length - 50}} more</div>`;
+                }}
+            }} else {{
+                el.style.display = 'none';
             }}
-            return book;
         }}
 
-        // URL State Management
-        function updateURL() {{
-            const params = new URLSearchParams();
-
-            if (currentPage > 1) params.set('page', currentPage);
-
-            const searchQuery = document.getElementById('search-input').value;
-            if (searchQuery) params.set('q', searchQuery);
-
-            const language = document.getElementById('language-filter').value;
-            if (language) params.set('language', language);
-
-            const format = document.getElementById('format-filter').value;
-            if (format) params.set('format', format);
-
-            const series = document.getElementById('series-filter').value;
-            if (series) params.set('series', series);
-
-            const favorite = document.getElementById('favorite-filter').value;
-            if (favorite) params.set('favorite', favorite);
-
-            const rating = document.getElementById('rating-filter').value;
-            if (rating) params.set('rating', rating);
-
-            const sortField = document.getElementById('sort-field').value;
-            if (sortField !== 'title') params.set('sort', sortField);
-
-            const sortOrder = document.getElementById('sort-order').value;
-            if (sortOrder !== 'asc') params.set('order', sortOrder);
-
-            const newURL = params.toString() ? `?${{params.toString()}}` : window.location.pathname;
-            window.history.pushState({{}}, '', newURL);
+        function setFilter(filter) {{
+            currentFilter = filter;
+            currentSubfilter = null;
+            currentPage = 1;
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.querySelector(`.nav-item[data-filter="${{filter}}"]`)?.classList.add('active');
+            applyFilters();
+            if (window.innerWidth < 1024) toggleSidebar();
         }}
 
-        function restoreStateFromURL() {{
-            const params = new URLSearchParams(window.location.search);
+        function setSubfilter(type, value) {{
+            currentFilter = type;
+            currentSubfilter = value;
+            currentPage = 1;
+            applyFilters();
+            if (window.innerWidth < 1024) toggleSidebar();
+        }}
 
-            currentPage = parseInt(params.get('page')) || 1;
+        function setView(view) {{
+            currentView = view;
+            document.querySelectorAll('.header-actions .icon-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('view-' + view).classList.add('active');
+            renderBooks();
+        }}
 
-            document.getElementById('search-input').value = params.get('q') || '';
-            document.getElementById('language-filter').value = params.get('language') || '';
-            document.getElementById('format-filter').value = params.get('format') || '';
-            document.getElementById('series-filter').value = params.get('series') || '';
-            document.getElementById('favorite-filter').value = params.get('favorite') || '';
-            document.getElementById('rating-filter').value = params.get('rating') || '';
-            document.getElementById('sort-field').value = params.get('sort') || 'title';
-            document.getElementById('sort-order').value = params.get('order') || 'asc';
+        function parseSearch(query) {{
+            const terms = {{}};
+            const general = [];
+
+            // Match field:value or field:"quoted value"
+            const regex = /(\\w+):(?:"([^"]+)"|([^\\s]+))|"([^"]+)"|(\\S+)/g;
+            let match;
+
+            while ((match = regex.exec(query)) !== null) {{
+                if (match[1]) {{
+                    // field:value
+                    const field = match[1].toLowerCase();
+                    const value = (match[2] || match[3]).toLowerCase();
+                    terms[field] = value;
+                }} else {{
+                    // general term
+                    const term = (match[4] || match[5]).toLowerCase();
+                    if (term !== 'or' && term !== 'and') {{
+                        general.push(term);
+                    }}
+                }}
+            }}
+
+            return {{ terms, general }};
+        }}
+
+        function bookMatchesSearch(book, parsed) {{
+            // Check field-specific terms
+            for (const [field, value] of Object.entries(parsed.terms)) {{
+                switch (field) {{
+                    case 'title':
+                        if (!book.title?.toLowerCase().includes(value)) return false;
+                        break;
+                    case 'author':
+                        if (!book.authors.some(a => a.name.toLowerCase().includes(value))) return false;
+                        break;
+                    case 'tag':
+                    case 'subject':
+                        if (!book.subjects.some(s => s.toLowerCase().includes(value))) return false;
+                        break;
+                    case 'series':
+                        if (!book.series?.toLowerCase().includes(value)) return false;
+                        break;
+                    case 'language':
+                    case 'lang':
+                        if (book.language?.toLowerCase() !== value) return false;
+                        break;
+                    case 'format':
+                        if (!book.files.some(f => f.format.toLowerCase() === value)) return false;
+                        break;
+                    case 'rating':
+                        const rating = parseFloat(value);
+                        if (value.startsWith('>=')) {{
+                            if ((book.personal?.rating || 0) < parseFloat(value.slice(2))) return false;
+                        }} else if (value.startsWith('>')) {{
+                            if ((book.personal?.rating || 0) <= parseFloat(value.slice(1))) return false;
+                        }} else {{
+                            if ((book.personal?.rating || 0) < rating) return false;
+                        }}
+                        break;
+                    case 'favorite':
+                        if (value === 'true' && !book.personal?.favorite) return false;
+                        if (value === 'false' && book.personal?.favorite) return false;
+                        break;
+                    case 'status':
+                        if (book.personal?.reading_status !== value) return false;
+                        break;
+                }}
+            }}
+
+            // Check general terms
+            if (parsed.general.length > 0) {{
+                const searchable = [
+                    book.title,
+                    book.subtitle,
+                    ...book.authors.map(a => a.name),
+                    ...book.subjects,
+                    ...(book.keywords || []),
+                    book.description,
+                    book.publisher
+                ].filter(Boolean).join(' ').toLowerCase();
+
+                for (const term of parsed.general) {{
+                    if (term.startsWith('-')) {{
+                        if (searchable.includes(term.slice(1))) return false;
+                    }} else {{
+                        if (!searchable.includes(term)) return false;
+                    }}
+                }}
+            }}
+
+            return true;
         }}
 
         function applyFilters() {{
-            filterBooks();
-            updateURL();
-        }}
-
-        function setupEventListeners() {{
-            document.getElementById('search-input').addEventListener('input', () => {{
-                currentPage = 1;  // Reset to page 1 on new search
-                applyFilters();
-            }});
-            document.getElementById('language-filter').addEventListener('change', () => {{
-                currentPage = 1;
-                applyFilters();
-            }});
-            document.getElementById('format-filter').addEventListener('change', () => {{
-                currentPage = 1;
-                applyFilters();
-            }});
-            document.getElementById('series-filter').addEventListener('change', () => {{
-                currentPage = 1;
-                applyFilters();
-            }});
-            document.getElementById('favorite-filter').addEventListener('change', () => {{
-                currentPage = 1;
-                applyFilters();
-            }});
-            document.getElementById('rating-filter').addEventListener('change', () => {{
-                currentPage = 1;
-                applyFilters();
-            }});
-            document.getElementById('sort-field').addEventListener('change', applyFilters);
-            document.getElementById('sort-order').addEventListener('change', applyFilters);
-
-            // Close modal on outside click
-            document.getElementById('book-modal').addEventListener('click', (e) => {{
-                if (e.target.id === 'book-modal') {{
-                    closeModal();
-                }}
-            }});
-        }}
-
-        function filterBooks() {{
-            const searchTerm = document.getElementById('search-input').value.toLowerCase();
-            const languageFilter = document.getElementById('language-filter').value;
-            const formatFilter = document.getElementById('format-filter').value;
-            const seriesFilter = document.getElementById('series-filter').value;
-            const favoriteFilter = document.getElementById('favorite-filter').value;
-            const ratingFilter = document.getElementById('rating-filter').value;
+            const searchQuery = document.getElementById('search').value;
+            const langFilter = document.getElementById('filter-language').value;
+            const formatFilter = document.getElementById('filter-format').value;
             const sortField = document.getElementById('sort-field').value;
             const sortOrder = document.getElementById('sort-order').value;
 
-            // Apply metadata overrides and filter
-            filteredBooks = BOOKS.map(applyMetadataOverrides).filter(book => {{
-                // Search
-                if (searchTerm) {{
-                    const searchable = [
-                        book.title,
-                        book.subtitle,
-                        ...book.authors.map(a => a.name),
-                        ...book.subjects,
-                        ...book.keywords,
-                        book.description
-                    ].filter(x => x).join(' ').toLowerCase();
+            const parsed = parseSearch(searchQuery);
 
-                    if (!searchable.includes(searchTerm)) return false;
+            filteredBooks = BOOKS.filter(book => {{
+                // Category filter
+                if (currentFilter === 'favorites' && !book.personal?.favorite) return false;
+                if (currentFilter === 'queue' && !book.personal?.queue_position) return false;
+                if (currentFilter === 'reading' && book.personal?.reading_status !== 'reading') return false;
+
+                // Subfilter
+                if (currentSubfilter) {{
+                    if (currentFilter === 'authors' && !book.authors.some(a => a.name === currentSubfilter)) return false;
+                    if (currentFilter === 'subjects' && !book.subjects.includes(currentSubfilter)) return false;
+                    if (currentFilter === 'series' && book.series !== currentSubfilter) return false;
                 }}
 
+                // Search
+                if (searchQuery && !bookMatchesSearch(book, parsed)) return false;
+
                 // Language
-                if (languageFilter && book.language !== languageFilter) return false;
+                if (langFilter && book.language !== langFilter) return false;
 
                 // Format
-                if (formatFilter && !book.files.some(f => f.format === formatFilter)) return false;
-
-                // Series
-                if (seriesFilter === 'has-series' && !book.series) return false;
-                if (seriesFilter === 'no-series' && book.series) return false;
-
-                // Favorite
-                if (favoriteFilter === 'true' && !book.personal.favorite) return false;
-
-                // Rating
-                if (ratingFilter && (!book.personal.rating || book.personal.rating < parseFloat(ratingFilter))) return false;
+                if (formatFilter && !book.files.some(f => f.format.toUpperCase() === formatFilter)) return false;
 
                 return true;
             }});
@@ -899,19 +1396,22 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
             // Sort
             filteredBooks.sort((a, b) => {{
                 let aVal, bVal;
-
-                switch(sortField) {{
+                switch (sortField) {{
                     case 'title':
-                        aVal = (a.title || '').toLowerCase();
-                        bVal = (b.title || '').toLowerCase();
+                        aVal = a.title?.toLowerCase() || '';
+                        bVal = b.title?.toLowerCase() || '';
                         break;
-                    case 'created_at':
-                        aVal = new Date(a.created_at || 0);
-                        bVal = new Date(b.created_at || 0);
+                    case 'author':
+                        aVal = a.authors[0]?.name.toLowerCase() || '';
+                        bVal = b.authors[0]?.name.toLowerCase() || '';
+                        break;
+                    case 'date_added':
+                        aVal = new Date(a.created_at);
+                        bVal = new Date(b.created_at);
                         break;
                     case 'publication_date':
-                        aVal = new Date(a.publication_date || 0);
-                        bVal = new Date(b.publication_date || 0);
+                        aVal = a.publication_date || '';
+                        bVal = b.publication_date || '';
                         break;
                     case 'rating':
                         aVal = a.personal?.rating || 0;
@@ -920,455 +1420,251 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
                     default:
                         return 0;
                 }}
-
-                if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-                if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
-                return 0;
+                const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                return sortOrder === 'asc' ? cmp : -cmp;
             }});
 
             renderBooks();
         }}
 
-        function clearFilters() {{
-            document.getElementById('search-input').value = '';
-            document.getElementById('language-filter').value = '';
-            document.getElementById('format-filter').value = '';
-            document.getElementById('series-filter').value = '';
-            document.getElementById('favorite-filter').value = '';
-            document.getElementById('rating-filter').value = '';
-            document.getElementById('sort-field').value = 'title';
-            document.getElementById('sort-order').value = 'asc';
-            filterBooks();
-        }}
-
         function renderBooks() {{
-            const grid = document.getElementById('book-grid');
-            const noResults = document.getElementById('no-results');
+            const container = document.getElementById('book-container');
+            const emptyState = document.getElementById('empty-state');
             const resultsInfo = document.getElementById('results-info');
             const pagination = document.getElementById('pagination');
 
             if (filteredBooks.length === 0) {{
-                grid.style.display = 'none';
-                noResults.style.display = 'block';
-                resultsInfo.style.display = 'none';
-                pagination.style.display = 'none';
+                container.innerHTML = '';
+                emptyState.style.display = 'block';
+                pagination.innerHTML = '';
+                resultsInfo.textContent = 'No books found';
                 return;
             }}
 
-            grid.style.display = 'grid';
-            noResults.style.display = 'none';
-            resultsInfo.style.display = 'block';
+            emptyState.style.display = 'none';
 
             // Pagination
-            const totalPages = Math.ceil(filteredBooks.length / booksPerPage);
-            const startIdx = (currentPage - 1) * booksPerPage;
-            const endIdx = Math.min(startIdx + booksPerPage, filteredBooks.length);
-            const booksToShow = filteredBooks.slice(startIdx, endIdx);
+            const totalPages = Math.ceil(filteredBooks.length / perPage);
+            const start = (currentPage - 1) * perPage;
+            const pageBooks = filteredBooks.slice(start, start + perPage);
 
-            // Update results info
-            resultsInfo.textContent = `Showing ${{startIdx + 1}}-${{endIdx}} of ${{filteredBooks.length}} books`;
+            resultsInfo.textContent = `Showing ${{start + 1}}-${{Math.min(start + perPage, filteredBooks.length)}} of ${{filteredBooks.length}} books`;
 
-            grid.innerHTML = booksToShow.map(book => `
-                <div class="book-card" onclick="showBookDetails(${{book.id}})">
-                    ${{book.cover_path ? `
-                        <div style="text-align: center; margin-bottom: 12px;">
-                            <img src="${{BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path}}"
-                                 alt="Cover"
-                                 style="max-width: 100%; max-height: 220px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
-                                 onerror="this.style.display='none'">
-                        </div>
-                    ` : ''}}
-                    <div class="book-header">
-                        <div class="book-title">
-                            ${{escapeHtml(book.title)}}
-                            ${{book.personal.favorite ? '<span class="favorite-badge">⭐</span>' : ''}}
-                        </div>
+            if (currentView === 'grid') {{
+                container.innerHTML = `<div class="book-grid">${{pageBooks.map(renderGridCard).join('')}}</div>`;
+            }} else if (currentView === 'list') {{
+                container.innerHTML = `<div class="book-list">${{pageBooks.map(renderListItem).join('')}}</div>`;
+            }} else {{
+                container.innerHTML = renderTable(pageBooks);
+            }}
+
+            renderPagination(totalPages);
+        }}
+
+        function renderGridCard(book) {{
+            const coverUrl = book.cover_path ? (BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path) : null;
+            const author = book.authors.map(a => a.name).join(', ') || 'Unknown';
+            const rating = book.personal?.rating ? '★'.repeat(Math.round(book.personal.rating)) : '';
+
+            return `
+                <div class="book-card" onclick="showDetails(${{book.id}})">
+                    <div class="book-cover">
+                        ${{coverUrl ? `<img src="${{coverUrl}}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'book-cover-placeholder\\'>📖</div>'">` : '<div class="book-cover-placeholder">📖</div>'}}
                     </div>
-                    ${{book.subtitle ? `<div class="book-subtitle">${{escapeHtml(book.subtitle)}}</div>` : ''}}
-                    <div class="book-authors">
-                        ${{book.authors.map(a => a.name).join(', ') || 'Unknown Author'}}
-                    </div>
-                    ${{book.publication_date ? `<div style="color: #6b7280; font-size: 0.875rem; margin-top: 4px;">📅 ${{book.publication_date}}</div>` : ''}}
-                    ${{book.personal.rating ? `<div class="rating">${{'★'.repeat(Math.round(book.personal.rating))}} ${{book.personal.rating}}</div>` : ''}}
-                    <div class="book-meta">
-                        ${{book.series ? `<span class="badge badge-series">${{escapeHtml(book.series)}} #${{book.series_index}}</span>` : ''}}
-                        ${{book.files.map(f => `<span class="badge badge-format">${{f.format.toUpperCase()}}</span>`).join('')}}
-                        ${{book.language ? `<span class="badge badge-language">${{book.language.toUpperCase()}}</span>` : ''}}
+                    <div class="book-info">
+                        <div class="book-title">${{escapeHtml(book.title)}}</div>
+                        <div class="book-author">${{escapeHtml(author)}}</div>
+                        <div class="book-meta">
+                            ${{book.personal?.favorite ? '<span class="book-badge badge-favorite">⭐</span>' : ''}}
+                            ${{book.personal?.queue_position ? `<span class="book-badge badge-queue">#${{book.personal.queue_position}}</span>` : ''}}
+                            ${{book.files.map(f => `<span class="book-badge badge-format">${{f.format}}</span>`).join('')}}
+                        </div>
+                        ${{rating ? `<div class="book-rating">${{rating}}</div>` : ''}}
                     </div>
                 </div>
-            `).join('');
+            `;
+        }}
 
-            // Render pagination controls
-            renderPagination(totalPages);
+        function renderListItem(book) {{
+            const coverUrl = book.cover_path ? (BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path) : null;
+            const author = book.authors.map(a => a.name).join(', ') || 'Unknown';
+
+            return `
+                <div class="book-list-item" onclick="showDetails(${{book.id}})">
+                    <div class="book-list-cover">
+                        ${{coverUrl ? `<img src="${{coverUrl}}" alt="" loading="lazy">` : ''}}
+                    </div>
+                    <div class="book-list-info">
+                        <div class="book-list-title">
+                            ${{book.personal?.favorite ? '⭐ ' : ''}}${{escapeHtml(book.title)}}
+                        </div>
+                        <div class="book-list-author">${{escapeHtml(author)}}</div>
+                        <div class="book-list-meta">
+                            ${{book.publication_date ? `<span>📅 ${{book.publication_date}}</span>` : ''}}
+                            ${{book.language ? `<span>🌐 ${{book.language.toUpperCase()}}</span>` : ''}}
+                            ${{book.files.map(f => `<span>📄 ${{f.format.toUpperCase()}}</span>`).join('')}}
+                            ${{book.personal?.rating ? `<span>⭐ ${{book.personal.rating}}</span>` : ''}}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }}
+
+        function renderTable(books) {{
+            return `
+                <table class="book-table">
+                    <thead>
+                        <tr>
+                            <th onclick="sortBy('title')">Title</th>
+                            <th onclick="sortBy('author')">Author</th>
+                            <th onclick="sortBy('publication_date')">Year</th>
+                            <th>Format</th>
+                            <th onclick="sortBy('rating')">Rating</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${{books.map(book => `
+                            <tr>
+                                <td><span class="table-title" onclick="showDetails(${{book.id}})">${{book.personal?.favorite ? '⭐ ' : ''}}${{escapeHtml(book.title)}}</span></td>
+                                <td>${{escapeHtml(book.authors.map(a => a.name).join(', ') || '-')}}</td>
+                                <td>${{book.publication_date?.substring(0, 4) || '-'}}</td>
+                                <td>${{book.files.map(f => f.format.toUpperCase()).join(', ')}}</td>
+                                <td>${{book.personal?.rating ? '★'.repeat(Math.round(book.personal.rating)) : '-'}}</td>
+                            </tr>
+                        `).join('')}}
+                    </tbody>
+                </table>
+            `;
         }}
 
         function renderPagination(totalPages) {{
             const pagination = document.getElementById('pagination');
-
             if (totalPages <= 1) {{
-                pagination.style.display = 'none';
+                pagination.innerHTML = '';
                 return;
             }}
 
-            pagination.style.display = 'flex';
+            let html = `<button class="page-btn" onclick="goToPage(${{currentPage - 1}})" ${{currentPage === 1 ? 'disabled' : ''}}>← Prev</button>`;
 
-            let html = '';
+            const start = Math.max(1, currentPage - 2);
+            const end = Math.min(totalPages, currentPage + 2);
 
-            // Previous button
-            html += `<button onclick="goToPage(${{currentPage - 1}})" ${{currentPage === 1 ? 'disabled' : ''}}
-                style="padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem; ${{currentPage === 1 ? 'opacity: 0.5; cursor: not-allowed;' : ''}}">
-                ← Previous
-            </button>`;
+            if (start > 1) html += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
+            if (start > 2) html += `<span style="color:var(--text-muted)">...</span>`;
 
-            // Page numbers
-            const maxButtons = 7;
-            let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
-            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
-
-            if (endPage - startPage < maxButtons - 1) {{
-                startPage = Math.max(1, endPage - maxButtons + 1);
+            for (let i = start; i <= end; i++) {{
+                html += `<button class="page-btn ${{i === currentPage ? 'active' : ''}}" onclick="goToPage(${{i}})">${{i}}</button>`;
             }}
 
-            if (startPage > 1) {{
-                html += `<button onclick="goToPage(1)" style="padding: 8px 12px; background: white; color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.875rem;">1</button>`;
-                if (startPage > 2) {{
-                    html += `<span style="padding: 8px;">...</span>`;
-                }}
-            }}
+            if (end < totalPages - 1) html += `<span style="color:var(--text-muted)">...</span>`;
+            if (end < totalPages) html += `<button class="page-btn" onclick="goToPage(${{totalPages}})">${{totalPages}}</button>`;
 
-            for (let i = startPage; i <= endPage; i++) {{
-                const isActive = i === currentPage;
-                html += `<button onclick="goToPage(${{i}})"
-                    style="padding: 8px 12px; background: ${{isActive ? 'var(--primary)' : 'white'}}; color: ${{isActive ? 'white' : 'var(--text)'}}; border: 1px solid ${{isActive ? 'var(--primary)' : 'var(--border)'}}; border-radius: 6px; cursor: pointer; font-size: 0.875rem; font-weight: ${{isActive ? '600' : '400'}};">
-                    ${{i}}
-                </button>`;
-            }}
-
-            if (endPage < totalPages) {{
-                if (endPage < totalPages - 1) {{
-                    html += `<span style="padding: 8px;">...</span>`;
-                }}
-                html += `<button onclick="goToPage(${{totalPages}})" style="padding: 8px 12px; background: white; color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.875rem;">${{totalPages}}</button>`;
-            }}
-
-            // Next button
-            html += `<button onclick="goToPage(${{currentPage + 1}})" ${{currentPage === totalPages ? 'disabled' : ''}}
-                style="padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem; ${{currentPage === totalPages ? 'opacity: 0.5; cursor: not-allowed;' : ''}}">
-                Next →
-            </button>`;
+            html += `<button class="page-btn" onclick="goToPage(${{currentPage + 1}})" ${{currentPage === totalPages ? 'disabled' : ''}}>Next →</button>`;
 
             pagination.innerHTML = html;
         }}
 
         function goToPage(page) {{
-            const totalPages = Math.ceil(filteredBooks.length / booksPerPage);
+            const totalPages = Math.ceil(filteredBooks.length / perPage);
             if (page < 1 || page > totalPages) return;
             currentPage = page;
             renderBooks();
-            updateURL();
             window.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
 
-        function showBookDetails(bookId) {{
-            currentBookId = bookId;
-            editMode = false;
-            document.getElementById('edit-mode-btn').textContent = 'Edit Metadata';
-
-            const book = BOOKS.find(b => b.id === bookId);
+        function showDetails(id) {{
+            const book = BOOKS.find(b => b.id === id);
             if (!book) return;
 
-            const modal = document.getElementById('book-modal');
-            const modalTitle = document.getElementById('modal-title');
-            const modalBody = document.getElementById('modal-body');
+            document.getElementById('modal-title').textContent = book.title;
 
-            modalTitle.textContent = book.title;
+            const coverUrl = book.cover_path ? (BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path) : null;
 
             let html = '';
 
-            // Cover image
-            if (book.cover_path) {{
-                html += `
-                    <div style="text-align: center; margin-bottom: 20px;">
-                        <img src="${{BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path}}"
-                             alt="Cover"
-                             style="max-width: 300px; max-height: 400px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);"
-                             onerror="this.style.display='none'">
-                    </div>
-                `;
+            if (coverUrl) {{
+                html += `<div class="modal-cover"><img src="${{coverUrl}}" alt="" onerror="this.style.display='none'"></div>`;
             }}
 
-            // Authors
-            if (book.authors.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Authors</div>
-                        <div class="detail-value">${{book.authors.map(a => a.name).join(', ')}}</div>
-                    </div>
-                `;
+            if (book.subtitle) {{
+                html += `<div class="detail-section"><div class="detail-label">Subtitle</div><div class="detail-value">${{escapeHtml(book.subtitle)}}</div></div>`;
             }}
 
-            // Contributors
-            if (book.contributors && book.contributors.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Contributors</div>
-                        <ul class="contributors-list">
-                            ${{book.contributors.map(c => `<li>${{c.name}} <span class="contributor-role">(${{c.role}})</span></li>`).join('')}}
-                        </ul>
-                    </div>
-                `;
+            if (book.authors.length) {{
+                html += `<div class="detail-section"><div class="detail-label">Authors</div><div class="detail-value">${{book.authors.map(a => escapeHtml(a.name)).join(', ')}}</div></div>`;
             }}
 
-            // Series
             if (book.series) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Series</div>
-                        <div class="detail-value">${{book.series}} #${{book.series_index}}</div>
-                    </div>
-                `;
+                html += `<div class="detail-section"><div class="detail-label">Series</div><div class="detail-value">${{escapeHtml(book.series)}} #${{book.series_index || '?'}}</div></div>`;
             }}
 
-            // Description (rendered as HTML)
             if (book.description) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Description</div>
-                        <div class="detail-value">${{book.description}}</div>
-                    </div>
-                `;
+                html += `<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${{book.description}}</div></div>`;
             }}
 
-            // Metadata
-            const metadata = [];
-            if (book.publisher) metadata.push(`Publisher: ${{book.publisher}}`);
-            if (book.publication_date) metadata.push(`Published: ${{book.publication_date}}`);
-            if (book.edition) metadata.push(`Edition: ${{book.edition}}`);
-            if (book.language) metadata.push(`Language: ${{book.language.toUpperCase()}}`);
-            if (book.page_count) metadata.push(`Pages: ${{book.page_count}}`);
-
-            if (metadata.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Metadata</div>
-                        <div class="detail-value">${{metadata.join(' • ')}}</div>
-                    </div>
-                `;
+            const meta = [];
+            if (book.publisher) meta.push(`Publisher: ${{escapeHtml(book.publisher)}}`);
+            if (book.publication_date) meta.push(`Published: ${{book.publication_date}}`);
+            if (book.language) meta.push(`Language: ${{book.language.toUpperCase()}}`);
+            if (book.page_count) meta.push(`Pages: ${{book.page_count}}`);
+            if (meta.length) {{
+                html += `<div class="detail-section"><div class="detail-label">Details</div><div class="detail-value">${{meta.join(' • ')}}</div></div>`;
             }}
 
-            // Subjects
-            if (book.subjects.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Subjects</div>
-                        <div class="tags">
-                            ${{book.subjects.map(s => `<span class="tag">${{s}}</span>`).join('')}}
-                        </div>
-                    </div>
-                `;
+            if (book.subjects.length) {{
+                html += `<div class="detail-section"><div class="detail-label">Subjects</div><div class="detail-tags">${{book.subjects.map(s => `<span class="tag">${{escapeHtml(s)}}</span>`).join('')}}</div></div>`;
             }}
 
-            // Keywords
-            if (book.keywords && book.keywords.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Keywords</div>
-                        <div class="tags">
-                            ${{book.keywords.map(k => `<span class="tag">${{k}}</span>`).join('')}}
-                        </div>
-                    </div>
-                `;
+            if (book.files.length) {{
+                html += `<div class="detail-section"><div class="detail-label">Files</div><ul class="file-list">${{book.files.map(f => {{
+                    const url = BASE_URL ? BASE_URL + '/' + f.path : f.path;
+                    return `<li class="file-item"><a href="${{url}}" class="file-link" target="_blank">${{f.format.toUpperCase()}}</a><span class="file-size">${{formatBytes(f.size_bytes)}}</span></li>`;
+                }}).join('')}}</ul></div>`;
             }}
 
-            // Files
-            if (book.files.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Files</div>
-                        <ul class="contributors-list">
-                            ${{book.files.map(f => {{
-                                const fileUrl = BASE_URL ? `${{BASE_URL}}/${{f.path}}` : f.path;
-                                return `
-                                    <li>
-                                        <a href="${{fileUrl}}" class="file-link" target="_blank">
-                                            ${{f.format.toUpperCase()}}
-                                        </a>
-                                        • ${{formatBytes(f.size_bytes)}}
-                                        ${{f.creator_application ? ` • Created with ${{f.creator_application}}` : ''}}
-                                    </li>
-                                `;
-                            }}).join('')}}
-                        </ul>
-                    </div>
-                `;
+            if (book.identifiers.length) {{
+                html += `<div class="detail-section"><div class="detail-label">Identifiers</div><div class="detail-value">${{book.identifiers.map(i => `${{i.scheme.toUpperCase()}}: ${{i.value}}`).join('<br>')}}</div></div>`;
             }}
 
-            // Identifiers
-            if (book.identifiers.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Identifiers</div>
-                        <ul class="identifiers-list">
-                            ${{book.identifiers.map(i => `<li>${{i.scheme.toUpperCase()}}: ${{i.value}}</li>`).join('')}}
-                        </ul>
-                    </div>
-                `;
-            }}
-
-            // Personal tags
-            if (book.personal.tags && book.personal.tags.length > 0) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Personal Tags</div>
-                        <div class="tags">
-                            ${{book.personal.tags.map(t => `<span class="tag">${{t}}</span>`).join('')}}
-                        </div>
-                    </div>
-                `;
-            }}
-
-            // Rights
-            if (book.rights) {{
-                html += `
-                    <div class="detail-section">
-                        <div class="detail-label">Rights</div>
-                        <div class="detail-value">${{escapeHtml(book.rights)}}</div>
-                    </div>
-                `;
-            }}
-
-            modalBody.innerHTML = html;
-            modal.classList.add('active');
+            document.getElementById('modal-body').innerHTML = html;
+            document.getElementById('modal').classList.add('active');
         }}
 
         function closeModal() {{
-            document.getElementById('book-modal').classList.remove('active');
-            editMode = false;
-            currentBookId = null;
+            document.getElementById('modal').classList.remove('active');
         }}
 
-        function toggleSearchHelp() {{
-            const helpDiv = document.getElementById('search-help');
-            if (helpDiv.style.display === 'none') {{
-                helpDiv.style.display = 'block';
-            }} else {{
-                helpDiv.style.display = 'none';
-            }}
-        }}
+        function setupKeyboardShortcuts() {{
+            document.addEventListener('keydown', e => {{
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {{
+                    if (e.key === 'Escape') {{
+                        e.target.blur();
+                    }}
+                    return;
+                }}
 
-        function toggleEditMode() {{
-            editMode = !editMode;
-            const btn = document.getElementById('edit-mode-btn');
+                if (e.key === '/') {{
+                    e.preventDefault();
+                    document.getElementById('search').focus();
+                }} else if (e.key === 'Escape') {{
+                    closeModal();
+                }} else if (e.key === 'j') {{
+                    goToPage(currentPage + 1);
+                }} else if (e.key === 'k') {{
+                    goToPage(currentPage - 1);
+                }} else if (e.key === 'g') {{
+                    setView('grid');
+                }} else if (e.key === 'l') {{
+                    setView('list');
+                }} else if (e.key === 't') {{
+                    setView('table');
+                }}
+            }});
 
-            if (editMode) {{
-                btn.textContent = 'Save & Close';
-                renderEditMode();
-            }} else {{
-                btn.textContent = 'Edit Metadata';
-                saveMetadataOverrides();
-                showBookDetails(currentBookId);
-            }}
-        }}
-
-        function renderEditMode() {{
-            const book = BOOKS.find(b => b.id === currentBookId);
-            if (!book) return;
-
-            const overrides = loadMetadataOverrides()[currentBookId] || {{}};
-            const modalBody = document.getElementById('modal-body');
-
-            modalBody.innerHTML = `
-                <div class="detail-section">
-                    <p style="color: #6b7280; margin-bottom: 20px;">
-                        ℹ️ Changes are saved locally in your browser and won't affect the original database.
-                    </p>
-                </div>
-
-                <div class="detail-section">
-                    <label class="detail-label">Title</label>
-                    <input type="text" id="edit-title" class="form-control" value="${{escapeHtml(overrides.title || book.title)}}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                </div>
-
-                <div class="detail-section">
-                    <label class="detail-label">Subtitle</label>
-                    <input type="text" id="edit-subtitle" class="form-control" value="${{escapeHtml(overrides.subtitle || book.subtitle || '')}}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                </div>
-
-                <div class="detail-section">
-                    <label class="detail-label">Publisher</label>
-                    <input type="text" id="edit-publisher" class="form-control" value="${{escapeHtml(overrides.publisher || book.publisher || '')}}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                </div>
-
-                <div class="detail-section">
-                    <label class="detail-label">Publication Date</label>
-                    <input type="text" id="edit-publication-date" class="form-control" value="${{escapeHtml(overrides.publication_date || book.publication_date || '')}}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;" placeholder="YYYY-MM-DD">
-                </div>
-
-                <div class="detail-section">
-                    <label class="detail-label">Rating (1-5)</label>
-                    <input type="number" id="edit-rating" class="form-control" value="${{overrides.rating !== undefined ? overrides.rating : (book.personal.rating || '')}}" min="1" max="5" step="0.5" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
-                </div>
-
-                <div class="detail-section">
-                    <label class="detail-label">
-                        <input type="checkbox" id="edit-favorite" ${{(overrides.favorite !== undefined ? overrides.favorite : book.personal.favorite) ? 'checked' : ''}}>
-                        Favorite
-                    </label>
-                </div>
-
-                <div class="detail-section">
-                    <label class="detail-label">Description</label>
-                    <textarea id="edit-description" class="form-control" rows="6" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">${{escapeHtml(overrides.description || book.description || '')}}</textarea>
-                </div>
-
-                <div class="detail-section">
-                    <button onclick="clearOverrides()" class="btn-secondary" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        Clear Local Overrides
-                    </button>
-                </div>
-            `;
-        }}
-
-        function saveMetadataOverrides() {{
-            const overrides = loadMetadataOverrides();
-            if (!overrides[currentBookId]) overrides[currentBookId] = {{}};
-
-            const title = document.getElementById('edit-title').value;
-            const subtitle = document.getElementById('edit-subtitle').value;
-            const publisher = document.getElementById('edit-publisher').value;
-            const publication_date = document.getElementById('edit-publication-date').value;
-            const rating = document.getElementById('edit-rating').value;
-            const favorite = document.getElementById('edit-favorite').checked;
-            const description = document.getElementById('edit-description').value;
-
-            const book = BOOKS.find(b => b.id === currentBookId);
-
-            // Only save if different from original
-            if (title !== book.title) overrides[currentBookId].title = title;
-            if (subtitle !== (book.subtitle || '')) overrides[currentBookId].subtitle = subtitle;
-            if (publisher !== (book.publisher || '')) overrides[currentBookId].publisher = publisher;
-            if (publication_date !== (book.publication_date || '')) overrides[currentBookId].publication_date = publication_date;
-            if (rating !== (book.personal.rating || '')) overrides[currentBookId].rating = parseFloat(rating) || null;
-            if (favorite !== book.personal.favorite) overrides[currentBookId].favorite = favorite;
-            if (description !== (book.description || '')) overrides[currentBookId].description = description;
-
-            localStorage.setItem('ebk_metadata_overrides', JSON.stringify(overrides));
-
-            // Refresh the filtered books with overrides
-            filteredBooks = BOOKS.map(applyMetadataOverrides);
-            filterBooks();
-        }}
-
-        function clearOverrides() {{
-            if (!confirm('Clear all local metadata overrides for this book?')) return;
-
-            const overrides = loadMetadataOverrides();
-            delete overrides[currentBookId];
-            localStorage.setItem('ebk_metadata_overrides', JSON.stringify(overrides));
-
-            editMode = false;
-            showBookDetails(currentBookId);
-            filterBooks();
+            document.getElementById('search').addEventListener('input', () => {{
+                currentPage = 1;
+                applyFilters();
+            }});
         }}
 
         function escapeHtml(text) {{
@@ -1379,11 +1675,11 @@ def _generate_html_template(books_data: List[dict], stats: dict, base_url: str =
         }}
 
         function formatBytes(bytes) {{
-            if (bytes === 0) return '0 Bytes';
+            if (!bytes) return '0 B';
             const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const sizes = ['B', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+            return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
         }}
     </script>
 </body>

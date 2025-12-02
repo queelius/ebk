@@ -567,6 +567,420 @@ def import_folder(
         raise typer.Exit(code=1)
 
 
+@import_app.command(name="url")
+def import_url(
+    url: str = typer.Argument(..., help="URL to download ebook from"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+    no_text: bool = typer.Option(False, "--no-text", help="Skip text extraction"),
+    no_cover: bool = typer.Option(False, "--no-cover", help="Skip cover extraction")
+):
+    """
+    Import an ebook from a URL.
+
+    Downloads the ebook file from the given URL and imports it into the library.
+    Supports PDF, EPUB, MOBI, and other common ebook formats.
+
+    Examples:
+        ebk import url https://example.com/book.epub
+        ebk import url https://example.com/book.pdf ~/my-library
+    """
+    import httpx
+    import re
+    import tempfile
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    if not url.startswith(('http://', 'https://')):
+        console.print("[red]Error: Invalid URL. Must start with http:// or https://[/red]")
+        raise typer.Exit(code=1)
+
+    supported_extensions = {'.pdf', '.epub', '.mobi', '.azw', '.azw3', '.txt'}
+
+    try:
+        lib = Library.open(library_path)
+
+        console.print(f"Downloading from: {url}")
+
+        with httpx.Client(follow_redirects=True, timeout=60.0) as client:
+            response = client.get(url)
+            response.raise_for_status()
+
+            # Try to determine filename
+            filename = None
+            content_disposition = response.headers.get('content-disposition', '')
+            if 'filename=' in content_disposition:
+                match = re.search(r'filename[*]?=["\']?([^"\';]+)', content_disposition)
+                if match:
+                    filename = match.group(1)
+
+            if not filename:
+                from urllib.parse import urlparse, unquote
+                parsed = urlparse(url)
+                filename = unquote(parsed.path.split('/')[-1])
+
+            if not filename:
+                filename = 'downloaded_book'
+
+            # Check extension
+            ext = Path(filename).suffix.lower()
+            if ext not in supported_extensions:
+                content_type = response.headers.get('content-type', '')
+                if 'pdf' in content_type:
+                    ext = '.pdf'
+                elif 'epub' in content_type:
+                    ext = '.epub'
+                else:
+                    console.print(f"[red]Error: Unsupported file type. Supported: {', '.join(supported_extensions)}[/red]")
+                    lib.close()
+                    raise typer.Exit(code=1)
+                filename = Path(filename).stem + ext
+
+            # Save to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                tmp.write(response.content)
+                tmp_path = Path(tmp.name)
+
+        console.print(f"Downloaded: {filename} ({len(response.content) / 1024:.1f} KB)")
+
+        # Extract metadata and import
+        metadata = extract_metadata(str(tmp_path))
+        if 'title' not in metadata or not metadata['title']:
+            metadata['title'] = Path(filename).stem
+
+        book = lib.add_book(
+            tmp_path,
+            metadata=metadata,
+            extract_text=not no_text,
+            extract_cover=not no_cover
+        )
+
+        # Clean up temp file
+        tmp_path.unlink()
+
+        if book:
+            console.print(f"[green]✓ Imported: {book.title}[/green]")
+            console.print(f"  ID: {book.id}")
+            console.print(f"  Authors: {', '.join(a.name for a in book.authors)}")
+        else:
+            console.print("[yellow]Import failed or book already exists[/yellow]")
+
+        lib.close()
+
+    except httpx.HTTPError as e:
+        console.print(f"[red]Error downloading file: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error importing from URL: {e}[/red]")
+        logger.exception("URL import error details:")
+        raise typer.Exit(code=1)
+
+
+@import_app.command(name="opds")
+def import_opds(
+    opds_url: str = typer.Argument(..., help="OPDS catalog URL"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+    limit: Optional[int] = typer.Option(None, "--limit", "-n", help="Limit number of books to import"),
+    no_text: bool = typer.Option(False, "--no-text", help="Skip text extraction"),
+    no_cover: bool = typer.Option(False, "--no-cover", help="Skip cover extraction")
+):
+    """
+    Import books from an OPDS catalog feed.
+
+    OPDS (Open Publication Distribution System) is a standard format used by
+    many digital libraries and ebook servers for distributing ebooks.
+
+    Examples:
+        ebk import opds https://example.com/opds/catalog.xml
+        ebk import opds https://library.example.com/opds --limit 50
+    """
+    import httpx
+    import xml.etree.ElementTree as ET
+    import tempfile
+    from urllib.parse import urljoin
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    if not opds_url.startswith(('http://', 'https://')):
+        console.print("[red]Error: Invalid URL. Must start with http:// or https://[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        console.print(f"Fetching OPDS catalog: {opds_url}")
+
+        with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+            response = client.get(opds_url)
+            response.raise_for_status()
+
+            # Parse OPDS (Atom) feed
+            root = ET.fromstring(response.content)
+
+            # OPDS uses Atom namespace
+            ns = {
+                'atom': 'http://www.w3.org/2005/Atom',
+                'opds': 'http://opds-spec.org/2010/catalog',
+                'dc': 'http://purl.org/dc/elements/1.1/'
+            }
+
+            entries = root.findall('.//atom:entry', ns)
+            if not entries:
+                entries = root.findall('.//entry')
+
+            if limit:
+                entries = entries[:limit]
+
+            console.print(f"Found {len(entries)} entries in catalog")
+
+            if len(entries) == 0:
+                console.print("[yellow]No entries found in OPDS catalog.[/yellow]")
+                lib.close()
+                raise typer.Exit(code=0)
+
+            imported = 0
+            failed = 0
+            skipped = 0
+
+            with Progress() as progress:
+                task = progress.add_task("[cyan]Importing from OPDS...", total=len(entries))
+
+                for entry in entries:
+                    title_el = entry.find('atom:title', ns) or entry.find('title')
+                    title = title_el.text if title_el is not None else 'Unknown'
+                    progress.update(task, description=f"[cyan]Importing: {title[:40]}...")
+
+                    try:
+                        # Find acquisition link
+                        acquisition_link = None
+                        for link in entry.findall('atom:link', ns) or entry.findall('link'):
+                            rel = link.get('rel', '')
+                            href = link.get('href', '')
+                            link_type = link.get('type', '')
+
+                            if 'acquisition' in rel and href:
+                                if 'epub' in link_type:
+                                    acquisition_link = href
+                                    break
+                                elif 'pdf' in link_type and not acquisition_link:
+                                    acquisition_link = href
+
+                        if not acquisition_link:
+                            skipped += 1
+                            progress.advance(task)
+                            continue
+
+                        # Make URL absolute
+                        if not acquisition_link.startswith(('http://', 'https://')):
+                            acquisition_link = urljoin(opds_url, acquisition_link)
+
+                        # Download file
+                        file_response = client.get(acquisition_link, timeout=60.0)
+                        file_response.raise_for_status()
+
+                        # Determine extension
+                        content_type = file_response.headers.get('content-type', '')
+                        if 'epub' in content_type:
+                            ext = '.epub'
+                        elif 'pdf' in content_type:
+                            ext = '.pdf'
+                        elif 'mobi' in content_type:
+                            ext = '.mobi'
+                        else:
+                            ext = '.epub'
+
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                            tmp.write(file_response.content)
+                            tmp_path = Path(tmp.name)
+
+                        metadata = extract_metadata(str(tmp_path))
+                        if 'title' not in metadata or not metadata['title']:
+                            metadata['title'] = title
+
+                        book = lib.add_book(
+                            tmp_path,
+                            metadata=metadata,
+                            extract_text=not no_text,
+                            extract_cover=not no_cover
+                        )
+
+                        tmp_path.unlink()
+
+                        if book:
+                            imported += 1
+                        else:
+                            skipped += 1
+
+                    except Exception as e:
+                        failed += 1
+                        logger.debug(f"Failed to import {title}: {e}")
+
+                    progress.advance(task)
+
+            # Summary
+            console.print(f"\n[bold]OPDS Import Summary:[/bold]")
+            console.print(f"  Imported: {imported}")
+            console.print(f"  Skipped (no download link or duplicate): {skipped}")
+            if failed > 0:
+                console.print(f"  Failed: {failed}")
+
+        lib.close()
+
+    except httpx.HTTPError as e:
+        console.print(f"[red]Error fetching OPDS feed: {e}[/red]")
+        raise typer.Exit(code=1)
+    except ET.ParseError as e:
+        console.print(f"[red]Error parsing OPDS feed: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error importing from OPDS: {e}[/red]")
+        logger.exception("OPDS import error details:")
+        raise typer.Exit(code=1)
+
+
+@import_app.command(name="isbn")
+def import_isbn(
+    isbn: str = typer.Argument(..., help="ISBN-10 or ISBN-13"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)")
+):
+    """
+    Create a book entry by ISBN lookup.
+
+    Fetches book metadata from Google Books and Open Library APIs.
+    Creates a metadata-only entry without an actual ebook file.
+
+    Examples:
+        ebk import isbn 978-0-13-468599-1
+        ebk import isbn 0134685997 ~/my-library
+    """
+    import httpx
+    import re
+    from .library_db import Library
+    from .db.models import Book, Author, Subject, Identifier
+    from .services.import_service import get_sort_name
+
+    library_path = resolve_library_path(library_path)
+
+    # Clean ISBN
+    clean_isbn = re.sub(r'[^0-9X]', '', isbn.upper())
+
+    if len(clean_isbn) not in (10, 13):
+        console.print("[red]Error: Invalid ISBN. Must be 10 or 13 digits.[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        console.print(f"Looking up ISBN: {clean_isbn}")
+
+        metadata = None
+
+        with httpx.Client(timeout=15.0) as client:
+            # Try Google Books API first
+            google_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean_isbn}"
+            response = client.get(google_url)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('totalItems', 0) > 0:
+                    volume = data['items'][0]['volumeInfo']
+                    metadata = {
+                        'title': volume.get('title', 'Unknown'),
+                        'subtitle': volume.get('subtitle'),
+                        'authors': volume.get('authors', []),
+                        'publisher': volume.get('publisher'),
+                        'publication_date': volume.get('publishedDate'),
+                        'description': volume.get('description'),
+                        'page_count': volume.get('pageCount'),
+                        'language': volume.get('language'),
+                        'subjects': volume.get('categories', []),
+                    }
+                    console.print("[dim]Found in Google Books[/dim]")
+
+            # Fallback to Open Library
+            if not metadata:
+                ol_url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{clean_isbn}&format=json&jscmd=data"
+                response = client.get(ol_url)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    key = f"ISBN:{clean_isbn}"
+                    if key in data:
+                        book_data = data[key]
+                        metadata = {
+                            'title': book_data.get('title', 'Unknown'),
+                            'subtitle': book_data.get('subtitle'),
+                            'authors': [a.get('name') for a in book_data.get('authors', [])],
+                            'publisher': book_data.get('publishers', [{}])[0].get('name') if book_data.get('publishers') else None,
+                            'publication_date': book_data.get('publish_date'),
+                            'page_count': book_data.get('number_of_pages'),
+                            'subjects': [s.get('name') for s in book_data.get('subjects', [])],
+                        }
+                        console.print("[dim]Found in Open Library[/dim]")
+
+        if not metadata:
+            console.print(f"[red]Error: No book found for ISBN: {clean_isbn}[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Create book entry
+        book = Book(
+            title=metadata['title'],
+            subtitle=metadata.get('subtitle'),
+            publisher=metadata.get('publisher'),
+            publication_date=metadata.get('publication_date'),
+            description=metadata.get('description'),
+            page_count=metadata.get('page_count'),
+            language=metadata.get('language'),
+        )
+
+        # Add authors
+        for author_name in metadata.get('authors', []):
+            if author_name:
+                author = lib.session.query(Author).filter_by(name=author_name).first()
+                if not author:
+                    author = Author(name=author_name, sort_name=get_sort_name(author_name))
+                    lib.session.add(author)
+                book.authors.append(author)
+
+        # Add subjects
+        for subject_name in metadata.get('subjects', []):
+            if subject_name:
+                subject = lib.session.query(Subject).filter_by(name=subject_name).first()
+                if not subject:
+                    subject = Subject(name=subject_name)
+                    lib.session.add(subject)
+                book.subjects.append(subject)
+
+        # Add ISBN identifier
+        identifier = Identifier(scheme='isbn', value=clean_isbn)
+        book.identifiers.append(identifier)
+
+        lib.session.add(book)
+        lib.session.commit()
+
+        console.print(f"[green]✓ Created: {book.title}[/green]")
+        console.print(f"  ID: {book.id}")
+        if book.authors:
+            console.print(f"  Authors: {', '.join(a.name for a in book.authors)}")
+        if book.publisher:
+            console.print(f"  Publisher: {book.publisher}")
+        if book.subjects:
+            console.print(f"  Subjects: {', '.join(s.name for s in book.subjects[:5])}")
+        console.print(f"  [dim]Note: This is a metadata-only entry (no file attached)[/dim]")
+
+        lib.close()
+
+    except httpx.HTTPError as e:
+        console.print(f"[red]Error looking up ISBN: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error importing from ISBN: {e}[/red]")
+        logger.exception("ISBN import error details:")
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query"),
@@ -1606,6 +2020,115 @@ def export_html(
 
     except Exception as e:
         console.print(f"[red]Error exporting to HTML: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+@export_app.command(name="opds")
+def export_opds(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    output_file: Path = typer.Argument(..., help="Output OPDS catalog file (e.g., catalog.xml)"),
+    title: str = typer.Option("ebk Library", "--title", "-t", help="Catalog title"),
+    subtitle: str = typer.Option("", "--subtitle", help="Catalog subtitle/description"),
+    base_url: str = typer.Option("", "--base-url", help="Base URL for file/cover links"),
+    copy_files: bool = typer.Option(False, "--copy-files", help="Copy ebook files to output directory"),
+    copy_covers: bool = typer.Option(False, "--copy-covers", help="Copy cover images to output directory"),
+    # Filtering options
+    language: Optional[str] = typer.Option(None, "--language", help="Filter by language code"),
+    author: Optional[str] = typer.Option(None, "--author", help="Filter by author name"),
+    subject: Optional[str] = typer.Option(None, "--subject", help="Filter by subject/tag"),
+    format_filter: Optional[str] = typer.Option(None, "--format", help="Filter by file format"),
+    has_files: bool = typer.Option(True, "--has-files/--no-files", help="Only include books with files"),
+    favorite: Optional[bool] = typer.Option(None, "--favorite", help="Filter by favorite status"),
+    min_rating: Optional[int] = typer.Option(None, "--min-rating", help="Minimum rating (1-5)"),
+):
+    """
+    Export library to an OPDS catalog file.
+
+    Creates an OPDS 1.2 compatible Atom feed that can be served from any
+    static file host or used with OPDS reader apps (Foliate, KOReader, etc.).
+
+    The catalog includes metadata, cover images, and download links for all books.
+    Use --copy-files and --copy-covers to create a self-contained export.
+
+    Examples:
+        # Basic catalog export
+        ebk export opds ~/my-library ~/public/catalog.xml
+
+        # Full export with files for static hosting
+        ebk export opds ~/my-library ~/public/catalog.xml \\
+            --base-url https://example.com/library \\
+            --copy-files --copy-covers
+
+        # Export only favorites
+        ebk export opds ~/my-library ~/catalog.xml --favorite
+    """
+    from .library_db import Library
+    from .exports.opds_export import export_to_opds
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        console.print("[blue]Exporting library to OPDS catalog...[/blue]")
+        lib = Library.open(library_path)
+
+        # Build filtered query
+        query = lib.query()
+
+        # Apply filters
+        if language:
+            query = query.filter_by_language(language)
+        if author:
+            query = query.filter_by_author(author)
+        if subject:
+            query = query.filter_by_subject(subject)
+        if format_filter:
+            query = query.filter_by_format(format_filter)
+        if favorite is not None:
+            query = query.filter_by_favorite(favorite)
+        if min_rating:
+            query = query.filter_by_rating(min_rating)
+
+        books = query.all()
+
+        # Filter out books without files if requested
+        if has_files:
+            books = [b for b in books if len(b.files) > 0]
+
+        console.print(f"  Exporting {len(books)} books...")
+
+        stats = export_to_opds(
+            books=books,
+            output_path=output_file,
+            library_path=library_path,
+            title=title,
+            subtitle=subtitle,
+            base_url=base_url,
+            copy_files=copy_files,
+            copy_covers=copy_covers,
+        )
+
+        console.print(f"[green]✓ Exported {stats['books']} books to {output_file}[/green]")
+
+        if copy_files:
+            console.print(f"  Files copied: {stats['files_copied']}")
+        if copy_covers:
+            console.print(f"  Covers copied: {stats['covers_copied']}")
+        if stats['errors']:
+            console.print(f"[yellow]  Warnings: {len(stats['errors'])} errors during export[/yellow]")
+            for error in stats['errors'][:5]:
+                console.print(f"    - {error}")
+
+        if base_url:
+            console.print(f"  Links use base URL: {base_url}")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error exporting to OPDS: {e}[/red]")
         import traceback
         traceback.print_exc()
         raise typer.Exit(code=1)

@@ -13,7 +13,14 @@ from ebk.plugins.base import (
 )
 from ebk.plugins.registry import PluginRegistry, register_plugin
 from ebk.plugins.hooks import HookRegistry, hook, trigger_hook
-from integrations.metadata.google_books import GoogleBooksExtractor
+
+# Optional integration - may not be installed
+try:
+    from integrations.metadata.google_books import GoogleBooksExtractor
+    HAS_GOOGLE_BOOKS = True
+except ImportError:
+    HAS_GOOGLE_BOOKS = False
+    GoogleBooksExtractor = None
 
 
 class TestPlugin(Plugin):
@@ -382,6 +389,7 @@ class TestHookDecorator:
         assert results == ["high", "medium", "low"]
 
 
+@pytest.mark.skipif(not HAS_GOOGLE_BOOKS, reason="Google Books integration not installed")
 class TestGoogleBooksPlugin:
     """Test Google Books plugin."""
     

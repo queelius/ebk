@@ -21,6 +21,19 @@ from .text_extraction import TextExtractionService
 logger = logging.getLogger(__name__)
 
 
+def get_sort_name(name: str) -> str:
+    """Get sortable name (Last, First format).
+
+    Converts a name like "John Smith" to "Smith, John" for proper sorting.
+    """
+    if not name:
+        return name
+    parts = name.split()
+    if len(parts) >= 2:
+        return f"{parts[-1]}, {' '.join(parts[:-1])}"
+    return name
+
+
 class ImportService:
     """Service for importing books into the library."""
 
