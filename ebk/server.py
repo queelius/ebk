@@ -62,6 +62,9 @@ class LibraryStats(BaseModel):
     total_size_mb: float
     languages: List[str]
     formats: List[str]
+    favorites_count: int = 0
+    reading_count: int = 0
+    completed_count: int = 0
 
 
 class PaginatedBooksResponse(BaseModel):
@@ -184,6 +187,7 @@ async def list_books(
     subject: Optional[str] = None,
     language: Optional[str] = None,
     favorite: Optional[bool] = None,
+    reading_status: Optional[str] = None,
     format_filter: Optional[str] = None,
     sort_by: Optional[str] = Query(None, alias="sort"),
     sort_order: Optional[str] = Query("asc", alias="order"),
@@ -203,6 +207,8 @@ async def list_books(
         query = query.filter_by_language(language)
     if favorite is not None:
         query = query.filter_by_favorite(favorite)
+    if reading_status:
+        query = query.filter_by_reading_status(reading_status)
     if format_filter:
         query = query.filter_by_format(format_filter)
     if min_rating is not None:
@@ -831,9 +837,14 @@ async def get_stats():
     stats = lib.stats()
 
     # Calculate total size from all files
-    from .db.models import File
+    from .db.models import File, PersonalMetadata
     from sqlalchemy import func
     total_size = lib.session.query(func.sum(File.size_bytes)).scalar() or 0
+
+    # Get favorites count
+    favorites_count = lib.session.query(func.count(PersonalMetadata.id)).filter(
+        PersonalMetadata.favorite == True
+    ).scalar() or 0
 
     # Convert language/format dicts to lists
     languages = list(stats['languages'].keys()) if isinstance(stats['languages'], dict) else stats['languages']
@@ -846,7 +857,10 @@ async def get_stats():
         total_files=stats['total_files'],
         total_size_mb=total_size / (1024 ** 2),
         languages=languages,
-        formats=formats
+        formats=formats,
+        favorites_count=favorites_count,
+        reading_count=stats.get('reading_count', 0),
+        completed_count=stats.get('read_count', 0)
     )
 
 
@@ -2452,19 +2466,27 @@ def get_web_interface() -> str:
             updateNavItems();
         }
 
+        let libraryStats = null;
+
         async function loadStats() {
             try {
                 const response = await fetch('/api/stats');
-                const stats = await response.json();
+                libraryStats = await response.json();
 
-                document.getElementById('stat-books').textContent = stats.total_books;
-                document.getElementById('stat-authors').textContent = stats.total_authors;
-                document.getElementById('stat-files').textContent = stats.total_files;
-                document.getElementById('stat-storage').textContent = stats.total_size_mb.toFixed(1) + ' MB';
+                document.getElementById('stat-books').textContent = libraryStats.total_books;
+                document.getElementById('stat-authors').textContent = libraryStats.total_authors;
+                document.getElementById('stat-files').textContent = libraryStats.total_files;
+                document.getElementById('stat-storage').textContent = libraryStats.total_size_mb.toFixed(1) + ' MB';
+
+                // Update sidebar counts
+                document.getElementById('count-all').textContent = libraryStats.total_books;
+                document.getElementById('count-favorites').textContent = libraryStats.favorites_count;
+                document.getElementById('count-reading').textContent = libraryStats.reading_count;
+                document.getElementById('count-completed').textContent = libraryStats.completed_count;
 
                 // Populate dropdowns
                 const langSelect = document.getElementById('filter-language');
-                stats.languages.forEach(lang => {
+                libraryStats.languages.forEach(lang => {
                     const opt = document.createElement('option');
                     opt.value = lang;
                     opt.textContent = lang.toUpperCase();
@@ -2472,7 +2494,7 @@ def get_web_interface() -> str:
                 });
 
                 const formatSelect = document.getElementById('filter-format');
-                stats.formats.forEach(fmt => {
+                libraryStats.formats.forEach(fmt => {
                     const opt = document.createElement('option');
                     opt.value = fmt;
                     opt.textContent = fmt.toUpperCase();
@@ -2491,7 +2513,8 @@ def get_web_interface() -> str:
 
             // Sidebar filter
             if (currentFilter === 'favorites') params.append('favorite', 'true');
-            // Note: reading/completed status filtering would need backend support
+            if (currentFilter === 'reading') params.append('reading_status', 'reading');
+            if (currentFilter === 'completed') params.append('reading_status', 'completed');
 
             const language = document.getElementById('filter-language').value;
             const format = document.getElementById('filter-format').value;
@@ -2664,8 +2687,13 @@ def get_web_interface() -> str:
         }
 
         function updateNavCounts() {
-            // These would need additional API calls to get accurate counts
-            document.getElementById('count-all').textContent = totalBooks;
+            // Update counts from cached stats
+            if (libraryStats) {
+                document.getElementById('count-all').textContent = libraryStats.total_books;
+                document.getElementById('count-favorites').textContent = libraryStats.favorites_count;
+                document.getElementById('count-reading').textContent = libraryStats.reading_count;
+                document.getElementById('count-completed').textContent = libraryStats.completed_count;
+            }
         }
 
         function updateResultsInfo() {
