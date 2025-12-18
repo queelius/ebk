@@ -3557,29 +3557,24 @@ def tag_stats(
 
 @vfs_app.command(name="ln")
 def vfs_ln(
-    library_path: Path = typer.Argument(..., help="Path to library"),
     source: str = typer.Argument(..., help="Source path (e.g., /books/42 or /tags/Work/42)"),
     dest: str = typer.Argument(..., help="Destination tag path (e.g., /tags/Archive/)"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
 ):
     """Link a book to a tag.
 
     Examples:
-        ebk vfs ln ~/library /books/42 /tags/Work/
-        ebk vfs ln ~/library /tags/Work/42 /tags/Archive/
-        ebk vfs ln ~/library /subjects/computers/42 /tags/Reading/
+        ebk vfs ln /books/42 /tags/Work/
+        ebk vfs ln /tags/Work/42 /tags/Archive/
     """
-    from .library_db import Library
     from .repl.shell import LibraryShell
 
+    library_path = resolve_library_path(library_path)
+
     try:
-        lib = Library.open(library_path)
-        shell = LibraryShell(lib)
-
-        # Execute ln command in silent mode to capture output
+        shell = LibraryShell(library_path)
         shell.cmd_ln([source, dest], silent=False)
-
         shell.cleanup()
-        lib.close()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
@@ -3587,26 +3582,23 @@ def vfs_ln(
 
 @vfs_app.command(name="mv")
 def vfs_mv(
-    library_path: Path = typer.Argument(..., help="Path to library"),
     source: str = typer.Argument(..., help="Source path (e.g., /tags/Work/42)"),
     dest: str = typer.Argument(..., help="Destination tag path (e.g., /tags/Archive/)"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
 ):
     """Move a book between tags.
 
     Examples:
-        ebk vfs mv ~/library /tags/Work/42 /tags/Archive/
+        ebk vfs mv /tags/Work/42 /tags/Archive/
     """
-    from .library_db import Library
     from .repl.shell import LibraryShell
 
+    library_path = resolve_library_path(library_path)
+
     try:
-        lib = Library.open(library_path)
-        shell = LibraryShell(lib)
-
+        shell = LibraryShell(library_path)
         shell.cmd_mv([source, dest], silent=False)
-
         shell.cleanup()
-        lib.close()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
@@ -3614,33 +3606,31 @@ def vfs_mv(
 
 @vfs_app.command(name="rm")
 def vfs_rm(
-    library_path: Path = typer.Argument(..., help="Path to library"),
     path: str = typer.Argument(..., help="Path to remove (e.g., /tags/Work/42 or /books/42/)"),
     recursive: bool = typer.Option(False, "-r", "--recursive", help="Recursively delete tag and children"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
 ):
     """Remove tag from book, delete tag, or DELETE book.
 
     Examples:
-        ebk vfs rm ~/library /tags/Work/42          # Remove tag from book
-        ebk vfs rm ~/library /tags/Work/            # Delete tag
-        ebk vfs rm ~/library /tags/Work/ -r         # Delete tag recursively
-        ebk vfs rm ~/library /books/42/             # DELETE book (with confirmation)
+        ebk vfs rm /tags/Work/42          # Remove tag from book
+        ebk vfs rm /tags/Work/            # Delete tag
+        ebk vfs rm /tags/Work/ -r         # Delete tag recursively
+        ebk vfs rm /books/42/             # DELETE book (with confirmation)
     """
-    from .library_db import Library
     from .repl.shell import LibraryShell
 
+    library_path = resolve_library_path(library_path)
+
     try:
-        lib = Library.open(library_path)
-        shell = LibraryShell(lib)
+        shell = LibraryShell(library_path)
 
         args = [path]
         if recursive:
             args.insert(0, '-r')
 
         shell.cmd_rm(args, silent=False)
-
         shell.cleanup()
-        lib.close()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
@@ -3648,27 +3638,24 @@ def vfs_rm(
 
 @vfs_app.command(name="mkdir")
 def vfs_mkdir(
-    library_path: Path = typer.Argument(..., help="Path to library"),
     path: str = typer.Argument(..., help="Tag path to create (e.g., /tags/Work/Project-2024/)"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
 ):
     """Create a new tag directory.
 
     Examples:
-        ebk vfs mkdir ~/library /tags/Work/
-        ebk vfs mkdir ~/library /tags/Work/Project-2024/
-        ebk vfs mkdir ~/library /tags/Reading/Fiction/Sci-Fi/
+        ebk vfs mkdir /tags/Work/
+        ebk vfs mkdir /tags/Work/Project-2024/
+        ebk vfs mkdir /tags/Reading/Fiction/Sci-Fi/
     """
-    from .library_db import Library
     from .repl.shell import LibraryShell
 
+    library_path = resolve_library_path(library_path)
+
     try:
-        lib = Library.open(library_path)
-        shell = LibraryShell(lib)
-
+        shell = LibraryShell(library_path)
         shell.cmd_mkdir([path], silent=False)
-
         shell.cleanup()
-        lib.close()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
@@ -3676,28 +3663,27 @@ def vfs_mkdir(
 
 @vfs_app.command(name="ls")
 def vfs_ls(
-    library_path: Path = typer.Argument(..., help="Path to library"),
     path: str = typer.Argument("/", help="VFS path to list (e.g., /books/ or /tags/Work/)"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
 ):
     """List contents of a VFS directory.
 
     Examples:
-        ebk vfs ls ~/library /
-        ebk vfs ls ~/library /books/
-        ebk vfs ls ~/library /tags/Work/
-        ebk vfs ls ~/library /books/42/
+        ebk vfs ls                      # List root, uses config default library
+        ebk vfs ls /books/
+        ebk vfs ls /tags/Work/
+        ebk vfs ls /books/42/ -L ~/library
     """
-    from .library_db import Library
     from .repl.shell import LibraryShell
 
+    library_path = resolve_library_path(library_path)
+
     try:
-        lib = Library.open(library_path)
-        shell = LibraryShell(lib)
+        shell = LibraryShell(library_path)
 
         shell.cmd_ls([path], silent=False)
 
         shell.cleanup()
-        lib.close()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
@@ -3705,27 +3691,25 @@ def vfs_ls(
 
 @vfs_app.command(name="cat")
 def vfs_cat(
-    library_path: Path = typer.Argument(..., help="Path to library"),
     path: str = typer.Argument(..., help="VFS file path (e.g., /books/42/title or /tags/Work/description)"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
 ):
     """Read contents of a VFS file.
 
     Examples:
-        ebk vfs cat ~/library /books/42/title
-        ebk vfs cat ~/library /tags/Work/description
-        ebk vfs cat ~/library /tags/Work/color
+        ebk vfs cat /books/42/title
+        ebk vfs cat /tags/Work/description
     """
-    from .library_db import Library
     from .repl.shell import LibraryShell
 
+    library_path = resolve_library_path(library_path)
+
     try:
-        lib = Library.open(library_path)
-        shell = LibraryShell(lib)
+        shell = LibraryShell(library_path)
 
         shell.cmd_cat([path], silent=False)
 
         shell.cleanup()
-        lib.close()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
@@ -3733,8 +3717,8 @@ def vfs_cat(
 
 @vfs_app.command(name="exec")
 def vfs_exec(
-    library_path: Path = typer.Argument(..., help="Path to library"),
     command: str = typer.Argument(..., help="Shell command to execute"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
 ):
     """Execute a shell command with VFS context.
 
@@ -3742,24 +3726,21 @@ def vfs_exec(
     shell syntax like pipes, redirection, and multiple commands.
 
     Examples:
-        ebk vfs exec ~/library "ls /tags/"
-        ebk vfs exec ~/library "cat /books/42/title"
-        ebk vfs exec ~/library "echo 'My notes' > /tags/Work/description"
-        ebk vfs exec ~/library "find author:Knuth | wc -l"
-        ebk vfs exec ~/library "cat /tags/Work/description | grep -i project"
+        ebk vfs exec "ls /tags/"
+        ebk vfs exec "cat /books/42/title"
+        ebk vfs exec "find author:Knuth | wc -l"
     """
-    from .library_db import Library
     from .repl.shell import LibraryShell
 
+    library_path = resolve_library_path(library_path)
+
     try:
-        lib = Library.open(library_path)
-        shell = LibraryShell(lib)
+        shell = LibraryShell(library_path)
 
         # Execute the command
         shell.execute(command)
 
         shell.cleanup()
-        lib.close()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
