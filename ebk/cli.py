@@ -1117,12 +1117,15 @@ def list_books(
     offset: int = typer.Option(0, "--offset", help="Starting offset"),
     author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author"),
     subject: Optional[str] = typer.Option(None, "--subject", "-s", help="Filter by subject"),
-    language: Optional[str] = typer.Option(None, "--language", "-l", help="Filter by language")
+    language: Optional[str] = typer.Option(None, "--language", "-l", help="Filter by language"),
+    favorite: Optional[bool] = typer.Option(None, "--favorite", "-f", help="Filter by favorite status"),
+    reading_status: Optional[str] = typer.Option(None, "--status", "-S", help="Filter by reading status (reading, completed, unread)")
 ):
     """
     List books in database-backed library with optional filtering.
 
-    Supports pagination and filtering by author, subject, or language.
+    Supports pagination and filtering by author, subject, language,
+    favorite status, and reading status.
     If no library path is specified, uses the default from config.
 
     Examples:
@@ -1130,6 +1133,9 @@ def list_books(
         ebk list ~/my-library
         ebk list --author "Knuth"
         ebk list --subject "Python" --limit 20
+        ebk list --favorite                # List favorites
+        ebk list --status reading          # Currently reading
+        ebk list --status completed        # Completed books
     """
     from .library_db import Library
 
@@ -1147,6 +1153,12 @@ def list_books(
             query = query.filter_by_subject(subject)
         if language:
             query = query.filter_by_language(language)
+        if favorite is not None:
+            query = query.filter_by_favorite(favorite)
+        if reading_status:
+            # Map 'completed' to 'read' for DB compatibility
+            status = 'read' if reading_status == 'completed' else reading_status
+            query = query.filter_by_reading_status(status)
 
         # Get total count before applying limit/offset
         total = query.count()
