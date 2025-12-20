@@ -114,6 +114,46 @@ class ISBNImportRequest(BaseModel):
     isbn: str
 
 
+# View-related models
+class ViewResponse(BaseModel):
+    name: str
+    description: Optional[str]
+    builtin: bool
+    count: Optional[int]
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ViewDetailResponse(BaseModel):
+    name: str
+    description: Optional[str]
+    builtin: bool
+    definition: dict
+    count: Optional[int]
+
+
+class ViewCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    definition: Optional[dict] = None
+    # Shorthand filters if definition not provided
+    subject: Optional[str] = None
+    author: Optional[str] = None
+    favorite: Optional[bool] = None
+    reading_status: Optional[str] = None
+
+
+class ViewUpdateRequest(BaseModel):
+    description: Optional[str] = None
+    definition: Optional[dict] = None
+
+
+class ViewOverrideRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    position: Optional[int] = None
+
+
 # Global library instance
 _library: Optional[Library] = None
 _library_path: Optional[Path] = None
@@ -906,6 +946,291 @@ def _book_to_response(book) -> dict:
         "tags": book.personal.personal_tags if (book.personal and book.personal.personal_tags) else [],
         "cover_path": cover_path
     }
+
+
+# =========================================================================
+# Views API Endpoints
+# =========================================================================
+
+@app.get("/api/views", response_model=List[ViewResponse])
+async def list_views():
+    """List all views (builtin and user-defined)."""
+    from .views import ViewService
+    lib = get_library()
+    svc = ViewService(lib.session)
+    views = svc.list(include_builtin=True)
+
+    return [
+        ViewResponse(
+            name=v['name'],
+            description=v.get('description'),
+            builtin=v.get('builtin', False),
+            count=v.get('count'),
+            created_at=v.get('created_at').isoformat() if v.get('created_at') else None,
+            updated_at=v.get('updated_at').isoformat() if v.get('updated_at') else None,
+        )
+        for v in views
+    ]
+
+
+@app.get("/api/views/{view_name}", response_model=ViewDetailResponse)
+async def get_view(view_name: str):
+    """Get view details including definition."""
+    from .views import ViewService
+    from .views.dsl import is_builtin_view, get_builtin_view
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    if is_builtin_view(view_name):
+        defn = get_builtin_view(view_name)
+        count = svc.count(view_name)
+        return ViewDetailResponse(
+            name=view_name,
+            description=defn.get('description'),
+            builtin=True,
+            definition=defn,
+            count=count
+        )
+
+    view = svc.get(view_name)
+    if not view:
+        raise HTTPException(status_code=404, detail=f"View '{view_name}' not found")
+
+    return ViewDetailResponse(
+        name=view.name,
+        description=view.description,
+        builtin=False,
+        definition=view.definition,
+        count=view.cached_count or svc.count(view_name)
+    )
+
+
+@app.get("/api/views/{view_name}/books", response_model=PaginatedBooksResponse)
+async def get_view_books(
+    view_name: str,
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0)
+):
+    """Get books in a view with pagination."""
+    from .views import ViewService
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    try:
+        transformed = svc.evaluate(view_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    total = len(transformed)
+    page = transformed[offset:offset + limit]
+    books = [tb.book for tb in page]
+
+    return PaginatedBooksResponse(
+        items=[_book_to_response(book) for book in books],
+        total=total,
+        offset=offset,
+        limit=limit
+    )
+
+
+@app.post("/api/views", response_model=ViewDetailResponse)
+async def create_view(request: ViewCreateRequest):
+    """Create a new view."""
+    from .views import ViewService
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    try:
+        # Build filter kwargs from shorthand options
+        filter_kwargs = {}
+        if request.subject:
+            filter_kwargs['subject'] = request.subject
+        if request.author:
+            filter_kwargs['author'] = request.author
+        if request.favorite is not None:
+            filter_kwargs['favorite'] = request.favorite
+        if request.reading_status:
+            filter_kwargs['reading_status'] = request.reading_status
+
+        view = svc.create(
+            name=request.name,
+            definition=request.definition,
+            description=request.description,
+            **filter_kwargs
+        )
+
+        return ViewDetailResponse(
+            name=view.name,
+            description=view.description,
+            builtin=False,
+            definition=view.definition,
+            count=svc.count(view.name)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/views/{view_name}", response_model=ViewDetailResponse)
+async def update_view(view_name: str, request: ViewUpdateRequest):
+    """Update a view."""
+    from .views import ViewService
+    from .views.dsl import is_builtin_view
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    if is_builtin_view(view_name):
+        raise HTTPException(status_code=400, detail="Cannot modify builtin views")
+
+    try:
+        view = svc.update(
+            name=view_name,
+            definition=request.definition,
+            description=request.description
+        )
+
+        return ViewDetailResponse(
+            name=view.name,
+            description=view.description,
+            builtin=False,
+            definition=view.definition,
+            count=svc.count(view.name)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/views/{view_name}")
+async def delete_view(view_name: str):
+    """Delete a view."""
+    from .views import ViewService
+    from .views.dsl import is_builtin_view
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    if is_builtin_view(view_name):
+        raise HTTPException(status_code=400, detail="Cannot delete builtin views")
+
+    if svc.delete(view_name):
+        return {"message": f"View '{view_name}' deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail=f"View '{view_name}' not found")
+
+
+@app.post("/api/views/{view_name}/books/{book_id}")
+async def add_book_to_view(view_name: str, book_id: int):
+    """Add a book to a view."""
+    from .views import ViewService
+    from .views.dsl import is_builtin_view
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    if is_builtin_view(view_name):
+        raise HTTPException(status_code=400, detail="Cannot modify builtin views")
+
+    try:
+        svc.add_book(view_name, book_id)
+        return {"message": f"Book {book_id} added to view '{view_name}'"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/views/{view_name}/books/{book_id}")
+async def remove_book_from_view(view_name: str, book_id: int):
+    """Remove a book from a view."""
+    from .views import ViewService
+    from .views.dsl import is_builtin_view
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    if is_builtin_view(view_name):
+        raise HTTPException(status_code=400, detail="Cannot modify builtin views")
+
+    try:
+        svc.remove_book(view_name, book_id)
+        return {"message": f"Book {book_id} removed from view '{view_name}'"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.put("/api/views/{view_name}/overrides/{book_id}")
+async def set_view_override(view_name: str, book_id: int, request: ViewOverrideRequest):
+    """Set metadata overrides for a book within a view."""
+    from .views import ViewService
+    from .views.dsl import is_builtin_view
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    if is_builtin_view(view_name):
+        raise HTTPException(status_code=400, detail="Cannot modify builtin views")
+
+    try:
+        svc.set_override(
+            view_name=view_name,
+            book_id=book_id,
+            title=request.title,
+            description=request.description,
+            position=request.position
+        )
+        return {"message": f"Override set for book {book_id} in view '{view_name}'"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/views/{view_name}/overrides/{book_id}")
+async def remove_view_override(view_name: str, book_id: int, field: Optional[str] = None):
+    """Remove overrides for a book within a view."""
+    from .views import ViewService
+    from .views.dsl import is_builtin_view
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    if is_builtin_view(view_name):
+        raise HTTPException(status_code=400, detail="Cannot modify builtin views")
+
+    try:
+        if svc.unset_override(view_name, book_id, field):
+            return {"message": f"Override removed for book {book_id} in view '{view_name}'"}
+        else:
+            raise HTTPException(status_code=404, detail="Override not found")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/views/{view_name}/yaml")
+async def export_view_yaml(view_name: str):
+    """Export a view definition as YAML."""
+    from .views import ViewService
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    try:
+        yaml_content = svc.export_yaml(view_name)
+        return JSONResponse(
+            content={"yaml": yaml_content},
+            media_type="application/json"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/views/import")
+async def import_view_yaml(yaml_content: str = Form(...), overwrite: bool = Form(False)):
+    """Import a view from YAML."""
+    from .views import ViewService
+    lib = get_library()
+    svc = ViewService(lib.session)
+
+    try:
+        view = svc.import_yaml(yaml_content, overwrite=overwrite)
+        return ViewDetailResponse(
+            name=view.name,
+            description=view.description,
+            builtin=False,
+            definition=view.definition,
+            count=svc.count(view.name)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def get_web_interface() -> str:

@@ -648,3 +648,139 @@ class TestEdgeCases:
         assert isinstance(data["favorites_count"], int)
         assert isinstance(data["reading_count"], int)
         assert isinstance(data["completed_count"], int)
+
+
+# ============================================================================
+# Views API Tests
+# ============================================================================
+
+class TestViewsAPIEndpoints:
+    """Tests for the Views API endpoints."""
+
+    def test_list_views_includes_builtins(self, client):
+        """Test that list views includes built-in views."""
+        response = client.get("/api/views")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        # Should include builtin views like 'all', 'favorites', 'reading', etc.
+        view_names = [v['name'] for v in data]
+        assert 'all' in view_names
+        assert 'favorites' in view_names
+        assert 'reading' in view_names
+
+    def test_get_builtin_view_details(self, client):
+        """Test getting details of a builtin view."""
+        response = client.get("/api/views/favorites")
+        assert response.status_code == 200
+        data = response.json()
+        assert data['name'] == 'favorites'
+        assert data['builtin'] is True
+        assert 'definition' in data
+
+    def test_get_nonexistent_view_returns_404(self, client):
+        """Test that requesting non-existent view returns 404."""
+        response = client.get("/api/views/nonexistent_view_xyz")
+        assert response.status_code == 404
+
+    def test_create_view(self, client):
+        """Test creating a new view."""
+        response = client.post("/api/views", json={
+            "name": "test_view",
+            "description": "A test view",
+            "favorite": True
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data['name'] == 'test_view'
+        assert data['description'] == 'A test view'
+        assert data['builtin'] is False
+
+    def test_create_duplicate_view_fails(self, client):
+        """Test that creating a duplicate view fails."""
+        # First create a view
+        client.post("/api/views", json={
+            "name": "duplicate_test",
+            "description": "First view"
+        })
+
+        # Try to create it again
+        response = client.post("/api/views", json={
+            "name": "duplicate_test",
+            "description": "Second view"
+        })
+        assert response.status_code == 400
+
+    def test_cannot_create_builtin_view_name(self, client):
+        """Test that cannot create view with builtin name."""
+        response = client.post("/api/views", json={
+            "name": "favorites",
+            "description": "Custom favorites"
+        })
+        assert response.status_code == 400
+
+    def test_delete_view(self, client):
+        """Test deleting a view."""
+        # Create a view first
+        client.post("/api/views", json={
+            "name": "to_delete",
+            "description": "Will be deleted"
+        })
+
+        # Delete it
+        response = client.delete("/api/views/to_delete")
+        assert response.status_code == 200
+
+        # Verify it's gone
+        response = client.get("/api/views/to_delete")
+        assert response.status_code == 404
+
+    def test_cannot_delete_builtin_view(self, client):
+        """Test that builtin views cannot be deleted."""
+        response = client.delete("/api/views/favorites")
+        assert response.status_code == 400
+
+    def test_update_view(self, client):
+        """Test updating a view."""
+        # Create a view first
+        client.post("/api/views", json={
+            "name": "to_update",
+            "description": "Original description"
+        })
+
+        # Update it
+        response = client.patch("/api/views/to_update", json={
+            "description": "Updated description"
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data['description'] == 'Updated description'
+
+    def test_cannot_update_builtin_view(self, client):
+        """Test that builtin views cannot be updated."""
+        response = client.patch("/api/views/favorites", json={
+            "description": "Custom description"
+        })
+        assert response.status_code == 400
+
+    def test_get_view_books_empty(self, client):
+        """Test getting books from a view with no matching books."""
+        response = client.get("/api/views/favorites/books")
+        assert response.status_code == 200
+        data = response.json()
+        assert data['total'] == 0
+        assert data['items'] == []
+
+    def test_view_yaml_export(self, client):
+        """Test exporting a view as YAML."""
+        # Create a view first
+        client.post("/api/views", json={
+            "name": "yaml_test",
+            "description": "For YAML export"
+        })
+
+        response = client.get("/api/views/yaml_test/yaml")
+        assert response.status_code == 200
+        data = response.json()
+        assert 'yaml' in data
+        assert 'yaml_test' in data['yaml']

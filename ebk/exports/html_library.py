@@ -16,12 +16,18 @@ Features:
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
 from datetime import datetime
 
 
-def export_to_html(books: List, output_path: Path, include_stats: bool = True, base_url: str = ""):
+def export_to_html(
+    books: List,
+    output_path: Path,
+    include_stats: bool = True,
+    base_url: str = "",
+    views: Optional[List[Dict[str, Any]]] = None
+):
     """
     Export library to a single self-contained HTML file.
 
@@ -31,6 +37,7 @@ def export_to_html(books: List, output_path: Path, include_stats: bool = True, b
         include_stats: Include library statistics
         base_url: Base URL for file links (e.g., '/library' or 'https://example.com/books')
                   If empty, uses relative paths from HTML file location
+        views: Optional list of view data dicts with 'name', 'description', 'book_ids'
     """
 
     # Serialize books to JSON-compatible format
@@ -129,22 +136,30 @@ def export_to_html(books: List, output_path: Path, include_stats: bool = True, b
         'authors': sorted(list(authors_set)),
         'subjects': sorted(list(subjects_set)),
         'series': sorted(list(series_set)),
+        'views': views or [],
     }
 
     # Create HTML content
-    html_content = _generate_html_template(books_data, stats, nav_data, base_url)
+    html_content = _generate_html_template(books_data, stats, nav_data, base_url, views or [])
 
     # Write to file
     output_path.write_text(html_content, encoding='utf-8')
 
 
-def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict, base_url: str = "") -> str:
+def _generate_html_template(
+    books_data: List[dict],
+    stats: dict,
+    nav_data: dict,
+    base_url: str = "",
+    views: Optional[List[Dict[str, Any]]] = None
+) -> str:
     """Generate the complete HTML template with embedded CSS and JavaScript."""
 
     books_json = json.dumps(books_data, indent=None, ensure_ascii=False)
     stats_json = json.dumps(stats, indent=None, ensure_ascii=False)
     nav_json = json.dumps(nav_data, indent=None, ensure_ascii=False)
     base_url_json = json.dumps(base_url, ensure_ascii=False)
+    views_json = json.dumps(views or [], indent=None, ensure_ascii=False)
     export_date = datetime.now().strftime('%Y-%m-%d %H:%M')
 
     return f'''<!DOCTYPE html>
@@ -1037,6 +1052,10 @@ def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict,
                     </div>
                     <div id="subnav-series" class="subnav" style="display:none; max-height: 200px; overflow-y: auto; margin-left: 20px;"></div>
                 </div>
+                <div class="nav-section" id="views-section" style="display:none;">
+                    <div class="nav-section-title">Views</div>
+                    <div id="views-list"></div>
+                </div>
             </nav>
             <div style="padding: 16px; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted);">
                 Exported: {export_date}
@@ -1151,11 +1170,13 @@ def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict,
         const STATS = {stats_json};
         const NAV = {nav_json};
         const BASE_URL = {base_url_json};
+        const VIEWS = {views_json};
 
         // State
         let currentView = 'grid';
         let currentFilter = 'all';
         let currentSubfilter = null;
+        let currentViewName = null;
         let filteredBooks = [...BOOKS];
         let currentPage = 1;
         const perPage = 48;
@@ -1203,6 +1224,21 @@ def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict,
                 opt.textContent = f;
                 formatSelect.appendChild(opt);
             }});
+
+            // Populate views list
+            if (VIEWS && VIEWS.length > 0) {{
+                const viewsSection = document.getElementById('views-section');
+                const viewsList = document.getElementById('views-list');
+                viewsSection.style.display = 'block';
+                viewsList.innerHTML = VIEWS.map(v => {{
+                    const bookCount = v.book_ids ? v.book_ids.length : 0;
+                    const escapedName = v.name.replace(/'/g, "\\\\'");
+                    return `<div class="nav-item" data-view="${{escapedName}}" onclick="setViewFilter('${{escapedName}}')">
+                        <span>📋</span> ${{v.name}}
+                        <span class="nav-item-count">${{bookCount}}</span>
+                    </div>`;
+                }}).join('');
+            }}
         }}
 
         function updateCounts() {{
@@ -1243,6 +1279,7 @@ def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict,
         function setFilter(filter) {{
             currentFilter = filter;
             currentSubfilter = null;
+            currentViewName = null;
             currentPage = 1;
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             document.querySelector(`.nav-item[data-filter="${{filter}}"]`)?.classList.add('active');
@@ -1253,7 +1290,19 @@ def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict,
         function setSubfilter(type, value) {{
             currentFilter = type;
             currentSubfilter = value;
+            currentViewName = null;
             currentPage = 1;
+            applyFilters();
+            if (window.innerWidth < 1024) toggleSidebar();
+        }}
+
+        function setViewFilter(viewName) {{
+            currentFilter = 'view';
+            currentViewName = viewName;
+            currentSubfilter = null;
+            currentPage = 1;
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.querySelector(`.nav-item[data-view="${{viewName}}"]`)?.classList.add('active');
             applyFilters();
             if (window.innerWidth < 1024) toggleSidebar();
         }}
@@ -1373,6 +1422,14 @@ def _generate_html_template(books_data: List[dict], stats: dict, nav_data: dict,
                 if (currentFilter === 'favorites' && !book.personal?.favorite) return false;
                 if (currentFilter === 'queue' && !book.personal?.queue_position) return false;
                 if (currentFilter === 'reading' && book.personal?.reading_status !== 'reading') return false;
+
+                // View filter
+                if (currentFilter === 'view' && currentViewName) {{
+                    const view = VIEWS.find(v => v.name === currentViewName);
+                    if (view && view.book_ids) {{
+                        if (!view.book_ids.includes(book.id)) return false;
+                    }}
+                }}
 
                 // Subfilter
                 if (currentSubfilter) {{

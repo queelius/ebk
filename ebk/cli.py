@@ -2058,7 +2058,29 @@ def export_html(
 
             console.print(f"[green]✓ Copied {files_copied} files and {covers_copied} covers ({total_size / (1024**2):.1f} MB)[/green]")
 
-        export_to_html(books, output_file, include_stats=include_stats, base_url=base_url)
+        # Gather views data for sidebar navigation
+        from .views import ViewService
+        views_svc = ViewService(lib.session)
+        all_views = views_svc.list(include_builtin=True)
+
+        # Build book_ids for each view based on current books
+        book_ids_set = {b.id for b in books}
+        views_data = []
+        for v in all_views:
+            try:
+                view_books = views_svc.evaluate(v['name'])
+                view_book_ids = [tb.book.id for tb in view_books if tb.book.id in book_ids_set]
+                if view_book_ids:  # Only include views with matching books
+                    views_data.append({
+                        'name': v['name'],
+                        'description': v.get('description', ''),
+                        'book_ids': view_book_ids,
+                        'builtin': v.get('builtin', False)
+                    })
+            except Exception:
+                pass  # Skip views that fail to evaluate
+
+        export_to_html(books, output_file, include_stats=include_stats, base_url=base_url, views=views_data)
 
         console.print(f"[green]✓ Exported {len(books)} books to {output_file}[/green]")
         if base_url:
