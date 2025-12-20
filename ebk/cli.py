@@ -92,6 +92,7 @@ note_app = typer.Typer(help="Manage book annotations and notes")
 tag_app = typer.Typer(help="Manage hierarchical tags for organizing books")
 vfs_app = typer.Typer(help="VFS commands (ln, mv, rm, ls, cat, mkdir)")
 queue_app = typer.Typer(help="Manage reading queue")
+view_app = typer.Typer(help="Manage views (composable, named subsets of the library)")
 
 # Register command groups
 app.add_typer(import_app, name="import")
@@ -101,6 +102,7 @@ app.add_typer(note_app, name="note")
 app.add_typer(tag_app, name="tag")
 app.add_typer(vfs_app, name="vfs")
 app.add_typer(queue_app, name="queue")
+app.add_typer(view_app, name="view")
 
 @app.callback()
 def main(
@@ -1744,13 +1746,15 @@ def note_export(
 def export_json(
     library_path: Path = typer.Argument(..., help="Path to library"),
     output_file: Path = typer.Argument(..., help="Output JSON file"),
-    include_annotations: bool = typer.Option(True, "--annotations/--no-annotations", help="Include annotations")
+    include_annotations: bool = typer.Option(True, "--annotations/--no-annotations", help="Include annotations"),
+    view: Optional[str] = typer.Option(None, "--view", "-V", help="Export only books from this view"),
 ):
     """
     Export library to JSON format.
 
-    Example:
+    Examples:
         ebk export json ~/my-library ~/backup.json
+        ebk export json ~/my-library ~/favorites.json --view favorites
     """
     from .library_db import Library
     import json
@@ -1761,7 +1765,16 @@ def export_json(
 
     try:
         lib = Library.open(library_path)
-        books = lib.get_all_books()
+
+        # Get books from view or all books
+        if view:
+            from .views import ViewService
+            svc = ViewService(lib.session)
+            transformed = svc.evaluate(view)
+            books = [tb.book for tb in transformed]
+            console.print(f"[blue]Exporting view '{view}' ({len(books)} books)...[/blue]")
+        else:
+            books = lib.get_all_books()
 
         export_data = {
             "exported_at": datetime.now().isoformat(),
@@ -1829,13 +1842,15 @@ def export_json(
 @export_app.command(name="csv")
 def export_csv(
     library_path: Path = typer.Argument(..., help="Path to library"),
-    output_file: Path = typer.Argument(..., help="Output CSV file")
+    output_file: Path = typer.Argument(..., help="Output CSV file"),
+    view: Optional[str] = typer.Option(None, "--view", "-V", help="Export only books from this view"),
 ):
     """
     Export library to CSV format.
 
-    Example:
+    Examples:
         ebk export csv ~/my-library ~/books.csv
+        ebk export csv ~/my-library ~/programming.csv --view programming
     """
     from .library_db import Library
     import csv
@@ -1846,7 +1861,16 @@ def export_csv(
 
     try:
         lib = Library.open(library_path)
-        books = lib.get_all_books()
+
+        # Get books from view or all books
+        if view:
+            from .views import ViewService
+            svc = ViewService(lib.session)
+            transformed = svc.evaluate(view)
+            books = [tb.book for tb in transformed]
+            console.print(f"[blue]Exporting view '{view}' ({len(books)} books)...[/blue]")
+        else:
+            books = lib.get_all_books()
 
         # Write CSV file
         with open(output_file, 'w', newline='', encoding='utf-8') as f:
@@ -1901,7 +1925,8 @@ def export_html(
     include_stats: bool = typer.Option(True, "--stats/--no-stats", help="Include library statistics"),
     base_url: str = typer.Option("", "--base-url", help="Base URL for file links (e.g., '/library' or 'https://example.com/books')"),
     copy_files: bool = typer.Option(False, "--copy", help="Copy referenced files to output directory"),
-    # Filtering options
+    view: Optional[str] = typer.Option(None, "--view", "-V", help="Export only books from this view"),
+    # Filtering options (ignored if --view is specified)
     language: Optional[str] = typer.Option(None, "--language", help="Filter by language code (e.g., 'en', 'es')"),
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author name (partial match)"),
     subject: Optional[str] = typer.Option(None, "--subject", help="Filter by subject/tag (partial match)"),
@@ -1926,6 +1951,9 @@ def export_html(
         # Basic export with relative paths
         ebk export html ~/my-library ~/library.html
 
+        # Export a view
+        ebk export html ~/my-library ~/favorites.html --view favorites
+
         # Export for Hugo deployment with file copying
         ebk export html ~/my-library ~/hugo/static/library.html \\
             --base-url /library --copy
@@ -1943,27 +1971,35 @@ def export_html(
         raise typer.Exit(code=1)
 
     try:
-        console.print("[blue]Exporting library to HTML...[/blue]")
         lib = Library.open(library_path)
 
-        # Build filtered query
-        query = lib.query()
+        # Get books from view or apply filters
+        if view:
+            from .views import ViewService
+            svc = ViewService(lib.session)
+            transformed = svc.evaluate(view)
+            books = [tb.book for tb in transformed]
+            console.print(f"[blue]Exporting view '{view}' to HTML ({len(books)} books)...[/blue]")
+        else:
+            console.print("[blue]Exporting library to HTML...[/blue]")
+            # Build filtered query
+            query = lib.query()
 
-        # Apply filters
-        if language:
-            query = query.filter_by_language(language)
-        if author:
-            query = query.filter_by_author(author)
-        if subject:
-            query = query.filter_by_subject(subject)
-        if format_filter:
-            query = query.filter_by_format(format_filter)
-        if favorite is not None:
-            query = query.filter_by_favorite(favorite)
-        if min_rating:
-            query = query.filter_by_rating(min_rating)
+            # Apply filters
+            if language:
+                query = query.filter_by_language(language)
+            if author:
+                query = query.filter_by_author(author)
+            if subject:
+                query = query.filter_by_subject(subject)
+            if format_filter:
+                query = query.filter_by_format(format_filter)
+            if favorite is not None:
+                query = query.filter_by_favorite(favorite)
+            if min_rating:
+                query = query.filter_by_rating(min_rating)
 
-        books = query.all()
+            books = query.all()
 
         # Filter out books without files if requested
         if has_files:
@@ -2046,7 +2082,8 @@ def export_opds(
     base_url: str = typer.Option("", "--base-url", help="Base URL for file/cover links"),
     copy_files: bool = typer.Option(False, "--copy-files", help="Copy ebook files to output directory"),
     copy_covers: bool = typer.Option(False, "--copy-covers", help="Copy cover images to output directory"),
-    # Filtering options
+    view: Optional[str] = typer.Option(None, "--view", "-V", help="Export only books from this view"),
+    # Filtering options (ignored if --view is specified)
     language: Optional[str] = typer.Option(None, "--language", help="Filter by language code"),
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author name"),
     subject: Optional[str] = typer.Option(None, "--subject", help="Filter by subject/tag"),
@@ -2068,6 +2105,9 @@ def export_opds(
         # Basic catalog export
         ebk export opds ~/my-library ~/public/catalog.xml
 
+        # Export a view
+        ebk export opds ~/my-library ~/public/favorites.xml --view favorites
+
         # Full export with files for static hosting
         ebk export opds ~/my-library ~/public/catalog.xml \\
             --base-url https://example.com/library \\
@@ -2084,27 +2124,35 @@ def export_opds(
         raise typer.Exit(code=1)
 
     try:
-        console.print("[blue]Exporting library to OPDS catalog...[/blue]")
         lib = Library.open(library_path)
 
-        # Build filtered query
-        query = lib.query()
+        # Get books from view or apply filters
+        if view:
+            from .views import ViewService
+            svc = ViewService(lib.session)
+            transformed = svc.evaluate(view)
+            books = [tb.book for tb in transformed]
+            console.print(f"[blue]Exporting view '{view}' to OPDS catalog ({len(books)} books)...[/blue]")
+        else:
+            console.print("[blue]Exporting library to OPDS catalog...[/blue]")
+            # Build filtered query
+            query = lib.query()
 
-        # Apply filters
-        if language:
-            query = query.filter_by_language(language)
-        if author:
-            query = query.filter_by_author(author)
-        if subject:
-            query = query.filter_by_subject(subject)
-        if format_filter:
-            query = query.filter_by_format(format_filter)
-        if favorite is not None:
-            query = query.filter_by_favorite(favorite)
-        if min_rating:
-            query = query.filter_by_rating(min_rating)
+            # Apply filters
+            if language:
+                query = query.filter_by_language(language)
+            if author:
+                query = query.filter_by_author(author)
+            if subject:
+                query = query.filter_by_subject(subject)
+            if format_filter:
+                query = query.filter_by_format(format_filter)
+            if favorite is not None:
+                query = query.filter_by_favorite(favorite)
+            if min_rating:
+                query = query.filter_by_rating(min_rating)
 
-        books = query.all()
+            books = query.all()
 
         # Filter out books without files if requested
         if has_files:
@@ -3987,6 +4035,545 @@ def queue_next(
 
         lib.close()
 
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+# ============================================================================
+# View Commands - Composable, named subsets of the library
+# ============================================================================
+
+@view_app.command(name="create")
+def view_create(
+    name: str = typer.Argument(..., help="Name for the view"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    description: Optional[str] = typer.Option(None, "--description", "-d", help="View description"),
+    subject: Optional[str] = typer.Option(None, "--subject", "-s", help="Filter by subject"),
+    author: Optional[str] = typer.Option(None, "--author", "-a", help="Filter by author"),
+    language: Optional[str] = typer.Option(None, "--language", "-l", help="Filter by language"),
+    favorite: Optional[bool] = typer.Option(None, "--favorite", "-f", help="Filter by favorite"),
+    status: Optional[str] = typer.Option(None, "--status", "-S", help="Filter by reading status"),
+    rating_gte: Optional[int] = typer.Option(None, "--rating-gte", help="Filter by rating >= value"),
+    definition_file: Optional[Path] = typer.Option(None, "--from-file", help="Load definition from YAML file"),
+):
+    """
+    Create a new view.
+
+    Views are named, composable subsets of your library. Create views from
+    simple filters or complex YAML definitions.
+
+    Examples:
+        ebk view create favorites --favorite
+        ebk view create programming --subject programming
+        ebk view create top-rated --rating-gte 4 --description "My best books"
+        ebk view create complex --from-file my-view.yaml
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        if definition_file:
+            view = svc.import_file(definition_file)
+            # Override name if different
+            if view.name != name:
+                svc.rename(view.name, name)
+            if description:
+                svc.update(name, description=description)
+        else:
+            # Build definition from filters
+            filter_pred = {}
+            if subject:
+                filter_pred['subject'] = subject
+            if author:
+                filter_pred['author'] = author
+            if language:
+                filter_pred['language'] = language
+            if favorite is not None:
+                filter_pred['favorite'] = favorite
+            if status:
+                filter_pred['reading_status'] = status
+            if rating_gte:
+                filter_pred['rating'] = {'gte': rating_gte}
+
+            definition = {'select': {'filter': filter_pred}} if filter_pred else {'select': 'all'}
+            definition['order'] = {'by': 'title'}
+
+            view = svc.create(name, definition=definition, description=description)
+
+        # Show count
+        count = svc.count(name)
+        console.print(f"[green]✓ Created view '{name}' ({count} books)[/green]")
+
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="list")
+def view_list(
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    include_builtin: bool = typer.Option(True, "--builtin/--no-builtin", help="Include built-in views"),
+):
+    """
+    List all views.
+
+    Shows both user-defined views and built-in virtual views.
+
+    Examples:
+        ebk view list
+        ebk view list --no-builtin
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        views = svc.list(include_builtin=include_builtin)
+
+        if not views:
+            console.print("[yellow]No views defined[/yellow]")
+            lib.close()
+            return
+
+        table = Table(title="Views")
+        table.add_column("Name", style="cyan")
+        table.add_column("Description", style="white")
+        table.add_column("Books", justify="right", style="green")
+        table.add_column("Type", style="dim")
+
+        for v in views:
+            count = v.get('count')
+            count_str = str(count) if count is not None else "-"
+            view_type = "built-in" if v.get('builtin') else "user"
+            table.add_row(v['name'], v.get('description', ''), count_str, view_type)
+
+        console.print(table)
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="show")
+def view_show(
+    name: str = typer.Argument(..., help="View name"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Maximum books to show"),
+    show_definition: bool = typer.Option(False, "--definition", help="Show YAML definition"),
+):
+    """
+    Show books in a view.
+
+    Examples:
+        ebk view show favorites
+        ebk view show programming --limit 50
+        ebk view show my-view --definition
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        if show_definition:
+            yaml_content = svc.export_yaml(name)
+            console.print(f"[bold cyan]View: {name}[/bold cyan]\n")
+            console.print(yaml_content)
+            lib.close()
+            return
+
+        books = svc.evaluate(name)
+
+        if not books:
+            console.print(f"[yellow]View '{name}' is empty[/yellow]")
+            lib.close()
+            return
+
+        console.print(f"[bold cyan]View: {name}[/bold cyan] ({len(books)} books)\n")
+
+        table = Table()
+        table.add_column("ID", style="dim", justify="right")
+        table.add_column("Title", style="green")
+        table.add_column("Authors", style="cyan")
+        table.add_column("Modified", style="yellow", justify="center")
+
+        for tb in books[:limit]:
+            authors = ", ".join(a.name for a in tb.authors[:2])
+            if len(tb.authors) > 2:
+                authors += f" +{len(tb.authors) - 2}"
+
+            # Mark overridden books
+            modified = "*" if tb.title_override or tb.description_override else ""
+
+            table.add_row(str(tb.id), tb.title[:60], authors, modified)
+
+        console.print(table)
+
+        if len(books) > limit:
+            console.print(f"\n[dim]... and {len(books) - limit} more books[/dim]")
+
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="delete")
+def view_delete(
+    name: str = typer.Argument(..., help="View name"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """
+    Delete a view.
+
+    Examples:
+        ebk view delete old-view
+        ebk view delete old-view --force
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        view = svc.get(name)
+        if not view:
+            console.print(f"[red]View '{name}' not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        if not force:
+            if not Confirm.ask(f"Delete view '{name}'?"):
+                console.print("[yellow]Cancelled[/yellow]")
+                lib.close()
+                return
+
+        svc.delete(name)
+        console.print(f"[green]✓ Deleted view '{name}'[/green]")
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="add")
+def view_add(
+    name: str = typer.Argument(..., help="View name"),
+    book_id: int = typer.Argument(..., help="Book ID to add"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+):
+    """
+    Add a book to a view.
+
+    Examples:
+        ebk view add favorites 42
+        ebk view add my-collection 17
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        svc.add_book(name, book_id)
+        console.print(f"[green]✓ Added book {book_id} to view '{name}'[/green]")
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="remove")
+def view_remove(
+    name: str = typer.Argument(..., help="View name"),
+    book_id: int = typer.Argument(..., help="Book ID to remove"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+):
+    """
+    Remove a book from a view.
+
+    Examples:
+        ebk view remove favorites 42
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        svc.remove_book(name, book_id)
+        console.print(f"[green]✓ Removed book {book_id} from view '{name}'[/green]")
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="set")
+def view_set(
+    name: str = typer.Argument(..., help="View name"),
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    title: Optional[str] = typer.Option(None, "--title", "-t", help="Override title"),
+    description: Optional[str] = typer.Option(None, "--description", "-d", help="Override description"),
+    position: Optional[int] = typer.Option(None, "--position", "-p", help="Custom position for ordering"),
+):
+    """
+    Set metadata overrides for a book within a view.
+
+    Overrides are view-specific and non-destructive - the original
+    book metadata is unchanged.
+
+    Examples:
+        ebk view set my-view 42 --title "Better Title"
+        ebk view set my-view 42 --description "My notes about this book"
+        ebk view set my-view 42 --position 1
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    if not any([title, description, position is not None]):
+        console.print("[yellow]No overrides specified. Use --title, --description, or --position[/yellow]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        svc.set_override(name, book_id, title=title, description=description, position=position)
+        console.print(f"[green]✓ Set override for book {book_id} in view '{name}'[/green]")
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="unset")
+def view_unset(
+    name: str = typer.Argument(..., help="View name"),
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    field: Optional[str] = typer.Option(None, "--field", "-f", help="Specific field to unset (title, description, position)"),
+):
+    """
+    Remove overrides for a book within a view.
+
+    Examples:
+        ebk view unset my-view 42                    # Remove all overrides
+        ebk view unset my-view 42 --field title     # Remove only title override
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        if svc.unset_override(name, book_id, field=field):
+            console.print(f"[green]✓ Removed override for book {book_id} in view '{name}'[/green]")
+        else:
+            console.print(f"[yellow]No override found for book {book_id} in view '{name}'[/yellow]")
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="export")
+def view_export(
+    name: str = typer.Argument(..., help="View name"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path"),
+):
+    """
+    Export a view definition to YAML.
+
+    Examples:
+        ebk view export my-view                     # Print to stdout
+        ebk view export my-view -o my-view.yaml    # Save to file
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        yaml_content = svc.export_yaml(name)
+
+        if output:
+            svc.export_file(name, output)
+            console.print(f"[green]✓ Exported view '{name}' to {output}[/green]")
+        else:
+            console.print(yaml_content)
+
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="import")
+def view_import(
+    file_path: Path = typer.Argument(..., help="YAML file to import"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing view"),
+):
+    """
+    Import a view definition from YAML.
+
+    Examples:
+        ebk view import my-view.yaml
+        ebk view import my-view.yaml --overwrite
+    """
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        view = svc.import_file(file_path, overwrite=overwrite)
+        count = svc.count(view.name)
+        console.print(f"[green]✓ Imported view '{view.name}' ({count} books)[/green]")
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@view_app.command(name="edit")
+def view_edit(
+    name: str = typer.Argument(..., help="View name"),
+    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library"),
+):
+    """
+    Edit a view definition in your default editor.
+
+    Opens the view's YAML definition in $EDITOR for editing.
+
+    Examples:
+        ebk view edit my-view
+    """
+    import tempfile
+    import subprocess
+
+    from .library_db import Library
+    from .views import ViewService
+
+    library_path = resolve_library_path(library_path)
+
+    editor = os.environ.get('EDITOR', 'nano')
+
+    try:
+        lib = Library.open(library_path)
+        svc = ViewService(lib.session)
+
+        # Export current definition
+        yaml_content = svc.export_yaml(name)
+
+        # Create temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        # Open in editor
+        result = subprocess.run([editor, temp_path])
+
+        if result.returncode != 0:
+            console.print(f"[red]Editor exited with error[/red]")
+            os.unlink(temp_path)
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Read edited content
+        with open(temp_path) as f:
+            new_content = f.read()
+
+        os.unlink(temp_path)
+
+        # Import if changed
+        if new_content != yaml_content:
+            svc.import_yaml(new_content, overwrite=True)
+            count = svc.count(name)
+            console.print(f"[green]✓ Updated view '{name}' ({count} books)[/green]")
+        else:
+            console.print("[yellow]No changes made[/yellow]")
+
+        lib.close()
+
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)

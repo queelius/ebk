@@ -517,6 +517,92 @@ class PersonalMetadata(Base):
     )
 
 
+# ============================================================================
+# Views DSL Models
+# ============================================================================
+# Views provide a composable, non-destructive way to define subsets of the
+# library with optional metadata overrides. Following SICP principles:
+# - Primitives: all, none, filter, ids
+# - Combination: union, intersect, difference
+# - Abstraction: named views become new primitives
+# - Closure: combining views yields a view
+
+
+class View(Base):
+    """
+    A named view defining a subset of the library with optional transforms.
+
+    Views are non-destructive lenses over the library. They define:
+    - Selection: which books (via filters, explicit IDs, or references to other views)
+    - Transforms: metadata overrides (title, description) per book
+    - Ordering: how to sort the results
+
+    The view definition is stored as YAML/JSON in the `definition` field.
+    """
+    __tablename__ = 'views'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    description = Column(Text)
+
+    # The full view definition as YAML-compatible JSON
+    # Structure: {select: ..., transform: ..., order: ...}
+    definition = Column(JSON, nullable=False, default=dict)
+
+    # Cached count for quick display (updated on eval)
+    cached_count = Column(Integer)
+    cached_at = Column(DateTime)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    overrides = relationship('ViewOverride', back_populates='view', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f"<View(id={self.id}, name='{self.name}')>"
+
+
+class ViewOverride(Base):
+    """
+    Per-book metadata overrides within a view.
+
+    These are stored separately for efficient querying and to avoid
+    bloating the main view definition. Overrides are non-destructive:
+    the original book metadata is unchanged.
+    """
+    __tablename__ = 'view_overrides'
+
+    id = Column(Integer, primary_key=True)
+    view_id = Column(Integer, ForeignKey('views.id', ondelete='CASCADE'), nullable=False)
+    book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
+
+    # Overrideable fields
+    title = Column(String(500))
+    description = Column(Text)
+
+    # Custom position for manual ordering within the view
+    position = Column(Integer)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    view = relationship('View', back_populates='overrides')
+    book = relationship('Book')
+
+    __table_args__ = (
+        UniqueConstraint('view_id', 'book_id', name='uix_view_book_override'),
+        Index('idx_view_override_view', 'view_id'),
+        Index('idx_view_override_book', 'book_id'),
+    )
+
+    def __repr__(self):
+        return f"<ViewOverride(view_id={self.view_id}, book_id={self.book_id})>"
+
+
 # Full-Text Search Virtual Table (SQLite FTS5)
 # This will be created separately as it's SQLite-specific
 """
