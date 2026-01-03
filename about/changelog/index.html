@@ -1128,6 +1128,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/PLUGIN_ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Plugin System
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/contributing/" class="md-nav__link">
         
   
@@ -1279,13 +1302,13 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#v031-2025-01-14" class="md-nav__link">
+  <a href="#v043-2025-01-03" class="md-nav__link">
     <span class="md-ellipsis">
-      v0.3.1 (2025-01-14)
+      v0.4.3 (2025-01-03)
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="v0.3.1 (2025-01-14)">
+    <nav class="md-nav" aria-label="v0.4.3 (2025-01-03)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1298,7 +1321,49 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Documentation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Improvements
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v031-2025-01-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      v0.3.1 (2025-01-14)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v0.3.1 (2025-01-14)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      New Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_1" class="md-nav__link">
     <span class="md-ellipsis">
       Improvements
     </span>
@@ -1316,7 +1381,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation" class="md-nav__link">
+  <a href="#documentation_1" class="md-nav__link">
     <span class="md-ellipsis">
       Documentation
     </span>
@@ -1340,7 +1405,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#new-features_1" class="md-nav__link">
+  <a href="#new-features_2" class="md-nav__link">
     <span class="md-ellipsis">
       New Features
     </span>
@@ -1376,7 +1441,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_1" class="md-nav__link">
+  <a href="#documentation_2" class="md-nav__link">
     <span class="md-ellipsis">
       Documentation
     </span>
@@ -1467,8 +1532,53 @@
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>Project changelog and release notes.</p>
-<h2 id="v031-2025-01-14">v0.3.1 (2025-01-14)<a class="headerlink" href="#v031-2025-01-14" title="Permanent link">&para;</a></h2>
+<h2 id="v043-2025-01-03">v0.4.3 (2025-01-03)<a class="headerlink" href="#v043-2025-01-03" title="Permanent link">&para;</a></h2>
 <h3 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Book Merge</strong>: Combine duplicate book entries into one</li>
+<li><code>ebk book merge &lt;primary_id&gt; &lt;secondary_ids&gt;</code> - Merge multiple books</li>
+<li>Preserves all metadata, files, covers, tags, and annotations</li>
+<li>
+<p><code>--dry-run</code> to preview changes, <code>--delete-duplicates</code> to remove duplicate files</p>
+</li>
+<li>
+<p><strong>Bulk Edit</strong>: Edit multiple books at once</p>
+</li>
+<li><code>ebk book bulk-edit --ids 1,2,3 --language en --add-tag Work</code></li>
+<li>Select books via <code>--ids</code>, <code>--search</code>, or <code>--view</code></li>
+<li>
+<p>Edit language, publisher, series, tags, subjects, rating, status, favorite</p>
+</li>
+<li>
+<p><strong>Goodreads Export</strong>: Export library for Goodreads import</p>
+</li>
+<li><code>ebk export goodreads ~/library ~/goodreads.csv</code></li>
+<li>Includes ratings, reading status, bookshelves (tags)</li>
+<li>
+<p>Import at goodreads.com/review/import</p>
+</li>
+<li>
+<p><strong>Calibre Export</strong>: Export library for Calibre import</p>
+</li>
+<li><code>ebk export calibre ~/library ~/calibre.csv</code></li>
+<li>Includes author_sort, identifiers, series info</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Complete documentation overhaul</li>
+<li>Removed intermediate/internal docs (phase summaries, design docs)</li>
+<li>Updated index.md with current features and motivation</li>
+<li>Rewrote quickstart guide with current CLI commands</li>
+<li>Comprehensive import/export guide with all formats</li>
+<li>Updated Python API documentation</li>
+</ul>
+<h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Views now support <code>--view</code> flag in all export commands</li>
+<li>OPDS export supports file and cover copying</li>
+</ul>
+<h2 id="v031-2025-01-14">v0.3.1 (2025-01-14)<a class="headerlink" href="#v031-2025-01-14" title="Permanent link">&para;</a></h2>
+<h3 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>🔍 <strong>Advanced Search</strong>: Field-specific queries with boolean logic</li>
 <li>Field searches: <code>title:</code>, <code>author:</code>, <code>tag:</code>, <code>description:</code>, <code>text:</code></li>
@@ -1482,7 +1592,7 @@
 <li>Previous/Next buttons with page number links</li>
 <li>📋 <strong>Cover Copying</strong>: <code>--copy</code> flag now copies both files AND covers</li>
 </ul>
-<h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
+<h3 id="improvements_1">Improvements<a class="headerlink" href="#improvements_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Search parser with FTS5 column-specific queries (<code>title:term</code>)</li>
 <li>Author and subject filtering via SQL JOINs (not in FTS table)</li>
@@ -1496,7 +1606,7 @@
 <li>Fixed HTML export <code>--copy</code> not copying cover images</li>
 <li>Fixed field searches not working (FTS5 column prefixes)</li>
 </ul>
-<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Comprehensive search guide with all syntax and examples</li>
 <li>Updated README with advanced search features</li>
@@ -1504,7 +1614,7 @@
 <li>Clear notes about HTML export limitations (client-side filtering only)</li>
 </ul>
 <h2 id="v030-2025-01-xx">v0.3.0 (2025-01-XX)<a class="headerlink" href="#v030-2025-01-xx" title="Permanent link">&para;</a></h2>
-<h3 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h3>
+<h3 id="new-features_2">New Features<a class="headerlink" href="#new-features_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>✨ Configuration system at <code>~/.config/ebk/config.json</code></li>
 <li>🤖 LLM provider abstraction with Ollama support (local and remote)</li>
@@ -1535,7 +1645,7 @@
 <li>Auto-open browser feature</li>
 <li>REST API improvements</li>
 </ul>
-<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_2">Documentation<a class="headerlink" href="#documentation_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>New user guides: Configuration, LLM Features, Web Server, CLI Reference</li>
 <li>Updated README with quickstart and modern examples</li>
