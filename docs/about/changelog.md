@@ -2,6 +2,43 @@
 
 Project changelog and release notes.
 
+## v0.4.3 (2025-01-03)
+
+### New Features
+
+- **Book Merge**: Combine duplicate book entries into one
+  - `ebk book merge <primary_id> <secondary_ids>` - Merge multiple books
+  - Preserves all metadata, files, covers, tags, and annotations
+  - `--dry-run` to preview changes, `--delete-duplicates` to remove duplicate files
+
+- **Bulk Edit**: Edit multiple books at once
+  - `ebk book bulk-edit --ids 1,2,3 --language en --add-tag Work`
+  - Select books via `--ids`, `--search`, or `--view`
+  - Edit language, publisher, series, tags, subjects, rating, status, favorite
+
+- **Goodreads Export**: Export library for Goodreads import
+  - `ebk export goodreads ~/library ~/goodreads.csv`
+  - Includes ratings, reading status, bookshelves (tags)
+  - Import at goodreads.com/review/import
+
+- **Calibre Export**: Export library for Calibre import
+  - `ebk export calibre ~/library ~/calibre.csv`
+  - Includes author_sort, identifiers, series info
+
+### Documentation
+
+- Complete documentation overhaul
+- Removed intermediate/internal docs (phase summaries, design docs)
+- Updated index.md with current features and motivation
+- Rewrote quickstart guide with current CLI commands
+- Comprehensive import/export guide with all formats
+- Updated Python API documentation
+
+### Improvements
+
+- Views now support `--view` flag in all export commands
+- OPDS export supports file and cover copying
+
 ## v0.3.1 (2025-01-14)
 
 ### New Features

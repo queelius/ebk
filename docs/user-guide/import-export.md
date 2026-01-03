@@ -1,6 +1,6 @@
 # Import/Export
 
-Guide to importing and exporting ebook libraries.
+Complete guide to importing books and exporting library data.
 
 ## Importing Books
 
@@ -8,172 +8,314 @@ Guide to importing and exporting ebook libraries.
 
 ```bash
 # Import a single ebook
-ebk import book.pdf ~/my-library
+ebk import add book.pdf ~/my-library
+ebk import add ~/Downloads/book.epub ~/my-library
 
-# Import multiple files with glob patterns
-ebk import ~/books/*.epub ~/my-library
-
-# Import with text extraction
-ebk import book.pdf ~/my-library --extract-text
+# Import with specific metadata
+ebk import add book.pdf ~/my-library \
+    --title "My Book" \
+    --author "John Doe"
 ```
 
-### From Calibre
+### Batch Import from Folder
+
+```bash
+# Import all ebooks from a folder
+ebk import folder ~/Downloads/ebooks ~/my-library
+
+# With specific extensions only
+ebk import folder ~/Downloads ~/my-library --extensions pdf,epub,mobi
+
+# Recursive (include subfolders)
+ebk import folder ~/ebooks ~/my-library --recursive
+
+# Resume interrupted import (skip already imported)
+ebk import folder ~/ebooks ~/my-library --resume
+```
+
+### From Calibre Library
 
 ```bash
 # Import entire Calibre library
-ebk import-calibre ~/Calibre/Library --output ~/my-library
+ebk import calibre ~/Calibre/Library ~/my-library
 
-# Import with filters
-ebk import-calibre ~/Calibre/Library --output ~/my-library --language en
+# Limit import
+ebk import calibre ~/Calibre/Library ~/my-library --limit 100
 ```
 
-## Exporting Libraries
+### From OPDS Catalog
 
-### HTML Export
-
-Export your library as a self-contained HTML file with **pagination** and interactive features:
+Import from OPDS feeds (Gutenberg, Standard Ebooks, etc.):
 
 ```bash
-# Basic HTML export (50 books per page)
-ebk export html ~/my-library ~/library.html
+# Import from OPDS feed
+ebk import opds "https://standardebooks.org/opds" ~/my-library
 
-# Export for web deployment (copies files and covers)
-ebk export html ~/my-library ~/site/library.html \
-  --base-url /library \
-  --copy
-
-# Export with filters
-ebk export html ~/my-library ~/library.html \
-  --language en \
-  --format pdf \
-  --min-rating 4
+# With limit
+ebk import opds "https://example.com/opds/catalog.xml" ~/my-library --limit 50
 ```
 
-**HTML Export Features:**
-
-- **Pagination**: Automatically pages through books (50 per page)
-- **URL State Tracking**: Bookmarkable pages with filters and page numbers in URL
-- **Client-side Filtering**: Fast filtering by language, format, series, favorites, rating
-- **Sorting**: Sort by title, author, rating, or date added
-- **Search Bar**: Basic text search across titles, authors, and subjects
-- **Responsive Design**: Works on desktop and mobile
-- **Offline Capable**: Fully self-contained, no server required
-
-**File Copying with `--copy`:**
-
-The `--copy` flag copies both ebook files AND cover images to the output directory:
+### From URL
 
 ```bash
-# Copies to: ~/site/library/ (based on --base-url)
-ebk export html ~/my-library ~/site/library.html \
-  --base-url /library \
-  --copy
+# Download and import from URL
+ebk import url "https://example.com/book.pdf" ~/my-library
 ```
 
-This creates:
-```
-~/site/
-├── library.html           # HTML catalog
-└── library/               # Copied files (based on --base-url)
-    ├── files/            # Ebook files
-    │   ├── ab/
-    │   │   └── abc123.pdf
-    │   └── cd/
-    │       └── cde456.epub
-    └── covers/           # Cover images
-        ├── ab/
-        │   └── abc123.jpg
-        └── thumbnails/
-            └── abc123_thumb.jpg
+### By ISBN
+
+Create a book entry by looking up ISBN from Google Books or Open Library:
+
+```bash
+# Lookup by ISBN
+ebk import isbn 978-0201633610 ~/my-library
+
+# With specific provider
+ebk import isbn 978-0201633610 ~/my-library --provider google
+ebk import isbn 978-0201633610 ~/my-library --provider openlibrary
 ```
 
-**Important**: HTML export uses **simple client-side filtering**, not advanced search syntax. For advanced search (field-specific queries, boolean logic), use:
-
-- CLI: `ebk search "title:Python rating:>=4"`
-- Web server: `ebk serve ~/my-library`
-- Python API: `lib.search("title:Python rating:>=4")`
+## Exporting Library Data
 
 ### JSON Export
 
-```bash
-# Export metadata to JSON
-ebk export json ~/my-library ~/metadata.json
+Complete metadata export in JSON format:
 
-# Pretty-printed JSON
-ebk export json ~/my-library ~/metadata.json --indent 2
+```bash
+# Export all books
+ebk export json ~/my-library ~/backup.json
+
+# Pretty-printed
+ebk export json ~/my-library ~/backup.json --pretty
+
+# Export specific view
+ebk export json ~/my-library ~/favorites.json --view favorites
 ```
 
 ### CSV Export
 
-```bash
-# Export to CSV format
-ebk export csv ~/my-library ~/books.csv
+Spreadsheet-compatible format:
 
-# Export with specific columns
-ebk export csv ~/my-library ~/books.csv --columns title,author,isbn
+```bash
+# Basic CSV export
+ebk export csv ~/my-library ~/catalog.csv
+
+# Export specific view
+ebk export csv ~/my-library ~/python-books.csv --view python
 ```
 
-### ZIP Archive
+### Goodreads Export
+
+Export in Goodreads-compatible format for import into your Goodreads account:
 
 ```bash
-# Create backup archive
-ebk export zip ~/my-library ~/backup.zip
-
-# Include covers in archive
-ebk export zip ~/my-library ~/backup.zip --include-covers
+ebk export goodreads ~/my-library ~/goodreads.csv
+ebk export goodreads ~/my-library ~/favorites.csv --view favorites
 ```
 
-## Import/Export Use Cases
+The Goodreads CSV includes:
+- Title, Author, Additional Authors
+- ISBN/ISBN13
+- My Rating (1-5 stars)
+- Exclusive Shelf (read, currently-reading, to-read)
+- Bookshelves (from tags)
+- Date Read, Date Added
+- Page count, Publisher, Year
 
-### Backup and Migration
+Import at: https://www.goodreads.com/review/import
+
+### Calibre Export
+
+Export in Calibre-compatible format:
 
 ```bash
-# Full backup
-ebk export zip ~/my-library ~/backup-$(date +%Y%m%d).zip
+ebk export calibre ~/my-library ~/calibre.csv
+ebk export calibre ~/my-library ~/subset.csv --view programming
+```
 
+The Calibre CSV includes:
+- title, authors, author_sort
+- publisher, pubdate
+- languages, rating (0-10 scale)
+- tags, series, series_index
+- identifiers (ISBN, ASIN, etc.)
+- comments/description
+
+### HTML Export
+
+Self-contained HTML catalog with pagination and client-side filtering:
+
+```bash
+# Basic export
+ebk export html ~/my-library ~/catalog.html
+
+# With file and cover copying for static hosting
+ebk export html ~/my-library ~/site/catalog.html \
+    --base-url /library \
+    --copy-files \
+    --copy-covers
+
+# Export a specific view
+ebk export html ~/my-library ~/favorites.html --view favorites
+
+# With filters
+ebk export html ~/my-library ~/english.html \
+    --language en \
+    --has-files
+```
+
+HTML export features:
+- **Pagination**: 50 books per page
+- **URL State**: Bookmarkable page/filter state
+- **Client-side Filtering**: By language, format, series, favorites, rating
+- **Sorting**: By title, author, rating, date
+- **Search Bar**: Text search across metadata
+- **Responsive**: Desktop and mobile support
+- **Offline**: No server required
+
+### OPDS Export
+
+Create an OPDS catalog feed for e-reader apps (Foliate, KOReader, Moon+ Reader):
+
+```bash
+# Basic OPDS catalog
+ebk export opds ~/my-library ~/opds/catalog.xml
+
+# With file and cover copying
+ebk export opds ~/my-library ~/opds/catalog.xml \
+    --base-url https://example.com/opds \
+    --copy-files \
+    --copy-covers
+
+# Export a view
+ebk export opds ~/my-library ~/opds/favorites.xml --view favorites
+```
+
+## Backup and Restore
+
+### Create Backup
+
+```bash
+# Database backup (tar.gz)
+ebk backup ~/my-library ~/backups/
+```
+
+### Restore from Backup
+
+```bash
 # Restore to new location
-ebk init ~/new-library
-ebk import ~/backup.zip ~/new-library
+ebk restore ~/backups/library-2024-01-01.tar.gz ~/restored-library
+
+# Force overwrite existing
+ebk restore ~/backups/backup.tar.gz ~/my-library --force
 ```
 
-### Web Deployment
+## Use Cases
+
+### Migrating from Calibre
 
 ```bash
-# Export for Hugo static site
-ebk export html ~/my-library ~/hugo/static/library.html \
-  --base-url /library \
-  --copy \
-  --language en \
-  --has-files
+# 1. Import from Calibre
+ebk import calibre ~/Calibre/Library ~/my-library
 
-# Deploy to web server
-rsync -av ~/hugo/ user@server:/var/www/site/
+# 2. Verify import
+ebk stats ~/my-library
+
+# 3. Export to compare
+ebk export json ~/my-library ~/imported.json
 ```
 
-### Library Sharing
+### Syncing with Goodreads
 
 ```bash
-# Export filtered subset
-ebk export html ~/my-library ~/shared.html \
-  --subject "Computer Science" \
-  --format pdf \
-  --min-rating 4
+# Export your ebk ratings and status
+ebk export goodreads ~/my-library ~/sync.csv
 
-# Share the single HTML file (no server needed)
+# Import at goodreads.com/review/import
+```
+
+### Publishing a Web Catalog
+
+```bash
+# 1. Create a view of books to share
+ebk view create public ~/my-library \
+    --has-files \
+    --min-rating 3
+
+# 2. Export for web hosting
+ebk export html ~/my-library ~/public/catalog.html \
+    --view public \
+    --base-url /books \
+    --copy-files \
+    --copy-covers
+
+# 3. Deploy
+rsync -av ~/public/ user@server:/var/www/books/
+```
+
+### Creating an OPDS Server
+
+```bash
+# 1. Export OPDS catalog
+ebk export opds ~/my-library ~/opds/catalog.xml \
+    --base-url https://myserver.com/opds \
+    --copy-files \
+    --copy-covers
+
+# 2. Serve with any static file server
+cd ~/opds && python -m http.server 8080
 ```
 
 ### Data Analysis
 
 ```bash
 # Export to JSON for analysis
-ebk export json ~/my-library ~/data.json
+ebk export json ~/my-library ~/data.json --pretty
 
-# Use with jq, pandas, or other tools
-cat ~/data.json | jq '.books[] | select(.rating >= 4) | .title'
+# Query with jq
+jq '.[] | select(.rating >= 4) | .title' ~/data.json
+
+# Load into Python/pandas
+python -c "
+import json
+import pandas as pd
+with open('data.json') as f:
+    books = json.load(f)
+df = pd.DataFrame(books)
+print(df.groupby('language').size())
+"
+```
+
+## Python API
+
+```python
+from pathlib import Path
+from ebk.library_db import Library
+from ebk.services import ExportService
+
+lib = Library.open(Path("~/my-library"))
+export_svc = ExportService(lib.session, lib.library_path)
+
+# Get books (all or filtered)
+books = lib.get_all_books()
+# or
+books = lib.query().filter_by_language("en").all()
+
+# Export to different formats
+json_str = export_svc.export_json(books, pretty=True)
+csv_str = export_svc.export_csv(books)
+goodreads_csv = export_svc.export_goodreads_csv(books)
+calibre_csv = export_svc.export_calibre_csv(books)
+
+# Write to files
+with open("backup.json", "w") as f:
+    f.write(json_str)
+
+lib.close()
 ```
 
 ## See Also
 
-- [CLI Reference](cli.md) - Full import/export command options
-- [Search & Query](search.md) - Filtering books before export
-- [Server](server.md) - Web server for dynamic browsing
+- [CLI Reference](cli.md) - Complete command options
+- [Views](library-management.md#views) - Create named subsets for export
+- [Search Syntax](search.md) - Filter before exporting

@@ -324,6 +324,207 @@ class ExportService:
             "reading_status": pm.reading_status if pm else "",
         }
 
+    def export_goodreads_csv(self, books: List[Book]) -> str:
+        """
+        Export books to Goodreads-compatible CSV format.
+
+        The exported CSV can be imported into Goodreads via their import feature.
+        See: https://www.goodreads.com/review/import
+
+        Args:
+            books: List of Book objects to export
+
+        Returns:
+            CSV string in Goodreads format
+        """
+        # Goodreads CSV columns (required and optional)
+        fields = [
+            "Title", "Author", "Additional Authors", "ISBN", "ISBN13",
+            "My Rating", "Average Rating", "Publisher", "Binding", "Number of Pages",
+            "Year Published", "Original Publication Year", "Date Read", "Date Added",
+            "Bookshelves", "Bookshelves with positions", "Exclusive Shelf",
+            "My Review", "Spoiler", "Private Notes", "Read Count", "Owned Copies"
+        ]
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
+        writer.writeheader()
+
+        for book in books:
+            pm = book.personal
+
+            # Get authors
+            authors = list(book.authors)
+            primary_author = authors[0].name if authors else ""
+            additional_authors = ", ".join(a.name for a in authors[1:]) if len(authors) > 1 else ""
+
+            # Get identifiers
+            identifiers = {i.scheme.lower(): i.value for i in book.identifiers}
+            isbn = identifiers.get('isbn', '')
+            isbn13 = identifiers.get('isbn13', '')
+
+            # Map reading status to Goodreads exclusive shelf
+            status_map = {
+                'read': 'read',
+                'reading': 'currently-reading',
+                'to_read': 'to-read',
+                'unread': 'to-read',
+                'abandoned': 'read',  # No abandoned shelf in Goodreads
+                'reference': 'read',
+            }
+            status = pm.reading_status if pm else 'unread'
+            exclusive_shelf = status_map.get(status, 'to-read')
+
+            # Convert rating (ebk uses 0-5, Goodreads uses 1-5)
+            rating = ""
+            if pm and pm.rating:
+                # Round to integer, minimum 1
+                rating = str(max(1, round(pm.rating)))
+
+            # Get bookshelves (tags)
+            bookshelves = []
+            if book.tags:
+                bookshelves.extend(t.name for t in book.tags)
+            if pm and pm.personal_tags:
+                bookshelves.extend(pm.personal_tags)
+
+            # Format dates
+            date_read = ""
+            date_added = ""
+            if pm:
+                if pm.date_finished:
+                    date_read = pm.date_finished.strftime("%Y/%m/%d")
+                if book.created_at:
+                    date_added = book.created_at.strftime("%Y/%m/%d")
+
+            # Parse publication year
+            pub_year = ""
+            if book.publication_date:
+                # Try to extract year from various formats
+                pub_date = book.publication_date
+                if len(pub_date) >= 4 and pub_date[:4].isdigit():
+                    pub_year = pub_date[:4]
+
+            row = {
+                "Title": book.title or "",
+                "Author": primary_author,
+                "Additional Authors": additional_authors,
+                "ISBN": isbn,
+                "ISBN13": isbn13,
+                "My Rating": rating,
+                "Average Rating": "",  # We don't have this
+                "Publisher": book.publisher or "",
+                "Binding": "",  # Could map from file format
+                "Number of Pages": str(book.page_count) if book.page_count else "",
+                "Year Published": pub_year,
+                "Original Publication Year": pub_year,
+                "Date Read": date_read,
+                "Date Added": date_added,
+                "Bookshelves": ", ".join(bookshelves),
+                "Bookshelves with positions": "",
+                "Exclusive Shelf": exclusive_shelf,
+                "My Review": "",  # Could add from annotations
+                "Spoiler": "",
+                "Private Notes": "",
+                "Read Count": "1" if status == 'read' else "0",
+                "Owned Copies": "1",
+            }
+            writer.writerow(row)
+
+        return output.getvalue()
+
+    def export_calibre_csv(self, books: List[Book]) -> str:
+        """
+        Export books to Calibre-compatible CSV format.
+
+        The exported CSV can be imported into Calibre using the "Add books" >
+        "Add from ISBN" or via calibredb command-line tool.
+
+        Args:
+            books: List of Book objects to export
+
+        Returns:
+            CSV string in Calibre format
+        """
+        # Calibre CSV columns
+        fields = [
+            "title", "authors", "author_sort", "publisher", "pubdate",
+            "languages", "rating", "tags", "series", "series_index",
+            "identifiers", "comments", "isbn"
+        ]
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
+        writer.writeheader()
+
+        for book in books:
+            pm = book.personal
+
+            # Get authors
+            authors = " & ".join(a.name for a in book.authors)
+            # Author sort: "Last, First & Last, First"
+            author_sort_parts = []
+            for a in book.authors:
+                parts = a.name.split()
+                if len(parts) >= 2:
+                    author_sort_parts.append(f"{parts[-1]}, {' '.join(parts[:-1])}")
+                else:
+                    author_sort_parts.append(a.name)
+            author_sort = " & ".join(author_sort_parts)
+
+            # Get identifiers in Calibre format: isbn:123,asin:B00...
+            identifiers = {i.scheme.lower(): i.value for i in book.identifiers}
+            id_str = ",".join(f"{k}:{v}" for k, v in identifiers.items())
+            isbn = identifiers.get('isbn', identifiers.get('isbn13', ''))
+
+            # Collect tags
+            tags_list = []
+            if book.subjects:
+                tags_list.extend(s.name for s in book.subjects)
+            if book.tags:
+                tags_list.extend(t.full_path for t in book.tags)
+            if pm and pm.personal_tags:
+                tags_list.extend(pm.personal_tags)
+            # Add reading status as tag
+            if pm and pm.reading_status:
+                tags_list.append(f"status:{pm.reading_status}")
+            if pm and pm.favorite:
+                tags_list.append("favorite")
+
+            # Convert rating (ebk uses 0-5, Calibre uses 0-10)
+            rating = ""
+            if pm and pm.rating:
+                rating = str(int(pm.rating * 2))
+
+            # Language codes
+            language = book.language or ""
+
+            # Series info
+            series = book.series or ""
+            series_index = str(book.series_index) if book.series_index else ""
+
+            # Description/comments
+            comments = book.description or ""
+
+            row = {
+                "title": book.title or "",
+                "authors": authors,
+                "author_sort": author_sort,
+                "publisher": book.publisher or "",
+                "pubdate": book.publication_date or "",
+                "languages": language,
+                "rating": rating,
+                "tags": ", ".join(tags_list),
+                "series": series,
+                "series_index": series_index,
+                "identifiers": id_str,
+                "comments": comments,
+                "isbn": isbn,
+            }
+            writer.writerow(row)
+
+        return output.getvalue()
+
     def _copy_files(
         self,
         books: List[Book],

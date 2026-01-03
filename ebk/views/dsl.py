@@ -33,7 +33,7 @@ Grammar:
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Union
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from sqlalchemy.orm import Session
@@ -164,7 +164,7 @@ class ViewEvaluator:
 
         # Update cached count
         view.cached_count = len(result)
-        view.cached_at = datetime.utcnow()
+        view.cached_at = datetime.now(timezone.utc)
         self.session.commit()
 
         return result
@@ -211,7 +211,7 @@ class ViewEvaluator:
 
         # Primitive: single id
         if 'id' in selector:
-            book = self.session.query(Book).get(selector['id'])
+            book = self.session.get(Book, selector['id'])
             return {book} if book else set()
 
         # Abstraction: view reference
@@ -248,7 +248,67 @@ class ViewEvaluator:
             b = self._evaluate_selector(selectors[1], context)
             return a - b
 
+        # Primitive: sql - execute raw SQL to get book IDs
+        if 'sql' in selector:
+            return self._evaluate_sql_selector(selector['sql'], context)
+
         raise ValueError(f"Unknown selector type in {context}: {list(selector.keys())}")
+
+    def _evaluate_sql_selector(self, sql_query: str, context: str) -> Set[Book]:
+        """
+        Evaluate a raw SQL selector to get book IDs.
+
+        The SQL query must return book IDs in the first column. Only SELECT
+        queries are allowed for security.
+
+        Args:
+            sql_query: SQL query that returns book IDs
+            context: Context for error messages
+
+        Returns:
+            Set of Book objects matching the IDs
+
+        Examples:
+            {sql: "SELECT id FROM books WHERE language = 'en'"}
+            {sql: "SELECT book_id FROM book_subjects WHERE subject_id = 1"}
+        """
+        import sqlite3
+
+        # Security check: only allow SELECT queries
+        query_stripped = sql_query.strip().upper()
+        if not query_stripped.startswith('SELECT'):
+            raise ValueError(f"SQL selector must be a SELECT query in {context}")
+
+        # Check for dangerous operations
+        dangerous = ['DROP', 'DELETE', 'INSERT', 'UPDATE', 'CREATE', 'ALTER', 'ATTACH', 'DETACH']
+        for pattern in dangerous:
+            if pattern in query_stripped:
+                raise ValueError(f"SQL selector contains disallowed keyword '{pattern}' in {context}")
+
+        # Get the database path from the session
+        # SQLAlchemy 2.x uses engine.url.database
+        engine = self.session.get_bind()
+        db_path = engine.url.database
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute(sql_query)
+            rows = cursor.fetchall()
+            conn.close()
+
+            # Extract book IDs from the first column
+            book_ids = [row[0] for row in rows if row[0] is not None]
+
+            if not book_ids:
+                return set()
+
+            # Fetch books by ID
+            books = self.session.query(Book).filter(Book.id.in_(book_ids)).all()
+            return set(books)
+
+        except sqlite3.Error as e:
+            raise ValueError(f"SQL error in {context}: {e}")
 
     def _evaluate_filter(
         self,

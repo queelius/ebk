@@ -1,261 +1,259 @@
 # Quick Start Guide
 
-This guide will help you get started with ebk in just a few minutes.
+Get started with ebk in just a few minutes.
 
-## 1. Initialize Configuration
-
-First, set up your configuration:
+## 1. Create Your Library
 
 ```bash
-# Create default configuration file
-ebk config init
-
-# View current configuration
-ebk config show
-
-# Set default library path (optional)
-ebk config set library.default_path ~/my-ebooks
+# Initialize a new library
+ebk init ~/my-library
 ```
 
-## 2. Create Your First Library
-
-### Initialize a New Library
-
-```bash
-# Create new library
-ebk init ~/my-ebooks
-```
-
-This creates a directory structure with:
-- `library.db` - SQLite database
-- `files/` - Ebook storage (hash-prefixed)
+This creates:
+- `library.db` - SQLite database with FTS5 full-text search
+- `files/` - Hash-prefixed ebook storage
 - `covers/` - Cover images and thumbnails
+
+## 2. Import Books
+
+### Single File
+
+```bash
+ebk import add book.pdf ~/my-library
+ebk import add ~/Downloads/book.epub ~/my-library
+```
+
+### Batch Import
+
+```bash
+# Import all ebooks from a folder
+ebk import folder ~/Downloads/ebooks ~/my-library
+
+# With specific extensions
+ebk import folder ~/Downloads ~/my-library --extensions pdf,epub
+```
 
 ### From Calibre
 
-If you have an existing Calibre library:
-
 ```bash
-ebk import-calibre ~/Calibre/Library --output ~/my-ebooks
+ebk import calibre ~/Calibre/Library ~/my-library
 ```
 
-### From Raw eBooks
-
-If you have a folder of PDF/EPUB files:
+### From OPDS Feed
 
 ```bash
-# Import single file
-ebk import book.pdf ~/my-ebooks
-
-# Import multiple files
-ebk import ~/Downloads/*.pdf ~/my-ebooks
-
-# Import directory
-ebk import ~/Downloads/ebooks ~/my-ebooks --recursive
+ebk import opds "https://example.com/opds/catalog.xml" ~/my-library
 ```
 
-## 3. Basic Operations
+### By ISBN
+
+```bash
+ebk import isbn 978-0201633610 ~/my-library
+```
+
+## 3. Browse Your Library
 
 ### List Books
 
 ```bash
 # List all books
-ebk list ~/my-ebooks
+ebk list ~/my-library
 
-# List with filters
-ebk list ~/my-ebooks --author "Knuth" --language en
-ebk list ~/my-ebooks --format pdf --rating 4
-
-# Limit results
-ebk list ~/my-ebooks --limit 20
+# With filters
+ebk list ~/my-library --author "Knuth" --language en
+ebk list ~/my-library --limit 20 --offset 40  # Page 3
 ```
 
-### Search Books
+### Search
 
 ```bash
-# Full-text search (searches title, description, extracted text)
-ebk search "Python programming" ~/my-ebooks
+# Full-text search
+ebk search "machine learning" ~/my-library
 
-# Search specific fields
-ebk search "machine learning" ~/my-ebooks --fields title,description
-
-# Advanced filters
-ebk search "algorithms" ~/my-ebooks --language en --author Knuth
+# Field-specific search
+ebk search "author:Knuth" ~/my-library
+ebk search "title:Python language:en" ~/my-library
+ebk search "rating:>=4 subject:Algorithms" ~/my-library
 ```
 
-### View Statistics
+### View Details
 
 ```bash
-# Show library statistics
-ebk stats ~/my-ebooks
-
-# JSON output
-ebk stats ~/my-ebooks --format json
+ebk book info 42 ~/my-library
 ```
 
-## 4. Manage Reading Status
+### Statistics
+
+```bash
+ebk stats ~/my-library
+```
+
+## 4. Organize with Tags
+
+### Add Tags
+
+```bash
+# Hierarchical tags
+ebk tag list ~/my-library
+ebk tag tree ~/my-library
+
+# Tag a book (use the shell for this)
+ebk shell ~/my-library
+ebk:/$ ln /books/42 /tags/Work/Projects
+```
+
+### Create Views
+
+Views are named, composable library subsets:
+
+```bash
+# Create a view of favorite Python books
+ebk view create python-favorites ~/my-library \
+    --subject Python \
+    --favorite
+
+# List views
+ebk view list ~/my-library
+
+# Show books in a view
+ebk view show python-favorites ~/my-library
+```
+
+## 5. Track Your Reading
 
 ```bash
 # Rate a book (0-5 stars)
-ebk rate ~/my-ebooks <book-id> 5
+ebk book rate 42 ~/my-library --rating 5
 
 # Mark as favorite
-ebk favorite ~/my-ebooks <book-id>
+ebk book favorite 42 ~/my-library
 
-# Add personal tags
-ebk tag ~/my-ebooks <book-id> --add "must-read" "technical"
+# Set reading status
+ebk book status 42 ~/my-library --set reading
 
-# Remove tags
-ebk tag ~/my-ebooks <book-id> --remove "to-read"
+# Track progress
+ebk book progress 42 ~/my-library --set 45.5
 ```
 
-## 5. Web Interface
+## 6. Interactive Shell
 
-Launch the web server to browse your library:
+Navigate your library like a Unix filesystem:
 
 ```bash
-# Start server
-ebk serve ~/my-ebooks
+ebk shell ~/my-library
 
-# Custom port
-ebk serve ~/my-ebooks --port 8080
+# Inside the shell:
+ebk:/$ ls
+authors/  books/  subjects/  tags/  similar/
 
-# Auto-open browser
-ebk serve ~/my-ebooks --auto-open
+ebk:/$ cd books/
+ebk:/books$ ls | head 10
 
-# Configure defaults
-ebk config set server.port 8000
-ebk config set server.auto_open_browser true
+ebk:/books$ cd 42/
+ebk:/books/42$ ls
+.metadata  .files  .covers  .similar
+
+ebk:/books/42$ cat .metadata
+{title: "Introduction to Algorithms", ...}
+
+ebk:/$ find author:Knuth rating:>=4
+ebk:/$ find subject:Python | wc
 ```
 
-Then open `http://localhost:8000` in your browser.
-
-## 6. AI-Powered Features (Optional)
-
-Enrich your library metadata using LLMs:
-
-### Setup Ollama
+## 7. Export Your Library
 
 ```bash
-# Install Ollama from https://ollama.com
-curl https://ollama.ai/install.sh | sh
+# JSON (complete metadata)
+ebk export json ~/my-library ~/backup.json
 
-# Pull a model
-ollama pull llama3.2
+# CSV
+ebk export csv ~/my-library ~/catalog.csv
+
+# Goodreads (for import into Goodreads)
+ebk export goodreads ~/my-library ~/goodreads.csv
+
+# Calibre (for import into Calibre)
+ebk export calibre ~/my-library ~/calibre.csv
+
+# HTML catalog
+ebk export html ~/my-library ~/catalog.html
+
+# OPDS feed (for e-reader apps)
+ebk export opds ~/my-library ~/opds/catalog.xml
 ```
 
-### Configure ebk
+## 8. Web Interface
 
 ```bash
-# Set up LLM provider
-ebk config set llm.provider ollama
-ebk config set llm.model llama3.2
-ebk config set llm.host localhost
+ebk serve ~/my-library
+# Open http://localhost:8000
 ```
 
-### Enrich Metadata
+## 9. Configuration (Optional)
+
+Set defaults to avoid repeating the library path:
 
 ```bash
-# Generate tags for all books
-ebk enrich ~/my-ebooks --generate-tags
+# Initialize config file
+ebk config init
 
-# Full enrichment
-ebk enrich ~/my-ebooks \
-  --generate-tags \
-  --categorize \
-  --enhance-descriptions
+# Set default library
+ebk config set library.default_path ~/my-library
 
-# Preview changes (dry run)
-ebk enrich ~/my-ebooks --generate-tags --dry-run
+# Now these work without specifying path:
+ebk list
+ebk search "Python"
+ebk stats
 ```
 
-## Using the Python API
+## Python API
 
 ```python
 from pathlib import Path
 from ebk.library_db import Library
 
-# Open library
-lib = Library.open(Path("~/my-ebooks"))
+lib = Library.open(Path("~/my-library"))
 
-# Search for books
+# Search
 results = lib.search("Python programming")
-for book in results:
-    print(f"{book.title} by {', '.join([a.name for a in book.authors])}")
 
-# Fluent query interface
-results = (lib.query()
-    .filter_by_language("en")
+# Fluent query
+books = (lib.query()
     .filter_by_author("Knuth")
+    .filter_by_language("en")
     .order_by("title")
     .limit(10)
     .all())
 
-# Update reading status
-lib.update_reading_status(book_id=42, status="reading", rating=4)
+# Personal metadata
+from ebk.services import PersonalMetadataService
+pm = PersonalMetadataService(lib.session)
+pm.set_rating(42, 5.0)
+pm.set_reading_status(42, "reading")
 
-# Add tags
-lib.add_tags(book_id=42, tags=["must-read", "algorithms"])
-
-# Get statistics
-stats = lib.stats()
-print(f"Total books: {stats['total_books']}")
-
-# Always close
 lib.close()
 ```
 
-## Quick Reference Card
+## Quick Reference
 
-### Common Commands
-
-```bash
-# Initialize
-ebk init ~/library
-
-# Import
-ebk import book.pdf ~/library
-ebk import-calibre ~/Calibre ~/library
-
-# Browse
-ebk list ~/library
-ebk search "query" ~/library
-ebk stats ~/library
-
-# Web interface
-ebk serve ~/library
-
-# AI enrichment
-ebk enrich ~/library --generate-tags
-
-# Configuration
-ebk config show
-ebk config set key value
-```
-
-### Library Structure
-
-```
-~/my-ebooks/
-├── library.db           # SQLite database
-├── files/               # Ebook files (hash-prefixed)
-│   ├── ab/
-│   │   └── abc123...pdf
-│   └── cd/
-│       └── cde456...epub
-├── covers/              # Cover images
-│   ├── ab/
-│   │   └── abc123.jpg
-│   └── thumbnails/
-│       └── abc123_thumb.jpg
-└── vectors/             # Vector embeddings (future)
-```
+| Task | Command |
+|------|---------|
+| Create library | `ebk init ~/library` |
+| Import file | `ebk import add book.pdf ~/library` |
+| Import folder | `ebk import folder ~/books ~/library` |
+| List books | `ebk list ~/library` |
+| Search | `ebk search "query" ~/library` |
+| Book info | `ebk book info 42 ~/library` |
+| Rate book | `ebk book rate 42 ~/library --rating 5` |
+| Set status | `ebk book status 42 ~/library --set reading` |
+| Export | `ebk export json ~/library ~/out.json` |
+| Web UI | `ebk serve ~/library` |
+| Shell | `ebk shell ~/library` |
 
 ## Next Steps
 
-- [Configuration Guide](configuration.md) - Customize settings
-- [LLM Features](../user-guide/llm-features.md) - AI-powered enrichment
-- [Web Server](../user-guide/server.md) - Web interface details
-- [CLI Reference](../user-guide/cli.md) - Complete command reference
+- [Configuration](configuration.md) - Customize defaults
+- [CLI Reference](../user-guide/cli.md) - Complete command documentation
 - [Python API](../user-guide/api.md) - Programmatic access
-- [Import/Export](../user-guide/import-export.md) - Data portability
+- [Search Syntax](../user-guide/search.md) - Advanced queries
+- [Import/Export](../user-guide/import-export.md) - Data formats

@@ -2259,6 +2259,14 @@ def get_web_interface() -> str:
                         Refresh
                     </div>
                 </div>
+                <div class="nav-section" id="views-section">
+                    <div class="nav-section-title">Views</div>
+                    <div id="views-list">
+                        <div class="nav-item" style="color: var(--text-muted); font-style: italic;">
+                            Loading views...
+                        </div>
+                    </div>
+                </div>
             </nav>
             <div class="sidebar-footer">
                 <div style="font-size: 0.75rem; color: var(--text-muted);">
@@ -2687,12 +2695,15 @@ def get_web_interface() -> str:
         let totalBooks = 0;
         let currentView = 'grid';
         let currentFilter = 'all';
+        let currentViewName = null;  // Name of the view when filtering by view
         let isSearching = false;
+        let availableViews = [];  // Cached list of views
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             initTheme();
             loadStats();
+            loadViews();
             restoreStateFromURL();
             loadBooks();
             setupEventListeners();
@@ -2998,8 +3009,10 @@ def get_web_interface() -> str:
 
         function setFilter(filter) {
             currentFilter = filter;
+            currentViewName = null;  // Clear view selection
             currentPage = 1;
             updateNavItems();
+            updateViewNavItems();
             updateURL();
             loadBooks();
             if (window.innerWidth < 1024) toggleSidebar();
@@ -3021,10 +3034,86 @@ def get_web_interface() -> str:
             }
         }
 
+        // Views management
+        async function loadViews() {
+            try {
+                const response = await fetch('/api/views');
+                if (response.ok) {
+                    availableViews = await response.json();
+                    renderViewsList();
+                }
+            } catch (error) {
+                console.error('Failed to load views:', error);
+                document.getElementById('views-list').innerHTML =
+                    '<div class="nav-item" style="color: var(--text-muted);">Failed to load views</div>';
+            }
+        }
+
+        function renderViewsList() {
+            const container = document.getElementById('views-list');
+
+            // Filter to only show user-defined views (not built-ins which are in Library section)
+            const userViews = availableViews.filter(v => !v.builtin);
+
+            if (userViews.length === 0) {
+                container.innerHTML = '<div class="nav-item" style="color: var(--text-muted); font-style: italic;">No custom views</div>';
+                return;
+            }
+
+            container.innerHTML = userViews.map(view => `
+                <div class="nav-item ${currentFilter === 'view' && currentViewName === view.name ? 'active' : ''}"
+                     data-view="${escapeHtml(view.name)}"
+                     onclick="setViewFilter('${escapeHtml(view.name)}')"
+                     title="${escapeHtml(view.description || '')}">
+                    <span class="nav-item-icon">&#128209;</span>
+                    ${escapeHtml(view.name)}
+                    ${view.count !== null ? `<span class="nav-item-count">${view.count}</span>` : ''}
+                </div>
+            `).join('');
+        }
+
+        async function setViewFilter(viewName) {
+            currentFilter = 'view';
+            currentViewName = viewName;
+            currentPage = 1;
+            updateNavItems();
+            updateViewNavItems();
+            updateURL();
+
+            // Load books from the view
+            try {
+                const response = await fetch(`/api/views/${encodeURIComponent(viewName)}/books?limit=${booksPerPage}&offset=${(currentPage-1)*booksPerPage}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    books = data.books;
+                    totalBooks = data.total;
+                    renderBooks();
+                    updateResultsInfo();
+                } else {
+                    showNotification('Failed to load view', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to load view:', error);
+                showNotification('Failed to load view', 'error');
+            }
+
+            if (window.innerWidth < 1024) toggleSidebar();
+        }
+
+        function updateViewNavItems() {
+            document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+                item.classList.toggle('active', currentFilter === 'view' && item.dataset.view === currentViewName);
+            });
+        }
+
         function updateResultsInfo() {
             const info = document.getElementById('results-info');
             if (isSearching) {
                 info.textContent = totalBooks + ' results found';
+            } else if (currentFilter === 'view' && currentViewName) {
+                const start = (currentPage - 1) * booksPerPage + 1;
+                const end = Math.min(currentPage * booksPerPage, totalBooks);
+                info.textContent = `View: ${currentViewName} - Showing ${start}-${end} of ${totalBooks} books`;
             } else {
                 const start = (currentPage - 1) * booksPerPage + 1;
                 const end = Math.min(currentPage * booksPerPage, totalBooks);

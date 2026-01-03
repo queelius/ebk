@@ -424,15 +424,16 @@ class TestTagMetadata:
     def test_created_at_timestamp(self, tag_service):
         """Test that created_at is set automatically."""
         import time
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        before = datetime.utcnow()
+        # Use naive UTC times since SQLite stores without timezone
+        before = datetime.now(timezone.utc).replace(tzinfo=None)
         time.sleep(0.01)  # Small delay
 
         tag = tag_service.get_or_create_tag("Work")
 
         time.sleep(0.01)
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc).replace(tzinfo=None)
 
         assert tag.created_at is not None
         assert before <= tag.created_at <= after

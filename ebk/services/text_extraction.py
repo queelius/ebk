@@ -236,7 +236,7 @@ class TextExtractionService:
         try:
             # Get book title and description for FTS
             from ..db.models import Book
-            book = session.query(Book).get(book_id)
+            book = session.get(Book, book_id)
 
             if not book:
                 return

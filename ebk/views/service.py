@@ -87,7 +87,7 @@ class ViewService:
         self.session.add(view)
         self.session.commit()
 
-        logger.info(f"Created view '{name}'")
+        logger.debug(f"Created view '{name}'")
         return view
 
     def get(self, name: str) -> Optional[View]:
@@ -159,7 +159,7 @@ class ViewService:
             view.description = description
 
         self.session.commit()
-        logger.info(f"Updated view '{name}'")
+        logger.debug(f"Updated view '{name}'")
         return view
 
     def delete(self, name: str) -> bool:
@@ -181,7 +181,7 @@ class ViewService:
 
         self.session.delete(view)
         self.session.commit()
-        logger.info(f"Deleted view '{name}'")
+        logger.debug(f"Deleted view '{name}'")
         return True
 
     def rename(self, old_name: str, new_name: str) -> View:
@@ -198,7 +198,7 @@ class ViewService:
 
         view.name = new_name
         self.session.commit()
-        logger.info(f"Renamed view '{old_name}' to '{new_name}'")
+        logger.debug(f"Renamed view '{old_name}' to '{new_name}'")
         return view
 
     # =========================================================================
@@ -297,7 +297,7 @@ class ViewService:
         view.definition = defn
         view.cached_count = None
         self.session.commit()
-        logger.info(f"Added book {book_id} to view '{view_name}'")
+        logger.debug(f"Added book {book_id} to view '{view_name}'")
 
     def remove_book(self, view_name: str, book_id: int) -> None:
         """
@@ -322,7 +322,7 @@ class ViewService:
         view.definition = defn
         view.cached_count = None
         self.session.commit()
-        logger.info(f"Removed book {book_id} from view '{view_name}'")
+        logger.debug(f"Removed book {book_id} from view '{view_name}'")
 
     # =========================================================================
     # Override Management
@@ -354,7 +354,7 @@ class ViewService:
             raise ValueError(f"View '{view_name}' not found")
 
         # Check book exists
-        book = self.session.query(Book).get(book_id)
+        book = self.session.get(Book, book_id)
         if not book:
             raise ValueError(f"Book {book_id} not found")
 
@@ -375,7 +375,7 @@ class ViewService:
             override.position = position
 
         self.session.commit()
-        logger.info(f"Set override for book {book_id} in view '{view_name}'")
+        logger.debug(f"Set override for book {book_id} in view '{view_name}'")
         return override
 
     def unset_override(
@@ -419,7 +419,7 @@ class ViewService:
             raise ValueError(f"Unknown field '{field}'")
 
         self.session.commit()
-        logger.info(f"Unset override for book {book_id} in view '{view_name}'")
+        logger.debug(f"Unset override for book {book_id} in view '{view_name}'")
         return True
 
     def get_overrides(self, view_name: str) -> List[ViewOverride]:

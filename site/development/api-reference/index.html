@@ -1131,6 +1131,29 @@
   
   
     <li class="md-nav__item">
+      <a href="../PLUGIN_ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Plugin System
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../contributing/" class="md-nav__link">
         
   
@@ -1202,6 +1225,75 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#core-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Core Modules
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Modules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ebklibrary_db" class="md-nav__link">
+    <span class="md-ellipsis">
+      ebk.library_db
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ebkdbmodels" class="md-nav__link">
+    <span class="md-ellipsis">
+      ebk.db.models
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ebkservices" class="md-nav__link">
+    <span class="md-ellipsis">
+      ebk.services
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ebkviews" class="md-nav__link">
+    <span class="md-ellipsis">
+      ebk.views
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ebksimilarity" class="md-nav__link">
+    <span class="md-ellipsis">
+      ebk.similarity
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ebkplugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      ebk.plugins
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
@@ -1346,11 +1438,58 @@
 
 
 <h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
-<p>Complete API reference documentation.</p>
+<p>Complete API reference documentation for ebk developers.</p>
+<h2 id="core-modules">Core Modules<a class="headerlink" href="#core-modules" title="Permanent link">&para;</a></h2>
+<h3 id="ebklibrary_db">ebk.library_db<a class="headerlink" href="#ebklibrary_db" title="Permanent link">&para;</a></h3>
+<p>The main <code>Library</code> class for all library operations.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ebk.library_db</span><span class="w"> </span><span class="kn">import</span> <span class="n">Library</span>
+</code></pre></div>
+<p>See <a href="../../user-guide/api/">Python API Guide</a> for usage examples.</p>
+<h3 id="ebkdbmodels">ebk.db.models<a class="headerlink" href="#ebkdbmodels" title="Permanent link">&para;</a></h3>
+<p>SQLAlchemy ORM models:</p>
+<ul>
+<li><code>Book</code> - Main book entity</li>
+<li><code>Author</code> - Author model</li>
+<li><code>Subject</code> - Subject/category model</li>
+<li><code>Tag</code> - Hierarchical user tags</li>
+<li><code>File</code> - Ebook file records</li>
+<li><code>Cover</code> - Cover images</li>
+<li><code>PersonalMetadata</code> - Reading status, ratings</li>
+<li><code>Identifier</code> - ISBN, DOI, etc.</li>
+<li><code>Annotation</code> - Notes and highlights</li>
+</ul>
+<h3 id="ebkservices">ebk.services<a class="headerlink" href="#ebkservices" title="Permanent link">&para;</a></h3>
+<p>Service layer modules:</p>
+<ul>
+<li><code>ImportService</code> - Book import and metadata extraction</li>
+<li><code>ExportService</code> - Export to JSON, CSV, HTML, OPDS</li>
+<li><code>PersonalMetadataService</code> - Ratings, favorites, reading status</li>
+<li><code>TextExtractionService</code> - Full-text extraction</li>
+</ul>
+<h3 id="ebkviews">ebk.views<a class="headerlink" href="#ebkviews" title="Permanent link">&para;</a></h3>
+<p>View DSL for saved queries:</p>
+<ul>
+<li><code>ViewService</code> - Create, list, evaluate views</li>
+<li>View DSL parser and compiler</li>
+</ul>
+<h3 id="ebksimilarity">ebk.similarity<a class="headerlink" href="#ebksimilarity" title="Permanent link">&para;</a></h3>
+<p>Book similarity and recommendations:</p>
+<ul>
+<li><code>find_similar_books()</code> - Find similar books</li>
+<li>TF-IDF and metadata-based similarity</li>
+</ul>
+<h3 id="ebkplugins">ebk.plugins<a class="headerlink" href="#ebkplugins" title="Permanent link">&para;</a></h3>
+<p>Plugin system:</p>
+<ul>
+<li><code>Plugin</code> - Base plugin class</li>
+<li><code>HookRegistry</code> - Event hooks</li>
+<li><code>PluginRegistry</code> - Plugin discovery</li>
+</ul>
 <h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../../API_GUIDE/">API Guide</a> - Detailed API documentation</li>
-<li><a href="../../user-guide/api/">Python API</a> - API usage guide</li>
+<li><a href="../../user-guide/api/">Python API Guide</a> - Detailed API usage</li>
+<li><a href="../architecture/">Architecture</a> - System architecture</li>
+<li><a href="../PLUGIN_ARCHITECTURE/">Plugin System</a> - Plugin development</li>
 </ul>
 
 

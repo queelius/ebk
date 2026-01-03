@@ -55,7 +55,7 @@ class Library:
         init_db(library_path, echo=echo)
         session = get_session()
 
-        logger.info(f"Opened library at {library_path}")
+        logger.debug(f"Opened library at {library_path}")
         return cls(library_path, session)
 
     def close(self):
@@ -63,7 +63,7 @@ class Library:
         if self.session:
             self.session.close()
         close_db()
-        logger.info("Closed library")
+        logger.debug("Closed library")
 
     def add_book(self, file_path: Path, metadata: Dict[str, Any],
                  extract_text: bool = True, extract_cover: bool = True) -> Optional[Book]:
@@ -87,7 +87,7 @@ class Library:
         )
 
         if book:
-            logger.info(f"Added book: {book.title}")
+            logger.debug(f"Added book: {book.title}")
 
         return book
 
@@ -126,7 +126,7 @@ class Library:
 
     def get_book(self, book_id: int) -> Optional[Book]:
         """Get book by ID."""
-        return self.session.query(Book).get(book_id)
+        return self.session.get(Book, book_id)
 
     def get_book_by_unique_id(self, unique_id: str) -> Optional[Book]:
         """Get book by unique ID."""
@@ -352,7 +352,7 @@ class Library:
                 personal.date_finished = datetime.now()
 
             self.session.commit()
-            logger.info(f"Updated reading status for book {book_id}: {status}")
+            logger.debug(f"Updated reading status for book {book_id}: {status}")
 
     def set_favorite(self, book_id: int, favorite: bool = True):
         """
@@ -376,7 +376,7 @@ class Library:
             personal.favorite = favorite
 
         self.session.commit()
-        logger.info(f"Set favorite for book {book_id}: {favorite}")
+        logger.debug(f"Set favorite for book {book_id}: {favorite}")
 
     # Reading Queue Methods
 
@@ -428,7 +428,7 @@ class Library:
             personal.queue_position = position
 
         self.session.commit()
-        logger.info(f"Added book {book_id} to queue at position {personal.queue_position}")
+        logger.debug(f"Added book {book_id} to queue at position {personal.queue_position}")
 
     def remove_from_queue(self, book_id: int):
         """
@@ -453,7 +453,7 @@ class Library:
             ).update({PersonalMetadata.queue_position: PersonalMetadata.queue_position - 1})
 
             self.session.commit()
-            logger.info(f"Removed book {book_id} from queue")
+            logger.debug(f"Removed book {book_id} from queue")
 
     def reorder_queue(self, book_id: int, new_position: int):
         """
@@ -497,7 +497,7 @@ class Library:
 
         personal.queue_position = new_position
         self.session.commit()
-        logger.info(f"Moved book {book_id} from position {old_position} to {new_position}")
+        logger.debug(f"Moved book {book_id} from position {old_position} to {new_position}")
 
     def clear_queue(self):
         """Clear all books from the reading queue."""
@@ -507,7 +507,7 @@ class Library:
             PersonalMetadata.queue_position.isnot(None)
         ).update({PersonalMetadata.queue_position: None})
         self.session.commit()
-        logger.info("Cleared reading queue")
+        logger.debug("Cleared reading queue")
 
     def add_tags(self, book_id: int, tags: List[str]):
         """
@@ -533,7 +533,7 @@ class Library:
             personal.personal_tags = combined
 
         self.session.commit()
-        logger.info(f"Added tags to book {book_id}: {tags}")
+        logger.debug(f"Added tags to book {book_id}: {tags}")
 
     def remove_tags(self, book_id: int, tags: List[str]):
         """
@@ -552,7 +552,7 @@ class Library:
         if personal and personal.personal_tags:
             personal.personal_tags = [t for t in personal.personal_tags if t not in tags]
             self.session.commit()
-            logger.info(f"Removed tags from book {book_id}: {tags}")
+            logger.debug(f"Removed tags from book {book_id}: {tags}")
 
     def add_subject(self, book_id: int, subject_name: str):
         """
@@ -577,7 +577,7 @@ class Library:
         if subject not in book.subjects:
             book.subjects.append(subject)
             self.session.commit()
-            logger.info(f"Added subject '{subject_name}' to book {book_id}")
+            logger.debug(f"Added subject '{subject_name}' to book {book_id}")
 
     def add_annotation(self, book_id: int, content: str,
                       page: Optional[int] = None,
@@ -606,7 +606,7 @@ class Library:
         self.session.add(annotation)
         self.session.commit()
 
-        logger.info(f"Added annotation to book {book_id}")
+        logger.debug(f"Added annotation to book {book_id}")
         return annotation.id
 
     def get_annotations(self, book_id: int) -> List:
@@ -634,11 +634,11 @@ class Library:
         """
         from .db.models import Annotation
 
-        annotation = self.session.query(Annotation).get(annotation_id)
+        annotation = self.session.get(Annotation, annotation_id)
         if annotation:
             self.session.delete(annotation)
             self.session.commit()
-            logger.info(f"Deleted annotation {annotation_id}")
+            logger.debug(f"Deleted annotation {annotation_id}")
 
     def add_to_virtual_library(self, book_id: int, library_name: str):
         """
@@ -665,7 +665,7 @@ class Library:
                 personal.personal_tags = existing_libs
 
         self.session.commit()
-        logger.info(f"Added book {book_id} to virtual library '{library_name}'")
+        logger.debug(f"Added book {book_id} to virtual library '{library_name}'")
 
     def remove_from_virtual_library(self, book_id: int, library_name: str):
         """
@@ -684,7 +684,7 @@ class Library:
         if personal and personal.personal_tags:
             personal.personal_tags = [lib for lib in personal.personal_tags if lib != library_name]
             self.session.commit()
-            logger.info(f"Removed book {book_id} from virtual library '{library_name}'")
+            logger.debug(f"Removed book {book_id} from virtual library '{library_name}'")
 
     def get_virtual_library(self, library_name: str) -> List[Book]:
         """
@@ -748,7 +748,7 @@ class Library:
                 file_path = self.library_path / file.path
                 if file_path.exists():
                     file_path.unlink()
-                    logger.info(f"Deleted file: {file_path}")
+                    logger.debug(f"Deleted file: {file_path}")
 
             # Delete covers
             for cover in book.covers:
@@ -759,7 +759,265 @@ class Library:
         # Delete from database (cascade will handle related records)
         self.session.delete(book)
         self.session.commit()
-        logger.info(f"Deleted book: {book.title}")
+        logger.debug(f"Deleted book: {book.title}")
+
+    def merge_books(
+        self,
+        primary_id: int,
+        secondary_ids: List[int],
+        delete_secondary_files: bool = False,
+    ) -> Tuple[Optional[Book], List[int]]:
+        """
+        Merge multiple books into one, combining metadata and files.
+
+        The primary book absorbs metadata and files from secondary books.
+        Secondary books are deleted after merging.
+
+        Merge strategy:
+        - Scalar fields: Keep primary's value, fallback to secondary if empty
+        - Relationships (authors, subjects, tags): Union of all
+        - Files/covers: Move all to primary
+        - Personal metadata: Keep higher rating, combine dates
+
+        Args:
+            primary_id: ID of the book to keep (receives merged data)
+            secondary_ids: IDs of books to merge into primary (will be deleted)
+            delete_secondary_files: If True, delete physical files from secondaries
+                                   that duplicate primary's files (by hash)
+
+        Returns:
+            Tuple of (merged book, list of deleted book IDs)
+
+        Example:
+            >>> merged, deleted = lib.merge_books(42, [43, 44])
+            >>> print(f"Merged {len(deleted)} books into {merged.title}")
+        """
+        from .db.models import (
+            Book, Author, Subject, Tag, File, Cover, Contributor,
+            Identifier, PersonalMetadata, BookConcept, ReadingSession,
+            Annotation, utc_now
+        )
+
+        # Get primary book
+        primary = self.get_book(primary_id)
+        if not primary:
+            logger.error(f"Primary book {primary_id} not found")
+            return None, []
+
+        # Get secondary books
+        secondaries = []
+        for sid in secondary_ids:
+            if sid == primary_id:
+                continue  # Skip if same as primary
+            book = self.get_book(sid)
+            if book:
+                secondaries.append(book)
+            else:
+                logger.warning(f"Secondary book {sid} not found, skipping")
+
+        if not secondaries:
+            logger.warning("No valid secondary books to merge")
+            return primary, []
+
+        deleted_ids = []
+
+        # Track existing file hashes to detect duplicates
+        primary_hashes = {f.file_hash for f in primary.files}
+
+        for secondary in secondaries:
+            logger.debug(f"Merging '{secondary.title}' into '{primary.title}'")
+
+            # === Merge scalar fields (prefer non-empty) ===
+            if not primary.subtitle and secondary.subtitle:
+                primary.subtitle = secondary.subtitle
+            if not primary.sort_title and secondary.sort_title:
+                primary.sort_title = secondary.sort_title
+            if not primary.language and secondary.language:
+                primary.language = secondary.language
+            if not primary.publisher and secondary.publisher:
+                primary.publisher = secondary.publisher
+            if not primary.publication_date and secondary.publication_date:
+                primary.publication_date = secondary.publication_date
+            if not primary.series and secondary.series:
+                primary.series = secondary.series
+            if primary.series_index is None and secondary.series_index is not None:
+                primary.series_index = secondary.series_index
+            if not primary.edition and secondary.edition:
+                primary.edition = secondary.edition
+            if not primary.rights and secondary.rights:
+                primary.rights = secondary.rights
+            if not primary.source and secondary.source:
+                primary.source = secondary.source
+            # For description, prefer longer one if both exist
+            if secondary.description:
+                if not primary.description or len(secondary.description) > len(primary.description):
+                    primary.description = secondary.description
+            if primary.page_count is None and secondary.page_count:
+                primary.page_count = secondary.page_count
+            if primary.word_count is None and secondary.word_count:
+                primary.word_count = secondary.word_count
+            # Merge keywords arrays
+            if secondary.keywords:
+                if primary.keywords:
+                    primary.keywords = list(set(primary.keywords + secondary.keywords))
+                else:
+                    primary.keywords = secondary.keywords
+            if not primary.color and secondary.color:
+                primary.color = secondary.color
+            # Keep earliest created_at
+            if secondary.created_at and (not primary.created_at or secondary.created_at < primary.created_at):
+                primary.created_at = secondary.created_at
+
+            # === Merge relationships (union) ===
+            # Authors
+            existing_author_ids = {a.id for a in primary.authors}
+            for author in secondary.authors:
+                if author.id not in existing_author_ids:
+                    primary.authors.append(author)
+
+            # Subjects
+            existing_subject_ids = {s.id for s in primary.subjects}
+            for subject in secondary.subjects:
+                if subject.id not in existing_subject_ids:
+                    primary.subjects.append(subject)
+
+            # Tags
+            existing_tag_ids = {t.id for t in primary.tags}
+            for tag in secondary.tags:
+                if tag.id not in existing_tag_ids:
+                    primary.tags.append(tag)
+
+            # Contributors - move to primary using SQL
+            from .db.models import Contributor as ContributorModel
+            for contrib in list(secondary.contributors):
+                self.session.execute(
+                    update(ContributorModel).where(ContributorModel.id == contrib.id).values(book_id=primary.id)
+                )
+
+            # Identifiers - move unique ones to primary using SQL
+            from .db.models import Identifier as IdentifierModel
+            existing_identifiers = {(i.scheme, i.value) for i in primary.identifiers}
+            for ident in list(secondary.identifiers):
+                if (ident.scheme, ident.value) not in existing_identifiers:
+                    self.session.execute(
+                        update(IdentifierModel).where(IdentifierModel.id == ident.id).values(book_id=primary.id)
+                    )
+
+            # Files - move to primary (handle duplicates by hash)
+            # Must use SQL UPDATE to bypass cascade delete on the relationship
+            from sqlalchemy import update
+            from .db.models import File as FileModel
+
+            for file in list(secondary.files):
+                if file.file_hash in primary_hashes:
+                    # Duplicate file - explicitly delete
+                    if delete_secondary_files:
+                        file_path = self.library_path / file.path
+                        if file_path.exists():
+                            file_path.unlink()
+                            logger.debug(f"Deleted duplicate file: {file_path}")
+                    self.session.execute(
+                        update(FileModel).where(FileModel.id == file.id).values(book_id=None)
+                    )
+                    self.session.delete(file)
+                else:
+                    # Move file to primary using direct SQL to bypass cascade
+                    self.session.execute(
+                        update(FileModel).where(FileModel.id == file.id).values(book_id=primary.id)
+                    )
+                    primary_hashes.add(file.file_hash)
+
+            # Covers - move to primary using SQL to bypass cascade
+            from .db.models import Cover as CoverModel
+            for cover in list(secondary.covers):
+                self.session.execute(
+                    update(CoverModel).where(CoverModel.id == cover.id).values(
+                        book_id=primary.id,
+                        is_primary=False
+                    )
+                )
+
+            # Concepts - move to primary using SQL
+            from .db.models import BookConcept
+            for concept in list(secondary.concepts):
+                self.session.execute(
+                    update(BookConcept).where(BookConcept.id == concept.id).values(book_id=primary.id)
+                )
+
+            # Reading sessions - move to primary using SQL
+            from .db.models import ReadingSession
+            for sess in list(secondary.sessions):
+                self.session.execute(
+                    update(ReadingSession).where(ReadingSession.id == sess.id).values(book_id=primary.id)
+                )
+
+            # Annotations - move to primary using SQL
+            from .db.models import Annotation as AnnotationModel
+            for annotation in list(secondary.annotations):
+                self.session.execute(
+                    update(AnnotationModel).where(AnnotationModel.id == annotation.id).values(book_id=primary.id)
+                )
+
+            # Expire secondary so ORM doesn't cascade delete moved items
+            self.session.expire(secondary)
+            self.session.flush()
+
+            # Personal metadata - merge intelligently
+            if secondary.personal:
+                if primary.personal:
+                    # Keep higher rating
+                    if secondary.personal.rating and (
+                        not primary.personal.rating or
+                        secondary.personal.rating > primary.personal.rating
+                    ):
+                        primary.personal.rating = secondary.personal.rating
+                    # Keep "read" status over "unread"
+                    status_priority = {'read': 0, 'reading': 1, 'abandoned': 2, 'unread': 3}
+                    if status_priority.get(secondary.personal.reading_status, 3) < status_priority.get(primary.personal.reading_status, 3):
+                        primary.personal.reading_status = secondary.personal.reading_status
+                    # Keep higher progress
+                    if secondary.personal.reading_progress and (
+                        not primary.personal.reading_progress or
+                        secondary.personal.reading_progress > primary.personal.reading_progress
+                    ):
+                        primary.personal.reading_progress = secondary.personal.reading_progress
+                    # Keep favorite if either is favorite
+                    if secondary.personal.favorite:
+                        primary.personal.favorite = True
+                    # Keep earliest date_added
+                    if secondary.personal.date_added and (
+                        not primary.personal.date_added or
+                        secondary.personal.date_added < primary.personal.date_added
+                    ):
+                        primary.personal.date_added = secondary.personal.date_added
+                    # Keep dates if set
+                    if secondary.personal.date_started and not primary.personal.date_started:
+                        primary.personal.date_started = secondary.personal.date_started
+                    if secondary.personal.date_finished and not primary.personal.date_finished:
+                        primary.personal.date_finished = secondary.personal.date_finished
+                    # Merge personal_tags
+                    if secondary.personal.personal_tags:
+                        if primary.personal.personal_tags:
+                            primary.personal.personal_tags = list(set(
+                                primary.personal.personal_tags + secondary.personal.personal_tags
+                            ))
+                        else:
+                            primary.personal.personal_tags = secondary.personal.personal_tags
+                else:
+                    # Move secondary's personal metadata to primary
+                    secondary.personal.book_id = primary.id
+
+            # Delete secondary book
+            deleted_ids.append(secondary.id)
+            self.session.delete(secondary)
+
+        # Update primary's timestamp
+        primary.updated_at = utc_now()
+
+        self.session.commit()
+        logger.info(f"Merged {len(deleted_ids)} books into '{primary.title}' (ID: {primary.id})")
+
+        return primary, deleted_ids
 
     def find_similar(
         self,
@@ -806,9 +1064,22 @@ class Library:
         if not candidates:
             return []
 
-        # Configure similarity
+        # Configure similarity - auto-detect sparse data
         if similarity_config is None:
-            similarity_config = BookSimilarity().balanced()
+            # Check if query book has extracted text
+            has_extracted_text = False
+            for file in query_book.files:
+                if file.extracted_text and file.extracted_text.content:
+                    if len(file.extracted_text.content) > 500:  # Minimum useful text
+                        has_extracted_text = True
+                        break
+
+            if has_extracted_text:
+                similarity_config = BookSimilarity().balanced()
+                logger.debug(f"Using balanced preset for book with extracted text")
+            else:
+                similarity_config = BookSimilarity().sparse_friendly()
+                logger.debug(f"Using sparse_friendly preset for book without extracted text")
 
         # Fit on all candidates for performance
         similarity_config.fit(candidates)
@@ -816,7 +1087,7 @@ class Library:
         # Find similar books
         results = similarity_config.find_similar(query_book, candidates, top_k=top_k)
 
-        logger.info(
+        logger.debug(
             f"Found {len(results)} similar books to '{query_book.title}'"
         )
 
@@ -864,7 +1135,7 @@ class Library:
         similarity_config.fit(books)
         matrix = similarity_config.similarity_matrix(books)
 
-        logger.info(f"Computed {len(books)}x{len(books)} similarity matrix")
+        logger.debug(f"Computed {len(books)}x{len(books)} similarity matrix")
 
         return books, matrix
 

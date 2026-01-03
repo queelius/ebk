@@ -110,6 +110,32 @@ class BookSimilarity:
             .publisher(weight=0.5)
         )
 
+    def sparse_friendly(self) -> "BookSimilarity":
+        """Preset optimized for sparse data (limited or no extracted text).
+
+        Uses metadata-based similarity with optional description matching.
+        Works well when books lack extracted text or have minimal content.
+
+        Weights:
+        - Description (TF-IDF): 2.0 (if available)
+        - Authors (Jaccard): 3.0
+        - Subjects (Jaccard): 3.0
+        - Temporal (Gaussian): 1.0
+        - Language (Exact): 1.5
+        - Publisher (Jaccard): 1.0
+
+        Returns:
+            Self for chaining
+        """
+        return (
+            self.description(weight=2.0)
+            .authors(weight=3.0)
+            .subjects(weight=3.0)
+            .temporal(weight=1.0)
+            .language(weight=1.5)
+            .publisher(weight=1.0)
+        )
+
     # ===== Tier 2: Semantic Methods =====
 
     def content(

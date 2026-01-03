@@ -504,7 +504,7 @@ class TestRelationships:
         temp_library.session.commit()
 
         # File should be deleted
-        file = temp_library.session.query(File).get(file_id)
+        file = temp_library.session.get(File, file_id)
         assert file is None
 
     def test_book_personal_metadata_relationship(self, temp_library):

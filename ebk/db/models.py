@@ -4,7 +4,7 @@ SQLAlchemy models for ebk database.
 Clean, normalized schema with proper relationships and indexes.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from pathlib import Path
 import hashlib
@@ -18,6 +18,11 @@ from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.hybrid import hybrid_property
 
 Base = declarative_base()
+
+
+def utc_now():
+    """Return current UTC time as timezone-naive datetime for SQLite compatibility."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # Association tables for many-to-many relationships
@@ -44,7 +49,7 @@ book_tags = Table(
     Base.metadata,
     Column('book_id', Integer, ForeignKey('books.id', ondelete='CASCADE'), primary_key=True),
     Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True),
-    Column('created_at', DateTime, default=datetime.utcnow)  # When tag was added
+    Column('created_at', DateTime, default=utc_now)  # When tag was added
 )
 
 
@@ -82,8 +87,8 @@ class Book(Base):
     color = Column(String(7))  # Hex color code (e.g., #FF5733)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     authors = relationship('Author', secondary=book_authors, back_populates='books', lazy='selectin')
@@ -190,7 +195,7 @@ class Tag(Base):
     # Metadata
     description = Column(Text)  # Optional description of the tag
     color = Column(String(7))  # Hex color code for UI display (e.g., "#FF5733")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Self-referential relationship for hierarchy
     parent = relationship('Tag', remote_side=[id], backref='children')
@@ -314,7 +319,7 @@ class ExtractedText(Base):
 
     content = Column(Text, nullable=False)  # Full text - will use FTS5 virtual table
     content_hash = Column(String(64), nullable=False)
-    extracted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    extracted_at = Column(DateTime, default=utc_now, nullable=False)
 
     file = relationship('File', back_populates='extracted_text')
 
@@ -379,7 +384,7 @@ class Concept(Base):
     concept_type = Column(String(50), default='idea')  # definition, idea, theory, principle
     importance_score = Column(Float, default=0.0, index=True)  # PageRank score
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     book_concepts = relationship('BookConcept', back_populates='concept', cascade='all, delete-orphan')
@@ -440,7 +445,7 @@ class ReadingSession(Base):
     id = Column(Integer, primary_key=True)
     book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
 
-    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    start_time = Column(DateTime, default=utc_now, nullable=False)
     end_time = Column(DateTime)
     pages_read = Column(Integer, default=0)
 
@@ -471,7 +476,7 @@ class Annotation(Base):
     content = Column(Text, nullable=False)  # The highlighted text or note content
     color = Column(String(20))  # For highlights
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     book = relationship('Book', back_populates='annotations')
     session = relationship('ReadingSession')
@@ -501,7 +506,7 @@ class PersonalMetadata(Base):
     queue_position = Column(Integer)  # Position in reading queue (1-based, NULL = not queued)
 
     # Dates
-    date_added = Column(DateTime, default=datetime.utcnow, nullable=False)
+    date_added = Column(DateTime, default=utc_now, nullable=False)
     date_started = Column(DateTime)
     date_finished = Column(DateTime)
 
@@ -554,8 +559,8 @@ class View(Base):
     cached_at = Column(DateTime)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     overrides = relationship('ViewOverride', back_populates='view', cascade='all, delete-orphan')
@@ -586,8 +591,8 @@ class ViewOverride(Base):
     position = Column(Integer)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     view = relationship('View', back_populates='overrides')

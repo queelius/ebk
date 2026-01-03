@@ -11,7 +11,7 @@ Provides an OPDS 1.2 compatible catalog feed for e-reader apps like:
 OPDS Spec: https://specs.opds.io/opds-1.2
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List
 from urllib.parse import quote, urlencode
@@ -67,7 +67,7 @@ def escape_xml(text: str) -> str:
 def format_datetime(dt: Optional[datetime] = None) -> str:
     """Format datetime for Atom feed."""
     if dt is None:
-        dt = datetime.utcnow()
+        dt = datetime.now(timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

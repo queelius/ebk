@@ -75,7 +75,7 @@ class PersonalMetadataService:
         personal = self.get_or_create(book_id)
         personal.rating = rating
         self.session.commit()
-        logger.info(f"Set rating for book {book_id}: {rating}")
+        logger.debug(f"Set rating for book {book_id}: {rating}")
         return personal
 
     def set_favorite(self, book_id: int, is_favorite: bool = True) -> PersonalMetadata:
@@ -92,7 +92,7 @@ class PersonalMetadataService:
         personal = self.get_or_create(book_id)
         personal.favorite = is_favorite
         self.session.commit()
-        logger.info(f"Set favorite for book {book_id}: {is_favorite}")
+        logger.debug(f"Set favorite for book {book_id}: {is_favorite}")
         return personal
 
     def set_reading_status(
@@ -133,7 +133,7 @@ class PersonalMetadataService:
             personal.reading_progress = 100
 
         self.session.commit()
-        logger.info(f"Set reading status for book {book_id}: {status}")
+        logger.debug(f"Set reading status for book {book_id}: {status}")
         return personal
 
     def update_progress(self, book_id: int, progress: int) -> PersonalMetadata:
@@ -163,7 +163,7 @@ class PersonalMetadataService:
             personal.date_finished = datetime.now()
 
         self.session.commit()
-        logger.info(f"Updated progress for book {book_id}: {progress}%")
+        logger.debug(f"Updated progress for book {book_id}: {progress}%")
         return personal
 
     def set_owned(self, book_id: int, owned: bool = True) -> PersonalMetadata:
@@ -180,7 +180,7 @@ class PersonalMetadataService:
         personal = self.get_or_create(book_id)
         personal.owned = owned
         self.session.commit()
-        logger.info(f"Set owned for book {book_id}: {owned}")
+        logger.debug(f"Set owned for book {book_id}: {owned}")
         return personal
 
     def add_personal_tags(self, book_id: int, tags: List[str]) -> PersonalMetadata:
@@ -204,7 +204,7 @@ class PersonalMetadataService:
 
         personal.personal_tags = existing_tags
         self.session.commit()
-        logger.info(f"Added personal tags to book {book_id}: {tags}")
+        logger.debug(f"Added personal tags to book {book_id}: {tags}")
         return personal
 
     def remove_personal_tags(self, book_id: int, tags: List[str]) -> PersonalMetadata:
@@ -224,7 +224,7 @@ class PersonalMetadataService:
 
         personal.personal_tags = [t for t in personal.personal_tags if t not in tags]
         self.session.commit()
-        logger.info(f"Removed personal tags from book {book_id}: {tags}")
+        logger.debug(f"Removed personal tags from book {book_id}: {tags}")
         return personal
 
     def get_favorites(self) -> List[Book]:
