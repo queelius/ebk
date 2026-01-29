@@ -4,6 +4,8 @@ Base abstract LLM provider interface.
 This module defines the abstract base class that all LLM providers must implement.
 """
 
+import json
+import re
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, AsyncIterator
 from dataclasses import dataclass
@@ -137,7 +139,6 @@ class BaseLLMProvider(ABC):
         """
         pass
 
-    @abstractmethod
     async def complete_json(
         self,
         prompt: str,
@@ -147,6 +148,10 @@ class BaseLLMProvider(ABC):
     ) -> Dict[str, Any]:
         """
         Generate a JSON completion.
+
+        Builds a JSON-focused system/user prompt, delegates to complete(),
+        and parses the result. Subclasses can override to add provider-specific
+        behavior (e.g., Ollama's format="json" parameter).
 
         Args:
             prompt: The user prompt
@@ -160,7 +165,67 @@ class BaseLLMProvider(ABC):
         Raises:
             Exception: If completion or parsing fails
         """
-        pass
+        # Enhance prompt for JSON output
+        json_system = "You are a helpful assistant that responds only in valid JSON format."
+        if system_prompt:
+            json_system = f"{system_prompt}\n\n{json_system}"
+
+        json_prompt = f"{prompt}\n\nRespond with valid JSON only. Do not include any explanation or markdown formatting."
+
+        if schema:
+            json_prompt += f"\n\nFollow this schema:\n```json\n{json.dumps(schema, indent=2)}\n```"
+
+        response = await self.complete(json_prompt, system_prompt=json_system, **kwargs)
+
+        # Parse JSON from response
+        return self._parse_json_response(response.content)
+
+    def _parse_json_response(self, content: str) -> Dict[str, Any]:
+        """
+        Parse JSON from response content.
+
+        Handles common issues like markdown code blocks.
+        """
+        try:
+            # Try direct parse first
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+
+        # Try to extract JSON from markdown code block
+        cleaned = content.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        elif cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+
+        cleaned = cleaned.strip()
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # Try to find JSON object in text
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+
+        # Last resort: try to find JSON array
+        json_match = re.search(r'\[.*\]', content, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError(f"Failed to parse JSON from response: {content[:200]}...")
 
     async def complete_streaming(
         self,

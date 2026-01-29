@@ -274,6 +274,37 @@ class AnnotationExtractionService:
         return annotations
 
 
+def extract_annotations_from_book(
+    book,
+    library_path: Path,
+    file_format: Optional[str] = None
+) -> List[ExtractedAnnotation]:
+    """
+    Extract annotations from a book's files (without saving to database).
+
+    Args:
+        book: Book ORM instance with files relationship loaded
+        library_path: Path to the library root directory
+        file_format: Optional specific format to extract from (e.g., 'pdf')
+
+    Returns:
+        List of extracted annotations
+    """
+    service = AnnotationExtractionService(library_path)
+    all_annotations = []
+
+    for file in book.files:
+        # Skip if format filter specified and doesn't match
+        if file_format and file.format.lower() != file_format.lower():
+            continue
+
+        file_path = library_path / file.path
+        annotations = service.extract_annotations(file_path)
+        all_annotations.extend(annotations)
+
+    return all_annotations
+
+
 def extract_and_save_annotations(
     library,
     book_id: int,
@@ -295,34 +326,26 @@ def extract_and_save_annotations(
         logger.error(f"Book {book_id} not found")
         return 0
 
-    service = AnnotationExtractionService(library.library_path)
+    annotations = extract_annotations_from_book(book, library.library_path, file_format)
     total_saved = 0
 
-    for file in book.files:
-        # Skip if format filter specified and doesn't match
-        if file_format and file.format.lower() != file_format.lower():
+    for annot in annotations:
+        # Skip duplicates (same content, same page, same type)
+        existing = [a for a in book.annotations
+                   if a.content == annot.content
+                   and a.page_number == annot.page_number
+                   and a.annotation_type == annot.annotation_type]
+        if existing:
             continue
 
-        file_path = library.library_path / file.path
-        annotations = service.extract_annotations(file_path)
-
-        for annot in annotations:
-            # Skip duplicates (same content, same page, same type)
-            existing = [a for a in book.annotations
-                       if a.content == annot.content
-                       and a.page_number == annot.page_number
-                       and a.annotation_type == annot.annotation_type]
-            if existing:
-                continue
-
-            library.add_annotation(
-                book_id=book_id,
-                content=annot.content,
-                annotation_type=annot.annotation_type,
-                page_number=annot.page_number,
-                position=annot.position,
-                color=annot.color
-            )
-            total_saved += 1
+        library.add_annotation(
+            book_id=book_id,
+            content=annot.content,
+            annotation_type=annot.annotation_type,
+            page_number=annot.page_number,
+            position=annot.position,
+            color=annot.color
+        )
+        total_saved += 1
 
     return total_saved

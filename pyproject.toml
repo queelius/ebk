@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ebk"
-version = "0.4.3"
+version = "0.4.4"
 description = "A lightweight, extensible tool for managing eBook metadata"
 readme = "README.md"
 license = {text = "MIT"}
@@ -167,6 +167,7 @@ exclude = ["tests*", "docs*", "examples*", "archive*"]
 ebk = [
     "templates/**/*",
     "static/**/*",
+    "skills/*.md",
 ]
 
 [tool.black]

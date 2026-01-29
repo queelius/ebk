@@ -6,10 +6,8 @@ to register callbacks for various events in the EBK lifecycle.
 """
 
 import asyncio
-import inspect
 import logging
-from typing import Callable, Any, List, Dict, Optional, Union
-from functools import wraps
+from typing import Callable, Any, List, Dict, Optional
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)

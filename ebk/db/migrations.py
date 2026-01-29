@@ -14,14 +14,14 @@ from pathlib import Path
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.engine import Engine
-from typing import List, Optional, Set
+from typing import Set
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Current schema version - increment when adding new migrations
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 6
 
 
 def get_engine(library_path: Path) -> Engine:
@@ -275,12 +275,176 @@ def migrate_descriptions_to_markdown(library_path: Path, dry_run: bool = False) 
     return True
 
 
+def migrate_add_reviews_table(library_path: Path, dry_run: bool = False) -> bool:
+    """
+    Add reviews table for user book reviews.
+
+    This migration adds support for detailed user reviews,
+    separate from simple ratings.
+
+    Args:
+        library_path: Path to library directory
+        dry_run: If True, only check if migration is needed
+
+    Returns:
+        True if migration was applied (or would be applied in dry_run),
+        False if already up-to-date
+    """
+    engine = get_engine(library_path)
+
+    # Check if migration is needed
+    if table_exists(engine, 'reviews'):
+        logger.debug("Reviews table already exists, skipping migration")
+        return False
+
+    if dry_run:
+        logger.debug("Migration needed: reviews table does not exist")
+        return True
+
+    logger.debug("Applying migration: Adding reviews table")
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE reviews (
+                id INTEGER NOT NULL PRIMARY KEY,
+                book_id INTEGER NOT NULL,
+                title VARCHAR(255),
+                content TEXT NOT NULL,
+                rating FLOAT,
+                review_type VARCHAR(50) DEFAULT 'personal',
+                visibility VARCHAR(20) DEFAULT 'private',
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                FOREIGN KEY(book_id) REFERENCES books (id) ON DELETE CASCADE
+            )
+        """))
+
+        # Create indexes
+        conn.execute(text("CREATE INDEX idx_review_book ON reviews (book_id)"))
+        conn.execute(text("CREATE INDEX idx_review_type ON reviews (review_type)"))
+        conn.execute(text("CREATE INDEX idx_review_created ON reviews (created_at)"))
+
+        logger.debug("Migration completed successfully")
+
+    return True
+
+
+def migrate_add_enrichment_history_table(library_path: Path, dry_run: bool = False) -> bool:
+    """
+    Add enrichment_history table for tracking metadata changes.
+
+    This migration adds support for tracking provenance of
+    automated metadata enrichment.
+
+    Args:
+        library_path: Path to library directory
+        dry_run: If True, only check if migration is needed
+
+    Returns:
+        True if migration was applied (or would be applied in dry_run),
+        False if already up-to-date
+    """
+    engine = get_engine(library_path)
+
+    # Check if migration is needed
+    if table_exists(engine, 'enrichment_history'):
+        logger.debug("Enrichment history table already exists, skipping migration")
+        return False
+
+    if dry_run:
+        logger.debug("Migration needed: enrichment_history table does not exist")
+        return True
+
+    logger.debug("Applying migration: Adding enrichment_history table")
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE enrichment_history (
+                id INTEGER NOT NULL PRIMARY KEY,
+                book_id INTEGER NOT NULL,
+                field_name VARCHAR(100) NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                source_type VARCHAR(50) NOT NULL,
+                source_detail VARCHAR(200),
+                confidence FLOAT DEFAULT 1.0,
+                applied BOOLEAN DEFAULT 1,
+                reverted BOOLEAN DEFAULT 0,
+                enriched_at DATETIME NOT NULL,
+                FOREIGN KEY(book_id) REFERENCES books (id) ON DELETE CASCADE
+            )
+        """))
+
+        # Create indexes
+        conn.execute(text("CREATE INDEX idx_enrichment_book ON enrichment_history (book_id)"))
+        conn.execute(text("CREATE INDEX idx_enrichment_source ON enrichment_history (source_type)"))
+        conn.execute(text("CREATE INDEX idx_enrichment_field ON enrichment_history (field_name)"))
+        conn.execute(text("CREATE INDEX idx_enrichment_date ON enrichment_history (enriched_at)"))
+
+        logger.debug("Migration completed successfully")
+
+    return True
+
+
+def migrate_enhance_annotations(library_path: Path, dry_run: bool = False) -> bool:
+    """
+    Add rich content fields to annotations table.
+
+    Adds: title, content_format, category, pinned, updated_at
+
+    Args:
+        library_path: Path to library directory
+        dry_run: If True, only check if migration is needed
+
+    Returns:
+        True if migration was applied (or would be applied in dry_run),
+        False if already up-to-date
+    """
+    engine = get_engine(library_path)
+    inspector = inspect(engine)
+
+    # Check if migration is needed
+    if 'annotations' not in inspector.get_table_names():
+        logger.debug("Annotations table does not exist, skipping migration")
+        return False
+
+    columns = [col['name'] for col in inspector.get_columns('annotations')]
+    if 'content_format' in columns:
+        logger.debug("Annotations.content_format column already exists, skipping migration")
+        return False
+
+    if dry_run:
+        logger.debug("Migration needed: annotations columns missing")
+        return True
+
+    logger.debug("Applying migration: Enhancing annotations table")
+
+    with engine.begin() as conn:
+        # Add new columns
+        conn.execute(text("ALTER TABLE annotations ADD COLUMN title VARCHAR(255)"))
+        conn.execute(text("ALTER TABLE annotations ADD COLUMN content_format VARCHAR(20) DEFAULT 'plain'"))
+        conn.execute(text("ALTER TABLE annotations ADD COLUMN category VARCHAR(100)"))
+        conn.execute(text("ALTER TABLE annotations ADD COLUMN pinned BOOLEAN DEFAULT 0"))
+        conn.execute(text("ALTER TABLE annotations ADD COLUMN updated_at DATETIME"))
+
+        # Create indexes for new columns
+        conn.execute(text("CREATE INDEX idx_annotation_pinned ON annotations (book_id, pinned)"))
+        conn.execute(text("CREATE INDEX idx_annotation_category ON annotations (category)"))
+
+        logger.debug("Migration completed successfully")
+
+    return True
+
+
 # Migration registry: (version, name, function)
 # Add new migrations here with incrementing version numbers
 MIGRATIONS = [
     (1, 'add_tags', migrate_add_tags),
     (2, 'add_book_color', migrate_add_book_color),
     (3, 'descriptions_to_markdown', migrate_descriptions_to_markdown),
+    (4, 'add_reviews_table', migrate_add_reviews_table),
+    (5, 'add_enrichment_history_table', migrate_add_enrichment_history_table),
+    (6, 'enhance_annotations', migrate_enhance_annotations),
 ]
 
 

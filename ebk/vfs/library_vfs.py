@@ -1,7 +1,5 @@
 """Main LibraryVFS class - entry point for VFS access."""
 
-from pathlib import Path as FilePath
-
 from ebk.library_db import Library
 from ebk.vfs.base import DirectoryNode, Node
 from ebk.vfs.resolver import PathResolver

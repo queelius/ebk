@@ -7,9 +7,7 @@ Handles loading and saving user configuration from:
 - Legacy: ~/.ebkrc (for backward compatibility)
 """
 
-import configparser
 import json
-import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict, field
@@ -230,44 +228,3 @@ def update_config(
         config.library.default_path = library_default_path
 
     save_config(config)
-
-
-# Backward compatibility
-def update_llm_config(
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    host: Optional[str] = None,
-    port: Optional[int] = None,
-    api_key: Optional[str] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None
-) -> None:
-    """Update LLM configuration (legacy function)."""
-    update_config(
-        llm_provider=provider,
-        llm_model=model,
-        llm_host=host,
-        llm_port=port,
-        llm_api_key=api_key,
-        llm_temperature=temperature,
-        llm_max_tokens=max_tokens,
-    )
-
-
-# Legacy support for ~/.ebkrc
-def load_ebkrc_config():
-    """
-    Loads configuration from ~/.ebkrc (legacy).
-
-    The configuration file can contain various sections for different features.
-    For example, [streamlit] section for dashboard configuration.
-    """
-    config_path = os.path.expanduser("~/.ebkrc")
-    parser = configparser.ConfigParser()
-
-    if not os.path.exists(config_path):
-        # Config file is optional
-        return parser
-
-    parser.read(config_path)
-    return parser

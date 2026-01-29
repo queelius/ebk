@@ -9,7 +9,6 @@ from typing import Dict, List, Optional, Set, Tuple, Any
 from dataclasses import dataclass, field
 from datetime import datetime
 import networkx as nx
-import numpy as np
 from collections import defaultdict
 
 
@@ -127,8 +126,8 @@ class KnowledgeGraph:
                     relation_type: str, strength: float = 1.0,
                     book_id: str = None, evidence: str = None) -> ConceptRelation:
         """Add a relationship between two concepts."""
-        source_id = self.generate_concept_id(source_name, "")
-        target_id = self.generate_concept_id(target_name, "")
+        source_id = self._find_concept_id_by_name(source_name)
+        target_id = self._find_concept_id_by_name(target_name)
 
         # Ensure both concepts exist
         if source_id not in self.concepts or target_id not in self.concepts:
@@ -404,6 +403,14 @@ class KnowledgeGraph:
                     set,
                     {k: set(v) for k, v in indices.get('book_concepts', {}).items()}
                 )
+
+    def _find_concept_id_by_name(self, name: str) -> Optional[str]:
+        """Find concept ID by name from existing concepts."""
+        name_lower = name.lower()
+        for concept_id, concept in self.concepts.items():
+            if concept.name.lower() == name_lower:
+                return concept_id
+        return None
 
     def _extract_keywords(self, name: str, description: str) -> List[str]:
         """Extract keywords from concept name and description."""

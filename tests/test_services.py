@@ -116,7 +116,8 @@ class TestImportService:
         authors = ["John Doe", "Alice Brown", "Bob Anderson"]
 
         # When: We generate sort names for each
-        sort_names = [ImportService._get_sort_name(name) for name in authors]
+        from ebk.services.import_service import get_sort_name
+        sort_names = [get_sort_name(name) for name in authors]
 
         # Then: Sorting by sort_name should order by last name
         sorted_names = sorted(sort_names)
@@ -125,7 +126,7 @@ class TestImportService:
         assert sorted_names[2].startswith("Doe")       # Doe third
 
         # And: Single-name authors should sort by their single name
-        single_name_sort = ImportService._get_sort_name("Madonna")
+        single_name_sort = get_sort_name("Madonna")
         assert single_name_sort == "Madonna"
 
     def test_create_book_with_metadata(self, temp_library):

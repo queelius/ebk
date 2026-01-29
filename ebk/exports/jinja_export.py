@@ -5,11 +5,10 @@ This module provides a template-driven approach to exporting ebook metadata
 in various formats, with Hugo as the primary implementation.
 """
 
-import os
 import json
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 import logging
 from slugify import slugify

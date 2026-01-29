@@ -1,8 +1,7 @@
 """grep implementation for REPL shell."""
 
 import re
-from typing import List, Tuple, Optional
-from pathlib import Path
+from typing import List, Tuple
 
 from ebk.vfs import LibraryVFS, DirectoryNode, FileNode
 

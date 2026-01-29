@@ -35,36 +35,6 @@ def sanitize_for_javascript(obj: Any) -> str:
     return json_str
 
 
-def sanitize_metadata(entry: Dict) -> Dict:
-    """
-    Sanitize metadata fields that will be displayed in HTML.
-    
-    Preserves structure but escapes string values.
-    """
-    sanitized = {}
-    
-    for key, value in entry.items():
-        if isinstance(value, str):
-            # Don't sanitize file paths and IDs (they're not displayed as HTML)
-            if key in ('file_paths', 'cover_path', 'unique_id', '_entry_id'):
-                sanitized[key] = value
-            else:
-                sanitized[key] = sanitize_for_html(value)
-        elif isinstance(value, list):
-            # Sanitize list items if they're strings
-            sanitized[key] = [
-                sanitize_for_html(item) if isinstance(item, str) else item 
-                for item in value
-            ]
-        elif isinstance(value, dict):
-            # Recursively sanitize nested dicts
-            sanitized[key] = sanitize_metadata(value)
-        else:
-            sanitized[key] = value
-    
-    return sanitized
-
-
 def sanitize_entries_for_javascript(entries: List[Dict]) -> str:
     """
     Prepare entries for safe embedding in JavaScript.

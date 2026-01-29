@@ -3,9 +3,8 @@ Extract text and structured content from various ebook formats.
 """
 
 import re
-import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import fitz  # PyMuPDF
 import ebooklib
 from ebooklib import epub

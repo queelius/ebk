@@ -1009,3 +1009,148 @@ class TestEdgeCases:
         temp_library.delete_book(99999)
 
         # Then: Should handle gracefully (no exception)
+
+
+class TestReviewMethods:
+    """Test book review functionality."""
+
+    def test_add_review(self, temp_library):
+        """Test adding a review to a book."""
+        # Given: A book
+        test_file = temp_library.library_path / "book.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(test_file, metadata={"title": "Test Book"}, extract_text=False)
+
+        # When: We add a review
+        review_id = temp_library.add_review(
+            book_id=book.id,
+            content="This is a great book!",
+            title="Excellent Read",
+            rating=5.0,
+            review_type="personal"
+        )
+
+        # Then: Review should be created
+        assert review_id is not None
+        assert review_id > 0
+
+    def test_get_reviews(self, temp_library):
+        """Test getting reviews for a book."""
+        # Given: A book with multiple reviews
+        test_file = temp_library.library_path / "book.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(test_file, metadata={"title": "Test Book"}, extract_text=False)
+
+        temp_library.add_review(book.id, "Review 1", title="First")
+        temp_library.add_review(book.id, "Review 2", title="Second")
+
+        # When: We get reviews
+        reviews = temp_library.get_reviews(book.id)
+
+        # Then: Should return all reviews
+        assert len(reviews) == 2
+        assert reviews[0].content in ["Review 1", "Review 2"]
+
+    def test_get_review_by_id(self, temp_library):
+        """Test getting a specific review by ID."""
+        # Given: A book with a review
+        test_file = temp_library.library_path / "book.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(test_file, metadata={"title": "Test Book"}, extract_text=False)
+        review_id = temp_library.add_review(book.id, "My review", title="Test Title")
+
+        # When: We get the review by ID
+        review = temp_library.get_review(review_id)
+
+        # Then: Should return the correct review
+        assert review is not None
+        assert review.id == review_id
+        assert review.content == "My review"
+        assert review.title == "Test Title"
+
+    def test_update_review(self, temp_library):
+        """Test updating a review."""
+        # Given: A book with a review
+        test_file = temp_library.library_path / "book.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(test_file, metadata={"title": "Test Book"}, extract_text=False)
+        review_id = temp_library.add_review(book.id, "Original content", rating=3.0)
+
+        # When: We update the review
+        success = temp_library.update_review(
+            review_id=review_id,
+            content="Updated content",
+            rating=5.0
+        )
+
+        # Then: Update should succeed
+        assert success is True
+
+        # And: Review should be updated
+        review = temp_library.get_review(review_id)
+        assert review.content == "Updated content"
+        assert review.rating == 5.0
+
+    def test_delete_review(self, temp_library):
+        """Test deleting a review."""
+        # Given: A book with a review
+        test_file = temp_library.library_path / "book.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(test_file, metadata={"title": "Test Book"}, extract_text=False)
+        review_id = temp_library.add_review(book.id, "Review to delete")
+
+        # When: We delete the review
+        success = temp_library.delete_review(review_id)
+
+        # Then: Delete should succeed
+        assert success is True
+
+        # And: Review should no longer exist
+        review = temp_library.get_review(review_id)
+        assert review is None
+
+    def test_delete_nonexistent_review(self, temp_library):
+        """Test deleting a nonexistent review."""
+        # When: We try to delete a nonexistent review
+        success = temp_library.delete_review(99999)
+
+        # Then: Should return False
+        assert success is False
+
+    def test_update_nonexistent_review(self, temp_library):
+        """Test updating a nonexistent review."""
+        # When: We try to update a nonexistent review
+        success = temp_library.update_review(99999, content="New content")
+
+        # Then: Should return False
+        assert success is False
+
+    def test_review_types(self, temp_library):
+        """Test different review types."""
+        # Given: A book
+        test_file = temp_library.library_path / "book.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(test_file, metadata={"title": "Test Book"}, extract_text=False)
+
+        # When: We add reviews of different types
+        for review_type in ['personal', 'summary', 'critique', 'notes']:
+            temp_library.add_review(book.id, f"A {review_type} review", review_type=review_type)
+
+        # Then: All reviews should be retrievable
+        reviews = temp_library.get_reviews(book.id)
+        assert len(reviews) == 4
+        types = {r.review_type for r in reviews}
+        assert types == {'personal', 'summary', 'critique', 'notes'}
+
+    def test_get_reviews_empty(self, temp_library):
+        """Test getting reviews for a book with no reviews."""
+        # Given: A book with no reviews
+        test_file = temp_library.library_path / "book.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(test_file, metadata={"title": "Test Book"}, extract_text=False)
+
+        # When: We get reviews
+        reviews = temp_library.get_reviews(book.id)
+
+        # Then: Should return empty list
+        assert len(reviews) == 0

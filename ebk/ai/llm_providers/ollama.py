@@ -5,7 +5,6 @@ Supports both local and remote Ollama instances.
 """
 
 import json
-import re
 from typing import Dict, Any, List, Optional, AsyncIterator
 import httpx
 
@@ -173,81 +172,14 @@ class OllamaProvider(BaseLLMProvider):
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Generate JSON completion.
+        Generate JSON completion using Ollama's JSON format mode.
 
-        Args:
-            prompt: User prompt
-            system_prompt: Optional system prompt
-            schema: Optional JSON schema
-            **kwargs: Additional parameters
-
-        Returns:
-            Parsed JSON object
+        Overrides base to set Ollama's format="json" parameter
+        before delegating to the shared prompt-building logic.
         """
-        # Enhance prompt for JSON output
-        json_system = "You are a helpful assistant that responds only in valid JSON format."
-        if system_prompt:
-            json_system = f"{system_prompt}\n\n{json_system}"
-
-        json_prompt = f"{prompt}\n\nRespond with valid JSON only. Do not include any explanation or markdown formatting."
-
-        if schema:
-            json_prompt += f"\n\nFollow this schema:\n```json\n{json.dumps(schema, indent=2)}\n```"
-
         # Use Ollama's JSON format mode if available
         kwargs["format"] = "json"
-
-        response = await self.complete(json_prompt, system_prompt=json_system, **kwargs)
-
-        # Parse JSON from response
-        return self._parse_json_response(response.content)
-
-    def _parse_json_response(self, content: str) -> Dict[str, Any]:
-        """
-        Parse JSON from response content.
-
-        Handles common issues like markdown code blocks.
-        """
-        try:
-            # Try direct parse first
-            return json.loads(content)
-        except json.JSONDecodeError:
-            pass
-
-        # Try to extract JSON from markdown code block
-        cleaned = content.strip()
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:]
-        elif cleaned.startswith("```"):
-            cleaned = cleaned[3:]
-
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-
-        cleaned = cleaned.strip()
-
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            pass
-
-        # Try to find JSON object in text
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
-
-        # Last resort: try to find JSON array
-        json_match = re.search(r'\[.*\]', content, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
-
-        raise ValueError(f"Failed to parse JSON from response: {content[:200]}...")
+        return await super().complete_json(prompt, system_prompt=system_prompt, schema=schema, **kwargs)
 
     async def complete_streaming(
         self,

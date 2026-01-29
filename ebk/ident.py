@@ -37,19 +37,12 @@ def generate_composite_string(entry: Dict) -> str:
     
     The order is important for consistency.
     """
-    identifiers = entry.get('identifiers', {})
-    #isbn = identifiers.get('ISBN', '').strip()
-    #date = entry.get('date', '').strip()
     language = entry.get('language', '').strip()
-    #publisher = entry.get('publisher', '').strip()
     creators = entry.get('creators', [])
     title = entry.get('title', '').strip()
-    
+
     # Canonicalize each field
-    #isbn_c = canonicalize_text(isbn) if isbn else 'no_isbn'
-    #date_c = canonicalize_text(date) if date else 'no_date'
     language_c = canonicalize_text(language) if language else 'no_language'
-    #publisher_c = canonicalize_text(publisher) if publisher else 'no_publisher'
     creators_c = canonicalize_creators(creators) if creators else 'no_creators'
     title_c = canonicalize_text(title) if title else 'no_title'
 

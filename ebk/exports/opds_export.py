@@ -7,52 +7,17 @@ served from any static file host or used for backup/sharing.
 OPDS Spec: https://specs.opds.io/opds-1.2
 """
 
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List
 import shutil
 
-
-# MIME types
-OPDS_ACQUISITION_MIME = "application/atom+xml;profile=opds-catalog;kind=acquisition"
-
-FORMAT_MIMES = {
-    "pdf": "application/pdf",
-    "epub": "application/epub+zip",
-    "mobi": "application/x-mobipocket-ebook",
-    "azw": "application/vnd.amazon.ebook",
-    "azw3": "application/vnd.amazon.ebook",
-    "txt": "text/plain",
-    "html": "text/html",
-    "htm": "text/html",
-    "djvu": "image/vnd.djvu",
-    "cbz": "application/vnd.comicbook+zip",
-    "cbr": "application/vnd.comicbook-rar",
-}
-
-
-def get_mime_type(format: str) -> str:
-    """Get MIME type for ebook format."""
-    return FORMAT_MIMES.get(format.lower(), "application/octet-stream")
-
-
-def escape_xml(text: str) -> str:
-    """Escape XML special characters."""
-    if not text:
-        return ""
-    return (text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-            .replace("'", "&apos;"))
-
-
-def format_datetime(dt: Optional[datetime] = None) -> str:
-    """Format datetime for Atom feed."""
-    if dt is None:
-        dt = datetime.now(timezone.utc)
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+from ..opds import (
+    FORMAT_MIMES,
+    OPDS_ACQUISITION_MIME,
+    escape_xml,
+    format_datetime,
+    get_mime_type,
+)
 
 
 def build_entry(book, base_url: str, files_dir: str = "files", covers_dir: str = "covers") -> str:

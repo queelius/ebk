@@ -10,11 +10,11 @@ from pathlib import Path
 import hashlib
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Text, Boolean, Float,
+    Column, Integer, String, Text, Boolean, Float,
     DateTime, ForeignKey, Table, UniqueConstraint, Index, JSON
 )
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 
 Base = declarative_base()
@@ -463,7 +463,7 @@ class ReadingSession(Base):
 
 
 class Annotation(Base):
-    """Highlights, notes, bookmarks."""
+    """Highlights, notes, bookmarks with rich content support."""
     __tablename__ = 'annotations'
 
     id = Column(Integer, primary_key=True)
@@ -476,13 +476,22 @@ class Annotation(Base):
     content = Column(Text, nullable=False)  # The highlighted text or note content
     color = Column(String(20))  # For highlights
 
+    # Rich content support (new fields)
+    title = Column(String(255))  # Optional title for the annotation
+    content_format = Column(String(20), default='plain')  # plain, markdown, html
+    category = Column(String(100))  # User-defined category
+    pinned = Column(Boolean, default=False)  # Pin to top
+
     created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     book = relationship('Book', back_populates='annotations')
     session = relationship('ReadingSession')
 
     __table_args__ = (
         Index('idx_annotation_book', 'book_id', 'annotation_type'),
+        Index('idx_annotation_pinned', 'book_id', 'pinned'),
+        Index('idx_annotation_category', 'category'),
     )
 
 
@@ -606,6 +615,101 @@ class ViewOverride(Base):
 
     def __repr__(self):
         return f"<ViewOverride(view_id={self.view_id}, book_id={self.book_id})>"
+
+
+# ============================================================================
+# Reviews and Enrichment Tracking
+# ============================================================================
+
+class Review(Base):
+    """User reviews of books.
+
+    Allows users to write detailed reviews, separate from simple ratings.
+    Reviews can be personal notes, summaries, critiques, or reading notes.
+
+    Examples:
+        - Personal review: "I found this book particularly helpful for..."
+        - Summary: Key takeaways and main points
+        - Critique: Critical analysis and evaluation
+        - Notes: Reading notes and observations
+    """
+    __tablename__ = 'reviews'
+
+    id = Column(Integer, primary_key=True)
+    book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
+
+    # Review content
+    title = Column(String(255))  # Review headline/title
+    content = Column(Text, nullable=False)  # Full review text (markdown supported)
+    rating = Column(Float)  # 1-5 stars (separate from PersonalMetadata.rating)
+
+    # Review metadata
+    review_type = Column(String(50), default='personal')  # personal, summary, critique, notes
+    visibility = Column(String(20), default='private')  # private, public (for future sharing)
+
+    # Timestamps
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    # Relationship
+    book = relationship('Book', backref='reviews')
+
+    __table_args__ = (
+        Index('idx_review_book', 'book_id'),
+        Index('idx_review_type', 'review_type'),
+        Index('idx_review_created', 'created_at'),
+    )
+
+    def __repr__(self):
+        return f"<Review(id={self.id}, book_id={self.book_id}, type='{self.review_type}')>"
+
+
+class EnrichmentHistory(Base):
+    """Track metadata enrichment provenance.
+
+    Records every change made to book metadata by automated enrichment,
+    allowing audit trails and rollback if needed.
+
+    Tracks:
+        - What field was changed
+        - Old and new values
+        - Source of the enrichment (LLM, metadata API, user)
+        - Confidence level
+    """
+    __tablename__ = 'enrichment_history'
+
+    id = Column(Integer, primary_key=True)
+    book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
+
+    # What was enriched
+    field_name = Column(String(100), nullable=False)  # description, tags, categories, difficulty
+    old_value = Column(Text)  # JSON of previous value
+    new_value = Column(Text)  # JSON of new value
+
+    # Source tracking
+    source_type = Column(String(50), nullable=False)  # llm, google_books, open_library, user
+    source_detail = Column(String(200))  # ollama:llama3.2, anthropic:claude-sonnet-4-20250514, etc.
+    confidence = Column(Float, default=1.0)  # 0.0-1.0
+
+    # Status
+    applied = Column(Boolean, default=True)  # Was this change applied?
+    reverted = Column(Boolean, default=False)  # Was this change reverted?
+
+    # Timestamps
+    enriched_at = Column(DateTime, default=utc_now, nullable=False)
+
+    # Relationship
+    book = relationship('Book', backref='enrichment_history')
+
+    __table_args__ = (
+        Index('idx_enrichment_book', 'book_id'),
+        Index('idx_enrichment_source', 'source_type'),
+        Index('idx_enrichment_field', 'field_name'),
+        Index('idx_enrichment_date', 'enriched_at'),
+    )
+
+    def __repr__(self):
+        return f"<EnrichmentHistory(id={self.id}, book_id={self.book_id}, field='{self.field_name}')>"
 
 
 # Full-Text Search Virtual Table (SQLite FTS5)

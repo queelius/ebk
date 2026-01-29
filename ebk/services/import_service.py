@@ -171,7 +171,7 @@ class ImportService:
                     self.session,
                     Author,
                     name=author_name,
-                    sort_name=self._get_sort_name(author_name)
+                    sort_name=get_sort_name(author_name)
                 )
                 book.authors.append(author)
 
@@ -380,14 +380,6 @@ class ImportService:
             if title.startswith(article):
                 return title[len(article):]
         return title
-
-    @staticmethod
-    def _get_sort_name(name: str) -> str:
-        """Get sortable name (Last, First format)."""
-        parts = name.split()
-        if len(parts) >= 2:
-            return f"{parts[-1]}, {' '.join(parts[:-1])}"
-        return name
 
     def import_calibre_book(self, calibre_metadata_path: Path) -> Optional[Book]:
         """

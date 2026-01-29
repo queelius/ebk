@@ -13,7 +13,6 @@ Architecture:
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Dict, List, Optional, Any
-from datetime import datetime
 
 
 class NodeType(Enum):
@@ -53,7 +52,6 @@ class Node(ABC):
         self.name = name
         self.parent = parent
         self.node_type = node_type
-        self._metadata: Dict[str, Any] = {}
 
     @abstractmethod
     def get_info(self) -> Dict[str, Any]:
@@ -169,7 +167,6 @@ class FileNode(Node):
         """
         super().__init__(name, parent, NodeType.FILE)
         self._size = size
-        self._content_cache: Optional[str] = None
 
     @abstractmethod
     def read_content(self) -> str:
@@ -203,7 +200,7 @@ class FileNode(Node):
             # This is a bit hacky but works
             return hasattr(self.__class__, 'write_content') and \
                    self.__class__.write_content != FileNode.write_content
-        except:
+        except Exception:
             return False
 
     def get_info(self) -> Dict[str, Any]:

@@ -9,10 +9,8 @@ Provides:
 - Difficulty level assessment
 """
 
-import json
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
-from pathlib import Path
 
 from .llm_providers.base import BaseLLMProvider
 

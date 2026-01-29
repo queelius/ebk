@@ -157,8 +157,3 @@ class MultiFacetExporter(BaseExporter):
         index_path = output_path / "index.html"
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(html_content)
-    
-        
-        readme_path = output_path / "README.md"
-        with open(readme_path, 'w', encoding='utf-8') as f:
-            f.write(readme_content)

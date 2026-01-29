@@ -41,7 +41,7 @@ def init_db(library_path: Path, echo: bool = False) -> Engine:
     _engine = create_engine(db_url, echo=echo)
 
     # Enable foreign keys for SQLite
-    @event.listens_for(Engine, "connect")
+    @event.listens_for(_engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")

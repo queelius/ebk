@@ -10,8 +10,7 @@ import inspect
 import logging
 import pkgutil
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Any, Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional, Type, Any
 
 from .base import Plugin
 

@@ -9,10 +9,10 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import logging
 
-from sqlalchemy import func, or_, and_, text
+from sqlalchemy import func, or_, and_, text, update
 from sqlalchemy.orm import Session
 
-from .db.models import Book, Author, Subject, File, ExtractedText, PersonalMetadata
+from .db.models import Book, Author, Subject, File, PersonalMetadata
 from .db.session import init_db, get_session, close_db
 from .services.import_service import ImportService
 from .services.text_extraction import TextExtractionService
@@ -201,8 +201,7 @@ class Library:
                 )
 
                 # Apply additional SQL filters
-                if where_clause:
-                    books_query = books_query.filter(text(where_clause).bindparams(**params))
+                books_query = books_query.filter(text(where_clause).bindparams(**params))
 
                 books = books_query.all()
 
@@ -362,7 +361,7 @@ class Library:
             book_id: Book ID
             favorite: True to mark as favorite, False to unmark
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -387,7 +386,7 @@ class Library:
         Returns:
             List of books in queue order
         """
-        from .db.models import PersonalMetadata
+
 
         return self.session.query(Book).join(Book.personal).filter(
             PersonalMetadata.queue_position.isnot(None)
@@ -401,7 +400,7 @@ class Library:
             book_id: Book ID to add
             position: Position in queue (1-based). If None, adds to end.
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -437,7 +436,7 @@ class Library:
         Args:
             book_id: Book ID to remove
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -463,7 +462,7 @@ class Library:
             book_id: Book ID to move
             new_position: New position (1-based)
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -501,7 +500,7 @@ class Library:
 
     def clear_queue(self):
         """Clear all books from the reading queue."""
-        from .db.models import PersonalMetadata
+
 
         self.session.query(PersonalMetadata).filter(
             PersonalMetadata.queue_position.isnot(None)
@@ -517,7 +516,7 @@ class Library:
             book_id: Book ID
             tags: List of tag strings
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -543,7 +542,7 @@ class Library:
             book_id: Book ID
             tags: List of tag strings to remove
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -640,6 +639,135 @@ class Library:
             self.session.commit()
             logger.debug(f"Deleted annotation {annotation_id}")
 
+    # -------------------------------------------------------------------------
+    # Review Methods
+    # -------------------------------------------------------------------------
+
+    def add_review(self, book_id: int, content: str,
+                   title: Optional[str] = None,
+                   rating: Optional[float] = None,
+                   review_type: str = 'personal',
+                   visibility: str = 'private') -> int:
+        """
+        Add a review to a book.
+
+        Args:
+            book_id: Book ID
+            content: Review text (markdown supported)
+            title: Review headline/title (optional)
+            rating: Rating 1-5 stars (optional, separate from book rating)
+            review_type: Type of review (personal, summary, critique, notes)
+            visibility: Visibility level (private, public)
+
+        Returns:
+            Review ID
+        """
+        from .db.models import Review
+
+        review = Review(
+            book_id=book_id,
+            content=content,
+            title=title,
+            rating=rating,
+            review_type=review_type,
+            visibility=visibility
+        )
+        self.session.add(review)
+        self.session.commit()
+
+        logger.debug(f"Added review to book {book_id}")
+        return review.id
+
+    def get_reviews(self, book_id: int) -> List:
+        """
+        Get all reviews for a book.
+
+        Args:
+            book_id: Book ID
+
+        Returns:
+            List of Review objects
+        """
+        from .db.models import Review
+
+        return self.session.query(Review).filter_by(
+            book_id=book_id
+        ).order_by(Review.created_at.desc()).all()
+
+    def get_review(self, review_id: int):
+        """
+        Get a specific review by ID.
+
+        Args:
+            review_id: Review ID
+
+        Returns:
+            Review object or None
+        """
+        from .db.models import Review
+        return self.session.get(Review, review_id)
+
+    def update_review(self, review_id: int,
+                      content: Optional[str] = None,
+                      title: Optional[str] = None,
+                      rating: Optional[float] = None,
+                      review_type: Optional[str] = None,
+                      visibility: Optional[str] = None) -> bool:
+        """
+        Update an existing review.
+
+        Args:
+            review_id: Review ID
+            content: New review text
+            title: New title
+            rating: New rating
+            review_type: New review type
+            visibility: New visibility
+
+        Returns:
+            True if updated, False if not found
+        """
+        from .db.models import Review
+
+        review = self.session.get(Review, review_id)
+        if not review:
+            return False
+
+        if content is not None:
+            review.content = content
+        if title is not None:
+            review.title = title
+        if rating is not None:
+            review.rating = rating
+        if review_type is not None:
+            review.review_type = review_type
+        if visibility is not None:
+            review.visibility = visibility
+
+        self.session.commit()
+        logger.debug(f"Updated review {review_id}")
+        return True
+
+    def delete_review(self, review_id: int) -> bool:
+        """
+        Delete a review.
+
+        Args:
+            review_id: Review ID
+
+        Returns:
+            True if deleted, False if not found
+        """
+        from .db.models import Review
+
+        review = self.session.get(Review, review_id)
+        if review:
+            self.session.delete(review)
+            self.session.commit()
+            logger.debug(f"Deleted review {review_id}")
+            return True
+        return False
+
     def add_to_virtual_library(self, book_id: int, library_name: str):
         """
         Add a book to a virtual library (collection/view).
@@ -648,7 +776,7 @@ class Library:
             book_id: Book ID
             library_name: Name of the virtual library
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -675,7 +803,7 @@ class Library:
             book_id: Book ID
             library_name: Name of the virtual library
         """
-        from .db.models import PersonalMetadata
+
 
         personal = self.session.query(PersonalMetadata).filter_by(
             book_id=book_id
@@ -696,8 +824,6 @@ class Library:
         Returns:
             List of books in this virtual library
         """
-        from .db.models import PersonalMetadata
-        from sqlalchemy import func
 
         # Query books where personal_tags contains the library_name
         # This works with SQLite's JSON support
@@ -715,7 +841,7 @@ class Library:
         Returns:
             List of virtual library names
         """
-        from .db.models import PersonalMetadata
+
 
         # Get all personal_tags arrays and flatten them
         all_metadata = self.session.query(PersonalMetadata).filter(
@@ -905,7 +1031,6 @@ class Library:
 
             # Files - move to primary (handle duplicates by hash)
             # Must use SQL UPDATE to bypass cascade delete on the relationship
-            from sqlalchemy import update
             from .db.models import File as FileModel
 
             for file in list(secondary.files):

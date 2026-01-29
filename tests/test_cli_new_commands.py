@@ -60,14 +60,14 @@ class TestSqlCommand:
 
     def test_sql_select_basic(self, populated_library):
         """Test basic SELECT query."""
-        result = runner.invoke(app, ["sql", "SELECT COUNT(*) as count FROM books", str(populated_library)])
+        result = runner.invoke(app, ["query", "sql", "SELECT COUNT(*) as count FROM books", str(populated_library)])
         assert result.exit_code == 0
         assert "count" in result.stdout
 
     def test_sql_select_with_json_format(self, populated_library):
         """Test SELECT with JSON output."""
         result = runner.invoke(app, [
-            "sql", "SELECT id, title FROM books LIMIT 1",
+            "query", "sql", "SELECT id, title FROM books LIMIT 1",
             str(populated_library), "--format", "json"
         ])
         assert result.exit_code == 0
@@ -77,7 +77,7 @@ class TestSqlCommand:
     def test_sql_select_with_csv_format(self, populated_library):
         """Test SELECT with CSV output."""
         result = runner.invoke(app, [
-            "sql", "SELECT id, title FROM books LIMIT 1",
+            "query", "sql", "SELECT id, title FROM books LIMIT 1",
             str(populated_library), "--format", "csv"
         ])
         assert result.exit_code == 0
@@ -86,7 +86,7 @@ class TestSqlCommand:
     def test_sql_select_with_limit(self, populated_library):
         """Test SELECT with --limit option."""
         result = runner.invoke(app, [
-            "sql", "SELECT id FROM books",
+            "query", "sql", "SELECT id FROM books",
             str(populated_library), "--limit", "2"
         ])
         assert result.exit_code == 0
@@ -94,19 +94,19 @@ class TestSqlCommand:
 
     def test_sql_rejects_delete(self, populated_library):
         """Test that DELETE queries are rejected."""
-        result = runner.invoke(app, ["sql", "DELETE FROM books", str(populated_library)])
+        result = runner.invoke(app, ["query", "sql", "DELETE FROM books", str(populated_library)])
         assert result.exit_code == 1
         assert "Only SELECT queries are allowed" in result.stdout
 
     def test_sql_rejects_insert(self, populated_library):
         """Test that INSERT queries are rejected."""
-        result = runner.invoke(app, ["sql", "INSERT INTO books (title) VALUES ('x')", str(populated_library)])
+        result = runner.invoke(app, ["query", "sql", "INSERT INTO books (title) VALUES ('x')", str(populated_library)])
         assert result.exit_code == 1
         assert "Only SELECT queries are allowed" in result.stdout
 
     def test_sql_rejects_drop_in_subquery(self, populated_library):
         """Test that DROP in subquery is rejected."""
-        result = runner.invoke(app, ["sql", "SELECT * FROM (DROP TABLE books)", str(populated_library)])
+        result = runner.invoke(app, ["query", "sql", "SELECT * FROM (DROP TABLE books)", str(populated_library)])
         assert result.exit_code == 1
         assert "disallowed keyword" in result.stdout
 
@@ -231,19 +231,19 @@ class TestMigrateCommand:
 
     def test_migrate_check(self, populated_library):
         """Test migrate --check."""
-        result = runner.invoke(app, ["migrate", str(populated_library), "--check"])
+        result = runner.invoke(app, ["lib", "migrate", str(populated_library), "--check"])
         assert result.exit_code == 0
         assert "Schema version:" in result.stdout
 
     def test_migrate_version(self, populated_library):
         """Test migrate --version."""
-        result = runner.invoke(app, ["migrate", str(populated_library), "--version"])
+        result = runner.invoke(app, ["lib", "migrate", str(populated_library), "--version"])
         assert result.exit_code == 0
         assert "Schema version:" in result.stdout
 
     def test_migrate_run(self, populated_library):
         """Test running migrations."""
-        result = runner.invoke(app, ["migrate", str(populated_library)])
+        result = runner.invoke(app, ["lib", "migrate", str(populated_library)])
         assert result.exit_code == 0
         # Either "up-to-date" or "completed successfully"
         assert "up-to-date" in result.stdout or "completed" in result.stdout
@@ -615,13 +615,13 @@ class TestReadCommand:
 
     def test_read_not_found(self, populated_library):
         """Test read for non-existent book."""
-        result = runner.invoke(app, ["read", "99999", str(populated_library)])
+        result = runner.invoke(app, ["book", "read", "99999", str(populated_library)])
         assert result.exit_code == 1
         assert "not found" in result.stdout
 
     def test_read_text_mode_no_text(self, populated_library):
         """Test read --text when no extracted text available."""
-        result = runner.invoke(app, ["read", "1", str(populated_library), "--text"])
+        result = runner.invoke(app, ["book", "read", "1", str(populated_library), "--text"])
         # Should fail gracefully - no extracted text in test data
         assert result.exit_code == 1
         assert "No extracted text" in result.stdout or "no text" in result.stdout.lower()
@@ -671,14 +671,14 @@ class TestCheckCommand:
 
     def test_check_basic(self, populated_library):
         """Test basic library check."""
-        result = runner.invoke(app, ["check", str(populated_library)])
+        result = runner.invoke(app, ["lib", "check", str(populated_library)])
         assert result.exit_code == 0 or result.exit_code == 1  # May find issues
         assert "Checking library integrity" in result.stdout
         assert "Summary" in result.stdout
 
     def test_check_verbose(self, populated_library):
         """Test verbose library check."""
-        result = runner.invoke(app, ["check", str(populated_library), "--verbose"])
+        result = runner.invoke(app, ["lib", "check", str(populated_library), "--verbose"])
         assert "Checking library integrity" in result.stdout
         # Verbose mode shows all files
         assert "Checking for missing files" in result.stdout
@@ -697,7 +697,7 @@ class TestListWithViewOption:
         ])
         assert create_result.exit_code == 0, f"View creation failed: {create_result.stdout}"
 
-        result = runner.invoke(app, ["list", str(populated_library), "--view", "test-view"])
+        result = runner.invoke(app, ["query", "list", str(populated_library), "--view", "test-view"])
         assert result.exit_code == 0
         assert "Books" in result.stdout or "No books found" in result.stdout
 
@@ -706,7 +706,7 @@ class TestListWithViewOption:
 
     def test_list_with_nonexistent_view(self, populated_library):
         """Test listing books from non-existent view."""
-        result = runner.invoke(app, ["list", str(populated_library), "--view", "nonexistent-view"])
+        result = runner.invoke(app, ["query", "list", str(populated_library), "--view", "nonexistent-view"])
         assert result.exit_code == 1
         assert "Error" in result.stdout or "not found" in result.stdout.lower()
 
@@ -718,7 +718,7 @@ class TestBackupCommand:
         """Test creating a tar.gz backup."""
         backup_file = tmp_path / "backup.tar.gz"
         result = runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file)
         ])
         assert result.exit_code == 0
@@ -729,7 +729,7 @@ class TestBackupCommand:
         """Test creating a zip backup."""
         backup_file = tmp_path / "backup.zip"
         result = runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file)
         ])
         assert result.exit_code == 0
@@ -740,7 +740,7 @@ class TestBackupCommand:
         """Test creating a database-only backup."""
         backup_file = tmp_path / "backup.tar.gz"
         result = runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file),
             "--db-only"
         ])
@@ -751,7 +751,7 @@ class TestBackupCommand:
         """Test backup with invalid format."""
         backup_file = tmp_path / "backup.txt"  # Invalid format
         result = runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file)
         ])
         assert result.exit_code == 1
@@ -766,14 +766,14 @@ class TestRestoreCommand:
         # First create a backup
         backup_file = tmp_path / "backup.tar.gz"
         runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file)
         ])
 
         # Restore to new location
         restore_path = tmp_path / "restored_library"
         result = runner.invoke(app, [
-            "restore", str(backup_file), str(restore_path)
+            "lib", "restore", str(backup_file), str(restore_path)
         ])
         assert result.exit_code == 0
         assert "Library restored" in result.stdout
@@ -784,14 +784,14 @@ class TestRestoreCommand:
         # First create a backup
         backup_file = tmp_path / "backup.zip"
         runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file)
         ])
 
         # Restore to new location
         restore_path = tmp_path / "restored_library"
         result = runner.invoke(app, [
-            "restore", str(backup_file), str(restore_path)
+            "lib", "restore", str(backup_file), str(restore_path)
         ])
         assert result.exit_code == 0
         assert "Library restored" in result.stdout
@@ -801,7 +801,7 @@ class TestRestoreCommand:
         backup_file = tmp_path / "nonexistent.tar.gz"
         restore_path = tmp_path / "restored"
         result = runner.invoke(app, [
-            "restore", str(backup_file), str(restore_path)
+            "lib", "restore", str(backup_file), str(restore_path)
         ])
         assert result.exit_code == 1
         assert "not found" in result.stdout
@@ -811,7 +811,7 @@ class TestRestoreCommand:
         # Create backup
         backup_file = tmp_path / "backup.tar.gz"
         runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file)
         ])
 
@@ -820,7 +820,7 @@ class TestRestoreCommand:
         existing_path.mkdir()
 
         result = runner.invoke(app, [
-            "restore", str(backup_file), str(existing_path)
+            "lib", "restore", str(backup_file), str(existing_path)
         ])
         assert result.exit_code == 1
         assert "exists" in result.stdout
@@ -830,7 +830,7 @@ class TestRestoreCommand:
         # Create backup
         backup_file = tmp_path / "backup.tar.gz"
         runner.invoke(app, [
-            "backup", str(populated_library),
+            "lib", "backup", str(populated_library),
             "--output", str(backup_file)
         ])
 
@@ -841,7 +841,7 @@ class TestRestoreCommand:
 
         # Restore with force
         result = runner.invoke(app, [
-            "restore", str(backup_file), str(existing_path), "--force"
+            "lib", "restore", str(backup_file), str(existing_path), "--force"
         ])
         assert result.exit_code == 0
         assert "Library restored" in result.stdout

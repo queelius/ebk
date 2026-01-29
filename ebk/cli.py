@@ -1,11 +1,8 @@
 import os
-import sys
 import json
-import shutil
 import csv
 from pathlib import Path
 import logging
-import re
 from typing import List, Optional
 from datetime import datetime
 import typer
@@ -15,9 +12,6 @@ from rich.progress import Progress
 from rich.prompt import Confirm
 from rich.traceback import install
 from rich.table import Table
-
-from .decorators import handle_library_errors
-from .ident import add_unique_id
 
 # Export functions (still available)
 try:
@@ -87,22 +81,28 @@ app = typer.Typer()
 # Command groups
 import_app = typer.Typer(help="Import books from various sources")
 export_app = typer.Typer(help="Export library data to various formats")
-book_app = typer.Typer(help="Book-specific commands (info, rate, favorite, status, tag)")
+book_app = typer.Typer(help="Book operations (info, read, rate, favorite, status, tag, purge)")
+review_app = typer.Typer(help="Manage book reviews")
 note_app = typer.Typer(help="Manage book annotations and notes")
 tag_app = typer.Typer(help="Manage hierarchical tags for organizing books")
-vfs_app = typer.Typer(help="VFS commands (ln, mv, rm, ls, cat, mkdir)")
 queue_app = typer.Typer(help="Manage reading queue")
 view_app = typer.Typer(help="Manage views (composable, named subsets of the library)")
+lib_app = typer.Typer(help="Library management (init, migrate, backup, restore, check)")
+query_app = typer.Typer(help="Query and discover books (search, list, stats, sql)")
+skill_app = typer.Typer(help="Manage Claude Code skill installation")
 
 # Register command groups
 app.add_typer(import_app, name="import")
 app.add_typer(export_app, name="export")
 app.add_typer(book_app, name="book")
+book_app.add_typer(review_app, name="review")  # Nested: ebk book review ...
 app.add_typer(note_app, name="note")
 app.add_typer(tag_app, name="tag")
-app.add_typer(vfs_app, name="vfs")
 app.add_typer(queue_app, name="queue")
 app.add_typer(view_app, name="view")
+app.add_typer(lib_app, name="lib")
+app.add_typer(query_app, name="query")
+app.add_typer(skill_app, name="skill")
 
 @app.callback()
 def main(
@@ -133,26 +133,36 @@ def about():
     console.print("  • Cover extraction and thumbnails")
     console.print("  • Virtual libraries and personal metadata")
     console.print("")
-    console.print("[bold]Core Commands:[/bold]")
-    console.print("  ebk init <path>              Initialize new library")
-    console.print("  ebk import <file> <lib>      Import ebook")
-    console.print("  ebk import-calibre <src>     Import from Calibre")
-    console.print("  ebk search <query> <lib>     Full-text search")
-    console.print("  ebk list <lib>               List books")
-    console.print("  ebk stats <lib>              Show statistics")
-    console.print("  ebk view <id> <lib>          View book content")
+    console.print("[bold]Library Management:[/bold]")
+    console.print("  ebk lib init <path>          Initialize new library")
+    console.print("  ebk lib migrate              Run database migrations")
+    console.print("  ebk lib backup -o file.tar   Create library backup")
+    console.print("  ebk lib check                Check library integrity")
+    console.print("")
+    console.print("[bold]Query & Discovery:[/bold]")
+    console.print("  ebk query search <query>     Full-text search")
+    console.print("  ebk query list               List books with filtering")
+    console.print("  ebk query stats              Show library statistics")
+    console.print("  ebk query sql <query>        Raw SQL queries (SELECT only)")
     console.print("")
     console.print("[bold]Command Groups:[/bold]")
-    console.print("  ebk book <subcommand>        Book operations (info, rate, favorite, status, tag)")
-    console.print("  ebk export <subcommand>      Export library data")
+    console.print("  ebk import <subcommand>      Import books (add, folder, calibre, isbn)")
+    console.print("  ebk export <subcommand>      Export library (json, csv, html, opds)")
+    console.print("  ebk book <subcommand>        Book operations (info, read, rate, tag, purge)")
     console.print("  ebk note <subcommand>        Manage annotations")
     console.print("  ebk tag <subcommand>         Manage hierarchical tags")
-    console.print("  ebk view <subcommand>        Manage views (composable library subsets)")
+    console.print("  ebk queue <subcommand>       Manage reading queue")
+    console.print("  ebk view <subcommand>        Manage views (named library subsets)")
+    console.print("  ebk skill <subcommand>       Manage Claude Code skill")
+    console.print("")
+    console.print("[bold]Interactive:[/bold]")
+    console.print("  ebk shell                    Launch VFS shell")
+    console.print("  ebk serve                    Start web server")
     console.print("")
     console.print("[bold]Getting Started:[/bold]")
-    console.print("  1. Initialize: ebk init ~/my-library")
-    console.print("  2. Import: ebk import book.pdf ~/my-library")
-    console.print("  3. Search: ebk search 'python' ~/my-library")
+    console.print("  1. Initialize: ebk lib init ~/my-library")
+    console.print("  2. Import: ebk import add book.pdf")
+    console.print("  3. Search: ebk query search 'python'")
     console.print("")
     console.print("For more info: https://github.com/queelius/ebk")
 
@@ -198,7 +208,7 @@ def shell(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@lib_app.command()
 def init(
     library_path: Path = typer.Argument(..., help="Path to create the library"),
     echo_sql: bool = typer.Option(False, "--echo-sql", help="Echo SQL statements for debugging")
@@ -210,7 +220,7 @@ def init(
     including directories for files, covers, and vector embeddings.
 
     Example:
-        ebk init ~/my-library
+        ebk lib init ~/my-library
     """
     from .library_db import Library
 
@@ -232,7 +242,7 @@ def init(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@lib_app.command()
 def migrate(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     check_only: bool = typer.Option(False, "--check", help="Check which migrations are needed without applying"),
@@ -245,10 +255,10 @@ def migrate(
     Migrations are tracked in a schema_versions table for reliable versioning.
 
     Examples:
-        ebk migrate                    # Migrate default library
-        ebk migrate ~/my-library       # Migrate specific library
-        ebk migrate --check            # Check pending migrations
-        ebk migrate --version          # Show schema version
+        ebk lib migrate                    # Migrate default library
+        ebk lib migrate ~/my-library       # Migrate specific library
+        ebk lib migrate --check            # Check pending migrations
+        ebk lib migrate --version          # Show schema version
     """
     from .db.migrations import (
         run_all_migrations, check_migrations, get_engine,
@@ -312,7 +322,7 @@ def migrate(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@lib_app.command()
 def backup(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     output: Path = typer.Option(..., "--output", "-o", help="Output backup file (.tar.gz or .zip)"),
@@ -326,9 +336,9 @@ def backup(
     book files and covers.
 
     Examples:
-        ebk backup -o library-backup.tar.gz
-        ebk backup -o backup.zip --db-only           # Database only (small)
-        ebk backup ~/my-library -o full-backup.tar.gz
+        ebk lib backup -o library-backup.tar.gz
+        ebk lib backup -o backup.zip --db-only           # Database only (small)
+        ebk lib backup ~/my-library -o full-backup.tar.gz
     """
     import tarfile
     import zipfile
@@ -427,7 +437,7 @@ def backup(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@lib_app.command()
 def restore(
     backup_file: Path = typer.Argument(..., help="Backup file to restore (.tar.gz or .zip)"),
     library_path: Path = typer.Argument(..., help="Target library path (will be created)"),
@@ -439,8 +449,8 @@ def restore(
     Extracts a backup archive to create or restore a library.
 
     Examples:
-        ebk restore backup.tar.gz ~/restored-library
-        ebk restore backup.zip ~/my-library --force   # Overwrite existing
+        ebk lib restore backup.tar.gz ~/restored-library
+        ebk lib restore backup.zip ~/my-library --force   # Overwrite existing
     """
     import tarfile
     import zipfile
@@ -494,7 +504,7 @@ def restore(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@lib_app.command()
 def check(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     fix: bool = typer.Option(False, "--fix", help="Attempt to fix issues (remove orphan DB entries)"),
@@ -510,10 +520,10 @@ def check(
     - Hash mismatches: Files whose content doesn't match stored hash
 
     Examples:
-        ebk check                    # Check default library
-        ebk check ~/my-library       # Check specific library
-        ebk check --fix              # Remove orphan DB entries
-        ebk check --verbose          # Show all checked files
+        ebk lib check                    # Check default library
+        ebk lib check ~/my-library       # Check specific library
+        ebk lib check --fix              # Remove orphan DB entries
+        ebk lib check --verbose          # Show all checked files
     """
     from .library_db import Library
     import hashlib
@@ -986,6 +996,7 @@ def import_url(
     import re
     import tempfile
     from .library_db import Library
+    from .extract_metadata import extract_metadata
 
     library_path = resolve_library_path(library_path)
 
@@ -1097,6 +1108,7 @@ def import_opds(
     import tempfile
     from urllib.parse import urljoin
     from .library_db import Library
+    from .extract_metadata import extract_metadata
 
     library_path = resolve_library_path(library_path)
 
@@ -1379,7 +1391,7 @@ def import_isbn(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@query_app.command()
 def search(
     query: str = typer.Argument(..., help="Search query"),
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
@@ -1394,10 +1406,10 @@ def search(
     If no library path is specified, uses the default from config.
 
     Examples:
-        ebk search "python programming"                  # Uses config default
-        ebk search "python programming" ~/my-library
-        ebk search "machine learning" --limit 50
-        ebk search "python" --offset 20 --limit 20       # Page 2
+        ebk query search "python programming"                  # Uses config default
+        ebk query search "python programming" ~/my-library
+        ebk query search "machine learning" --limit 50
+        ebk query search "python" --offset 20 --limit 20       # Page 2
     """
     from .library_db import Library
 
@@ -1452,7 +1464,7 @@ def search(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@query_app.command()
 def stats(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)")
 ):
@@ -1464,8 +1476,8 @@ def stats(
     If no library path is specified, uses the default from config.
 
     Example:
-        ebk stats                # Uses config default
-        ebk stats ~/my-library
+        ebk query stats                # Uses config default
+        ebk query stats ~/my-library
     """
     from .library_db import Library
 
@@ -1508,7 +1520,7 @@ def stats(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@query_app.command()
 def sql(
     query: str = typer.Argument(..., help="SQL query to execute (SELECT only)"),
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
@@ -1525,10 +1537,10 @@ def sql(
     personal_metadata, annotations, books_fts (full-text search)
 
     Examples:
-        ebk sql "SELECT title, language FROM books WHERE language = 'en'"
-        ebk sql "SELECT COUNT(*) as count FROM books" --format json
-        ebk sql "SELECT a.name, COUNT(*) as books FROM authors a JOIN book_authors ba ON a.id = ba.author_id GROUP BY a.name ORDER BY books DESC" --limit 10
-        ebk sql "SELECT * FROM books_fts WHERE books_fts MATCH 'python'" --format csv
+        ebk query sql "SELECT title, language FROM books WHERE language = 'en'"
+        ebk query sql "SELECT COUNT(*) as count FROM books" --format json
+        ebk query sql "SELECT a.name, COUNT(*) as books FROM authors a JOIN book_authors ba ON a.id = ba.author_id GROUP BY a.name ORDER BY books DESC" --limit 10
+        ebk query sql "SELECT * FROM books_fts WHERE books_fts MATCH 'python'" --format csv
     """
     import io
     import sqlite3
@@ -1609,7 +1621,7 @@ def sql(
         raise typer.Exit(code=1)
 
 
-@app.command(name="list")
+@query_app.command(name="list")
 def list_books(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     limit: int = typer.Option(50, "--limit", "-n", help="Maximum number of books to show"),
@@ -1629,10 +1641,10 @@ def list_books(
     If no library path is specified, uses the default from config.
 
     Examples:
-        ebk list                           # Uses config default
-        ebk list ~/my-library
-        ebk list --author "Knuth"
-        ebk list --subject "Python" --limit 20
+        ebk query list                           # Uses config default
+        ebk query list ~/my-library
+        ebk query list --author "Knuth"
+        ebk query list --subject "Python" --limit 20
         ebk list --favorite                # List favorites
         ebk list --status reading          # Currently reading
         ebk list --status completed        # Completed books
@@ -2875,7 +2887,7 @@ def book_export(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@book_app.command()
 def purge(
     library_path: Path = typer.Argument(..., help="Path to library"),
     # Filtering criteria
@@ -2901,22 +2913,22 @@ def purge(
 
     Examples:
         # Preview books without files
-        ebk purge ~/my-library --no-files
+        ebk book purge ~/my-library --no-files
 
         # Preview books without supported ebook formats
-        ebk purge ~/my-library --no-supported-formats
+        ebk book purge ~/my-library --no-supported-formats
 
         # Delete books without files (after confirming)
-        ebk purge ~/my-library --no-files --execute
+        ebk book purge ~/my-library --no-files --execute
 
         # Delete books with only unsupported formats
-        ebk purge ~/my-library --no-supported-formats --execute
+        ebk book purge ~/my-library --no-supported-formats --execute
 
         # Delete unread books with rating <= 2 and their files
-        ebk purge ~/my-library --unread --max-rating 2 --execute --delete-files
+        ebk book purge ~/my-library --unread --max-rating 2 --execute --delete-files
 
         # Delete all books in a specific language
-        ebk purge ~/my-library --language fr --execute
+        ebk book purge ~/my-library --language fr --execute
     """
     from .library_db import Library
     from rich.table import Table
@@ -3881,7 +3893,122 @@ def export_calibre(
         raise typer.Exit(code=1)
 
 
-@app.command(name="read")
+@export_app.command(name="echo")
+def export_echo(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    output_dir: Path = typer.Argument(..., help="Output directory for ECHO archive"),
+    view: Optional[str] = typer.Option(None, "--view", "-V", help="Export only books from this view"),
+    include_db: bool = typer.Option(True, "--db/--no-db", help="Include SQLite database copy"),
+    owner_name: str = typer.Option("Unknown", "--owner", help="Owner name for README"),
+):
+    """
+    Export library to ECHO-compliant archive format.
+
+    Creates an ECHO-compliant directory with:
+    - README.md explaining the archive
+    - books.jsonl (one book per line)
+    - library.db (SQLite database copy, optional)
+    - covers/ directory with cover images
+    - by-author/ directory with markdown indexes
+
+    ECHO is a philosophy for durable personal data archives.
+    Learn more: https://github.com/alextowell/longecho
+
+    Examples:
+        ebk export echo ~/my-library ~/archive/
+        ebk export echo ~/my-library ~/archive/ --owner "John Doe"
+        ebk export echo ~/my-library ~/archive/ --view favorites --no-db
+    """
+    from .library_db import Library
+    from .exports.echo_export import export_echo as do_echo_export
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+
+        # Get books from view or all books
+        if view:
+            from .views import ViewService
+            svc = ViewService(lib.session)
+            transformed = svc.evaluate(view)
+            books = [tb.book for tb in transformed]
+            console.print(f"[blue]Exporting view '{view}' to ECHO format ({len(books)} books)...[/blue]")
+        else:
+            books = lib.get_all_books()
+            console.print(f"[blue]Exporting {len(books)} books to ECHO format...[/blue]")
+
+        # Convert books to entry dicts for the exporter
+        entries = []
+        for book in books:
+            # Get ISBN from identifiers
+            isbn = None
+            if book.identifiers:
+                for ident in book.identifiers:
+                    if ident.scheme and ident.scheme.lower() == 'isbn':
+                        isbn = ident.value
+                        break
+
+            # Get cover path from covers
+            cover_path = None
+            if book.covers:
+                cover_path = book.covers[0].path if book.covers[0].path else None
+
+            # Get personal metadata
+            pm = book.personal
+            entry = {
+                "id": book.id,
+                "title": book.title,
+                "creators": [a.name for a in book.authors] if book.authors else [],
+                "language": book.language,
+                "publisher": book.publisher,
+                "published_date": book.publication_date,
+                "isbn": isbn,
+                "subjects": [s.name for s in book.subjects] if book.subjects else [],
+                "description": book.description,
+                "file_paths": [bf.path for bf in book.files] if book.files else [],
+                "file_formats": [bf.format for bf in book.files] if book.files else [],
+                "cover_path": cover_path,
+                "added_at": book.created_at.isoformat() if book.created_at else None,
+                "status": pm.reading_status if pm else None,
+                "rating": pm.rating if pm else None,
+                "favorite": pm.favorite if pm else False,
+                "tags": [t.name for t in book.tags] if book.tags else [],
+            }
+            entries.append(entry)
+
+        # Determine database path
+        db_path = None
+        if include_db and hasattr(lib, 'db_path'):
+            db_path = lib.db_path
+
+        result = do_echo_export(
+            library_path=library_path,
+            output_dir=output_dir,
+            db_path=db_path,
+            entries=entries,
+            owner_name=owner_name
+        )
+
+        console.print(f"[green]✓ Exported {result['total_exported']} books to ECHO archive[/green]")
+        console.print(f"  Output: {result['output_dir']}")
+        console.print(f"  Authors: {result['authors']}")
+        console.print(f"  Covers: {result['covers_copied']}")
+        if result['db_included']:
+            console.print("  Database: included")
+        console.print("\n  Verify with: longecho check " + str(output_dir))
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error exporting to ECHO format: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        raise typer.Exit(code=1)
+
+
+@book_app.command(name="read")
 def read_book(
     book_id: int = typer.Argument(..., help="Book ID to read"),
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
@@ -3895,6 +4022,11 @@ def read_book(
     Without --text: Opens the ebook file in the default application.
     With --text: Displays extracted text in the console with paging.
     If no library path is specified, uses the default from config.
+
+    Examples:
+        ebk book read 42                  # Open book in default app
+        ebk book read 42 --text           # Display extracted text
+        ebk book read 42 --text --page 5  # View specific page
     """
     import subprocess
     import platform
@@ -4023,6 +4155,341 @@ def read_book(
         raise typer.Exit(code=1)
 
 
+# ============================================================================
+# BOOK REVIEW COMMANDS (ebk book review ...)
+# ============================================================================
+
+@review_app.command(name="add")
+def review_add(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+    content: str = typer.Option(..., "--content", "-c", help="Review text (markdown supported)"),
+    title: Optional[str] = typer.Option(None, "--title", "-t", help="Review headline/title"),
+    rating: Optional[float] = typer.Option(None, "--rating", "-r", help="Rating (1-5 stars)"),
+    review_type: str = typer.Option("personal", "--type", help="Review type: personal, summary, critique, notes"),
+):
+    """
+    Add a review to a book.
+
+    Reviews can be personal thoughts, summaries, critiques, or reading notes.
+    They are separate from simple star ratings.
+
+    Examples:
+        ebk book review add 42 --content "An excellent introduction to algorithms"
+        ebk book review add 42 -c "Great book!" -t "Highly Recommended" -r 5
+        ebk book review add 42 -c "Key points: ..." --type summary
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Validate rating
+        if rating is not None and not (1 <= rating <= 5):
+            console.print("[red]Rating must be between 1 and 5[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Validate review type
+        valid_types = ['personal', 'summary', 'critique', 'notes']
+        if review_type not in valid_types:
+            console.print(f"[red]Invalid review type. Use: {', '.join(valid_types)}[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        review_id = lib.add_review(
+            book_id=book_id,
+            content=content,
+            title=title,
+            rating=rating,
+            review_type=review_type
+        )
+
+        console.print(f"[green]✓ Added {review_type} review to '{book.title}'[/green]")
+        console.print(f"  Review ID: {review_id}")
+        if title:
+            console.print(f"  Title: {title}")
+        if rating:
+            console.print(f"  Rating: {'★' * int(rating)}{'☆' * (5 - int(rating))}")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error adding review: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@review_app.command(name="list")
+def review_list(
+    book_id: int = typer.Argument(..., help="Book ID"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, markdown"),
+):
+    """
+    List all reviews for a book.
+
+    Examples:
+        ebk book review list 42
+        ebk book review list 42 --format json
+        ebk book review list 42 --format markdown
+    """
+    from .library_db import Library
+    from rich.table import Table
+    import json
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        book = lib.get_book(book_id)
+
+        if not book:
+            console.print(f"[red]Book {book_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        reviews = lib.get_reviews(book_id)
+
+        if not reviews:
+            console.print(f"[yellow]No reviews found for '{book.title}'[/yellow]")
+            lib.close()
+            return
+
+        if format == "json":
+            data = []
+            for r in reviews:
+                data.append({
+                    "id": r.id,
+                    "title": r.title,
+                    "content": r.content,
+                    "rating": r.rating,
+                    "type": r.review_type,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                })
+            console.print(json.dumps(data, indent=2))
+
+        elif format == "markdown":
+            console.print(f"# Reviews for: {book.title}\n")
+            for r in reviews:
+                console.print(f"## {r.title or f'Review #{r.id}'}")
+                if r.rating:
+                    console.print(f"**Rating:** {'★' * int(r.rating)}{'☆' * (5 - int(r.rating))}")
+                console.print(f"**Type:** {r.review_type}")
+                console.print(f"**Date:** {r.created_at.strftime('%Y-%m-%d') if r.created_at else 'N/A'}\n")
+                console.print(r.content)
+                console.print("\n---\n")
+
+        else:  # table format
+            console.print(f"\n[bold blue]Reviews for: {book.title}[/bold blue]\n")
+
+            for r in reviews:
+                # Header with ID and type
+                header = f"[bold cyan]#{r.id}[/bold cyan] - {r.review_type}"
+                if r.title:
+                    header += f" - [bold]{r.title}[/bold]"
+                console.print(header)
+
+                # Rating
+                if r.rating:
+                    stars = '★' * int(r.rating) + '☆' * (5 - int(r.rating))
+                    console.print(f"  Rating: [yellow]{stars}[/yellow]")
+
+                # Date
+                if r.created_at:
+                    console.print(f"  Date: {r.created_at.strftime('%Y-%m-%d %H:%M')}")
+
+                # Content (truncated if long)
+                content_preview = r.content[:200] + "..." if len(r.content) > 200 else r.content
+                console.print(f"  [dim]{content_preview}[/dim]")
+                console.print()
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error listing reviews: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@review_app.command(name="show")
+def review_show(
+    review_id: int = typer.Argument(..., help="Review ID"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+):
+    """
+    Show the full content of a specific review.
+
+    Example:
+        ebk book review show 1
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        review = lib.get_review(review_id)
+
+        if not review:
+            console.print(f"[red]Review {review_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        book = lib.get_book(review.book_id)
+        book_title = book.title if book else f"Book #{review.book_id}"
+
+        console.print(f"\n[bold blue]{review.title or f'Review #{review.id}'}[/bold blue]")
+        console.print(f"[dim]For: {book_title}[/dim]")
+        console.print(f"[dim]Type: {review.review_type}[/dim]")
+
+        if review.rating:
+            stars = '★' * int(review.rating) + '☆' * (5 - int(review.rating))
+            console.print(f"Rating: [yellow]{stars}[/yellow]")
+
+        console.print(f"Created: {review.created_at.strftime('%Y-%m-%d %H:%M') if review.created_at else 'N/A'}")
+        if review.updated_at and review.updated_at != review.created_at:
+            console.print(f"Updated: {review.updated_at.strftime('%Y-%m-%d %H:%M')}")
+
+        console.print(f"\n{review.content}\n")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error showing review: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@review_app.command(name="edit")
+def review_edit(
+    review_id: int = typer.Argument(..., help="Review ID"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+    content: Optional[str] = typer.Option(None, "--content", "-c", help="New review text"),
+    title: Optional[str] = typer.Option(None, "--title", "-t", help="New title"),
+    rating: Optional[float] = typer.Option(None, "--rating", "-r", help="New rating (1-5)"),
+    review_type: Optional[str] = typer.Option(None, "--type", help="New review type"),
+):
+    """
+    Edit an existing review.
+
+    Examples:
+        ebk book review edit 1 --content "Updated thoughts..."
+        ebk book review edit 1 --rating 4 --title "New Title"
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    # Check if any update is requested
+    if all(v is None for v in [content, title, rating, review_type]):
+        console.print("[yellow]No changes specified. Use --content, --title, --rating, or --type[/yellow]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        review = lib.get_review(review_id)
+
+        if not review:
+            console.print(f"[red]Review {review_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Validate rating
+        if rating is not None and not (1 <= rating <= 5):
+            console.print("[red]Rating must be between 1 and 5[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Validate review type
+        if review_type is not None:
+            valid_types = ['personal', 'summary', 'critique', 'notes']
+            if review_type not in valid_types:
+                console.print(f"[red]Invalid review type. Use: {', '.join(valid_types)}[/red]")
+                lib.close()
+                raise typer.Exit(code=1)
+
+        success = lib.update_review(
+            review_id=review_id,
+            content=content,
+            title=title,
+            rating=rating,
+            review_type=review_type
+        )
+
+        if success:
+            console.print(f"[green]✓ Updated review #{review_id}[/green]")
+        else:
+            console.print(f"[red]Failed to update review[/red]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error editing review: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@review_app.command(name="delete")
+def review_delete(
+    review_id: int = typer.Argument(..., help="Review ID"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """
+    Delete a review.
+
+    Examples:
+        ebk book review delete 1
+        ebk book review delete 1 --yes  # Skip confirmation
+    """
+    from .library_db import Library
+
+    library_path = resolve_library_path(library_path)
+
+    try:
+        lib = Library.open(library_path)
+        review = lib.get_review(review_id)
+
+        if not review:
+            console.print(f"[red]Review {review_id} not found[/red]")
+            lib.close()
+            raise typer.Exit(code=1)
+
+        # Show review info
+        console.print(f"\n[bold]Review #{review.id}[/bold]")
+        if review.title:
+            console.print(f"Title: {review.title}")
+        console.print(f"Type: {review.review_type}")
+        content_preview = review.content[:100] + "..." if len(review.content) > 100 else review.content
+        console.print(f"Content: {content_preview}")
+
+        if not yes:
+            confirm = typer.confirm("\nDelete this review?")
+            if not confirm:
+                console.print("[yellow]Cancelled[/yellow]")
+                lib.close()
+                return
+
+        success = lib.delete_review(review_id)
+
+        if success:
+            console.print(f"[green]✓ Deleted review #{review_id}[/green]")
+        else:
+            console.print(f"[red]Failed to delete review[/red]")
+
+        lib.close()
+
+    except Exception as e:
+        console.print(f"[red]Error deleting review: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def serve(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (defaults from config)"),
@@ -4123,7 +4590,7 @@ def serve(
 
 @app.command()
 def enrich(
-    library_path: Path = typer.Argument(..., help="Path to library"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     provider: Optional[str] = typer.Option(None, help="LLM provider (ollama, openai) - defaults from config"),
     model: Optional[str] = typer.Option(None, help="Model name - defaults from config"),
     host: Optional[str] = typer.Option(None, help="Ollama host (for remote GPU) - defaults from config"),
@@ -4148,20 +4615,23 @@ def enrich(
         Use 'ebk config' to view/edit your default configuration.
 
     Examples:
-        # Enrich all books using configured defaults
+        # Enrich all books using configured defaults (library from config)
+        ebk enrich
+
+        # Enrich specific library
         ebk enrich ~/my-library
 
         # Override config to use different host
-        ebk enrich ~/my-library --host 192.168.1.100
+        ebk enrich --host 192.168.1.100
 
         # Enrich specific book
-        ebk enrich ~/my-library --book-id 42
+        ebk enrich --book-id 42
 
         # Generate tags and descriptions
-        ebk enrich ~/my-library --enhance-descriptions
+        ebk enrich --enhance-descriptions
 
         # Dry run to see what would be generated
-        ebk enrich ~/my-library --dry-run
+        ebk enrich --dry-run
     """
     import asyncio
     from ebk.library_db import Library
@@ -4170,9 +4640,8 @@ def enrich(
     from ebk.ai.metadata_enrichment import MetadataEnrichmentService
     from ebk.config import load_config
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        raise typer.Exit(code=1)
+    # Resolve library path with config fallback
+    library_path = resolve_library_path(library_path)
 
     # Load configuration and apply CLI overrides
     config = load_config()
@@ -4205,6 +4674,26 @@ def enrich(
                 model=llm_cfg.model,
                 temperature=llm_cfg.temperature
             )
+        elif llm_cfg.provider == "anthropic":
+            if not llm_cfg.api_key:
+                console.print("[red]Error: API key required for Anthropic (use --api-key or set in config)[/red]")
+                raise typer.Exit(code=1)
+            from ebk.ai.llm_providers.anthropic import AnthropicProvider
+            llm_provider = AnthropicProvider.create(
+                api_key=llm_cfg.api_key,
+                model=llm_cfg.model or "claude-sonnet-4-20250514",
+                temperature=llm_cfg.temperature
+            )
+        elif llm_cfg.provider == "gemini":
+            if not llm_cfg.api_key:
+                console.print("[red]Error: API key required for Gemini (use --api-key or set in config)[/red]")
+                raise typer.Exit(code=1)
+            from ebk.ai.llm_providers.gemini import GeminiProvider
+            llm_provider = GeminiProvider.create(
+                api_key=llm_cfg.api_key,
+                model=llm_cfg.model or "gemini-1.5-flash",
+                temperature=llm_cfg.temperature
+            )
         elif llm_cfg.provider == "openai":
             if not llm_cfg.api_key:
                 console.print("[red]Error: API key required for OpenAI (use --api-key or set in config)[/red]")
@@ -4218,16 +4707,19 @@ def enrich(
             console.print("[red]OpenAI provider not yet implemented[/red]")
             raise typer.Exit(code=1)
         else:
-            console.print(f"[red]Unknown provider: {llm_cfg.provider}[/red]")
+            console.print(f"[red]Unknown provider: {llm_cfg.provider}. Supported: ollama, anthropic, gemini[/red]")
             raise typer.Exit(code=1)
 
         # Initialize provider
         await llm_provider.initialize()
 
         try:
-            # Test connection by listing models
-            models = await llm_provider.list_models()
-            console.print(f"[green]Connected! Available models: {', '.join(models[:5])}[/green]")
+            # Test connection (only Ollama supports listing models)
+            if hasattr(llm_provider, 'list_models'):
+                models = await llm_provider.list_models()
+                console.print(f"[green]Connected! Available models: {', '.join(models[:5])}[/green]")
+            else:
+                console.print(f"[green]Connected to {llm_cfg.provider}![/green]")
 
             # Initialize service
             service = MetadataEnrichmentService(llm_provider)
@@ -5015,201 +5507,6 @@ def tag_stats(
 
     except Exception as e:
         console.print(f"[red]Error getting tag statistics: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-# ==============================================================================
-# VFS Commands - Operate on VFS paths
-# ==============================================================================
-
-@vfs_app.command(name="ln")
-def vfs_ln(
-    source: str = typer.Argument(..., help="Source path (e.g., /books/42 or /tags/Work/42)"),
-    dest: str = typer.Argument(..., help="Destination tag path (e.g., /tags/Archive/)"),
-    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
-):
-    """Link a book to a tag.
-
-    Examples:
-        ebk vfs ln /books/42 /tags/Work/
-        ebk vfs ln /tags/Work/42 /tags/Archive/
-    """
-    from .repl.shell import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-        shell.cmd_ln([source, dest], silent=False)
-        shell.cleanup()
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@vfs_app.command(name="mv")
-def vfs_mv(
-    source: str = typer.Argument(..., help="Source path (e.g., /tags/Work/42)"),
-    dest: str = typer.Argument(..., help="Destination tag path (e.g., /tags/Archive/)"),
-    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
-):
-    """Move a book between tags.
-
-    Examples:
-        ebk vfs mv /tags/Work/42 /tags/Archive/
-    """
-    from .repl.shell import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-        shell.cmd_mv([source, dest], silent=False)
-        shell.cleanup()
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@vfs_app.command(name="rm")
-def vfs_rm(
-    path: str = typer.Argument(..., help="Path to remove (e.g., /tags/Work/42 or /books/42/)"),
-    recursive: bool = typer.Option(False, "-r", "--recursive", help="Recursively delete tag and children"),
-    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
-):
-    """Remove tag from book, delete tag, or DELETE book.
-
-    Examples:
-        ebk vfs rm /tags/Work/42          # Remove tag from book
-        ebk vfs rm /tags/Work/            # Delete tag
-        ebk vfs rm /tags/Work/ -r         # Delete tag recursively
-        ebk vfs rm /books/42/             # DELETE book (with confirmation)
-    """
-    from .repl.shell import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-
-        args = [path]
-        if recursive:
-            args.insert(0, '-r')
-
-        shell.cmd_rm(args, silent=False)
-        shell.cleanup()
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@vfs_app.command(name="mkdir")
-def vfs_mkdir(
-    path: str = typer.Argument(..., help="Tag path to create (e.g., /tags/Work/Project-2024/)"),
-    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
-):
-    """Create a new tag directory.
-
-    Examples:
-        ebk vfs mkdir /tags/Work/
-        ebk vfs mkdir /tags/Work/Project-2024/
-        ebk vfs mkdir /tags/Reading/Fiction/Sci-Fi/
-    """
-    from .repl.shell import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-        shell.cmd_mkdir([path], silent=False)
-        shell.cleanup()
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@vfs_app.command(name="ls")
-def vfs_ls(
-    path: str = typer.Argument("/", help="VFS path to list (e.g., /books/ or /tags/Work/)"),
-    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
-):
-    """List contents of a VFS directory.
-
-    Examples:
-        ebk vfs ls                      # List root, uses config default library
-        ebk vfs ls /books/
-        ebk vfs ls /tags/Work/
-        ebk vfs ls /books/42/ -L ~/library
-    """
-    from .repl.shell import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-
-        shell.cmd_ls([path], silent=False)
-
-        shell.cleanup()
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@vfs_app.command(name="cat")
-def vfs_cat(
-    path: str = typer.Argument(..., help="VFS file path (e.g., /books/42/title or /tags/Work/description)"),
-    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
-):
-    """Read contents of a VFS file.
-
-    Examples:
-        ebk vfs cat /books/42/title
-        ebk vfs cat /tags/Work/description
-    """
-    from .repl.shell import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-
-        shell.cmd_cat([path], silent=False)
-
-        shell.cleanup()
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@vfs_app.command(name="exec")
-def vfs_exec(
-    command: str = typer.Argument(..., help="Shell command to execute"),
-    library_path: Optional[Path] = typer.Option(None, "--library", "-L", help="Path to library (uses config default if not specified)"),
-):
-    """Execute a shell command with VFS context.
-
-    This runs a command in the shell environment, allowing you to use
-    shell syntax like pipes, redirection, and multiple commands.
-
-    Examples:
-        ebk vfs exec "ls /tags/"
-        ebk vfs exec "cat /books/42/title"
-        ebk vfs exec "find author:Knuth | wc -l"
-    """
-    from .repl.shell import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-
-        # Execute the command
-        shell.execute(command)
-
-        shell.cleanup()
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(code=1)
 
 
@@ -6004,6 +6301,131 @@ def view_edit(
         raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+# ============================================================================
+# Skill Commands - Manage Claude Code skill installation
+# ============================================================================
+
+@skill_app.command()
+def install():
+    """Install ebk skill for Claude Code.
+
+    Copies SKILL.md to ~/.claude/skills/ebk/ to enable Claude Code
+    to understand and assist with ebk library management.
+
+    Example:
+        ebk skill install
+    """
+    import importlib.resources
+    import shutil
+
+    skill_dir = Path.home() / ".claude" / "skills" / "ebk"
+
+    try:
+        # Get SKILL.md from package
+        try:
+            # Python 3.9+
+            skill_file = importlib.resources.files("ebk.skills").joinpath("SKILL.md")
+            skill_content = skill_file.read_text()
+        except (AttributeError, TypeError):
+            # Fallback for older Python
+            import pkg_resources
+            skill_content = pkg_resources.resource_string("ebk.skills", "SKILL.md").decode()
+
+        # Create skill directory
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write SKILL.md
+        skill_path = skill_dir / "SKILL.md"
+        skill_path.write_text(skill_content)
+
+        console.print(f"[green]✓ Installed ebk skill to {skill_dir}[/green]")
+        console.print("[dim]Claude Code will now understand ebk commands and library structure[/dim]")
+
+    except Exception as e:
+        console.print(f"[red]Error installing skill: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@skill_app.command()
+def uninstall():
+    """Uninstall ebk skill from Claude Code.
+
+    Removes the skill directory from ~/.claude/skills/ebk/.
+
+    Example:
+        ebk skill uninstall
+    """
+    import shutil
+
+    skill_dir = Path.home() / ".claude" / "skills" / "ebk"
+
+    if not skill_dir.exists():
+        console.print("[yellow]Skill not installed[/yellow]")
+        return
+
+    try:
+        shutil.rmtree(skill_dir)
+        console.print(f"[green]✓ Uninstalled ebk skill from {skill_dir}[/green]")
+
+    except Exception as e:
+        console.print(f"[red]Error uninstalling skill: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+@skill_app.command()
+def status():
+    """Check ebk skill installation status.
+
+    Shows whether the skill is installed and displays version info.
+
+    Example:
+        ebk skill status
+    """
+    skill_dir = Path.home() / ".claude" / "skills" / "ebk"
+    skill_path = skill_dir / "SKILL.md"
+
+    if skill_path.exists():
+        console.print(f"[green]✓ Skill installed at {skill_dir}[/green]")
+
+        # Show first few lines of skill file
+        content = skill_path.read_text()
+        lines = content.split("\n")[:10]
+        console.print("\n[dim]Skill header:[/dim]")
+        for line in lines:
+            if line.strip():
+                console.print(f"  {line}")
+    else:
+        console.print("[yellow]Skill not installed[/yellow]")
+        console.print("[dim]Run 'ebk skill install' to install[/dim]")
+
+
+@skill_app.command()
+def show():
+    """Display the full SKILL.md content.
+
+    Shows the complete skill definition that Claude Code uses.
+
+    Example:
+        ebk skill show
+    """
+    import importlib.resources
+
+    try:
+        # Get SKILL.md from package
+        try:
+            skill_file = importlib.resources.files("ebk.skills").joinpath("SKILL.md")
+            content = skill_file.read_text()
+        except (AttributeError, TypeError):
+            import pkg_resources
+            content = pkg_resources.resource_string("ebk.skills", "SKILL.md").decode()
+
+        console.print(content)
+
+    except Exception as e:
+        console.print(f"[red]Error reading skill: {e}[/red]")
         raise typer.Exit(code=1)
 
 

@@ -10,7 +10,6 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import hashlib
 import logging
-from collections import defaultdict
 
 # Use sentence-transformers for embeddings if available
 try:
@@ -235,7 +234,7 @@ class EmbeddingStore:
                 # Transform using existing vocabulary
                 try:
                     embeddings = self.vectorizer.transform([text])
-                except:
+                except Exception:
                     # Refit with all texts if vocabulary changed
                     self.fitted_texts.append(text)
                     embeddings = self.vectorizer.fit_transform(self.fitted_texts)
@@ -254,7 +253,7 @@ class EmbeddingStore:
             else:
                 try:
                     embeddings = self.vectorizer.transform(texts)
-                except:
+                except Exception:
                     self.fitted_texts.extend(texts)
                     embeddings = self.vectorizer.fit_transform(self.fitted_texts)
 

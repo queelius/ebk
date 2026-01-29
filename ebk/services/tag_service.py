@@ -5,7 +5,6 @@ Tags provide user-defined organization separate from bibliographic subjects.
 
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from datetime import datetime
 
 from ebk.db.models import Tag, Book, book_tags
 

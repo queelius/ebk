@@ -1,7 +1,6 @@
 import os
 import xmltodict
 from typing import Dict, Optional
-from slugify import slugify
 import pypdf
 from ebooklib import epub
 

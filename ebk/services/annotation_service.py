@@ -197,45 +197,37 @@ class AnnotationService:
         if not self.library_path:
             raise ValueError("library_path required for annotation extraction")
 
-        from .annotation_extraction import AnnotationExtractionService
+        from .annotation_extraction import extract_annotations_from_book
 
         book = self.session.query(Book).filter_by(id=book_id).first()
         if not book:
             logger.error(f"Book {book_id} not found")
             return 0
 
-        extraction_service = AnnotationExtractionService(self.library_path)
+        annotations = extract_annotations_from_book(book, self.library_path, file_format)
         total_saved = 0
 
-        for file in book.files:
-            # Skip if format filter specified and doesn't match
-            if file_format and file.format.lower() != file_format.lower():
+        for annot in annotations:
+            # Skip duplicates (same content, same page, same type)
+            existing = self.session.query(Annotation).filter_by(
+                book_id=book_id,
+                content=annot.content,
+                page_number=annot.page_number,
+                annotation_type=annot.annotation_type
+            ).first()
+
+            if existing:
                 continue
 
-            file_path = self.library_path / file.path
-            annotations = extraction_service.extract_annotations(file_path)
-
-            for annot in annotations:
-                # Skip duplicates (same content, same page, same type)
-                existing = self.session.query(Annotation).filter_by(
-                    book_id=book_id,
-                    content=annot.content,
-                    page_number=annot.page_number,
-                    annotation_type=annot.annotation_type
-                ).first()
-
-                if existing:
-                    continue
-
-                self.create(
-                    book_id=book_id,
-                    content=annot.content,
-                    annotation_type=annot.annotation_type,
-                    page_number=annot.page_number,
-                    position=annot.position,
-                    color=annot.color
-                )
-                total_saved += 1
+            self.create(
+                book_id=book_id,
+                content=annot.content,
+                annotation_type=annot.annotation_type,
+                page_number=annot.page_number,
+                position=annot.position,
+                color=annot.color
+            )
+            total_saved += 1
 
         return total_saved
 

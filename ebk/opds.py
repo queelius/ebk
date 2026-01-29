@@ -13,9 +13,8 @@ OPDS Spec: https://specs.opds.io/opds-1.2
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, List
-from urllib.parse import quote, urlencode
-import mimetypes
+from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response, FileResponse

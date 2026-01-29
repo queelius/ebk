@@ -25,8 +25,8 @@ class ContentExtractor(Extractor[str]):
         # Try to get extracted text from primary file
         if book.files:
             for file in book.files:
-                if file.extracted_text and file.extracted_text.full_text:
-                    return file.extracted_text.full_text
+                if file.extracted_text and file.extracted_text.content:
+                    return file.extracted_text.content
 
         # Fallback to title + description
         parts = []

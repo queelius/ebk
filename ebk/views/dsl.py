@@ -31,13 +31,13 @@ Grammar:
               | {then: [ordering, ...]}
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Union
 from datetime import datetime, timezone
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, not_
+from sqlalchemy import and_, or_
 
 from ..db.models import Book, Author, Subject, Tag, File, PersonalMetadata, View
 
