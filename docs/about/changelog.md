@@ -2,6 +2,44 @@
 
 Project changelog and release notes.
 
+## v0.4.5 (2026-03-10)
+
+### Security Fixes
+
+- **SQL injection fix in Views DSL**: Replaced bypassable keyword blocklist with defense-in-depth: read-only SQLite connections, authorizer callback whitelist (SELECT/READ/FUNCTION only), and multi-statement rejection
+- **CORS restriction**: Server CORS policy restricted from wildcard (`*`) to localhost origins only, preventing cross-origin attacks on the local library API
+- **Gemini API key protection**: Moved API key from URL query parameter (visible in logs/proxies) to `x-goog-api-key` header; added `LLMConfig.__repr__` with key redaction
+
+### Bug Fixes
+
+- **`Tag.full_path` AttributeError**: Added missing `full_path` property to Tag model, fixing export failures for tagged books
+- **Circular view references**: Added cycle detection to Views DSL evaluator, preventing infinite recursion when views reference each other
+- **Missing migration**: Added migration v7 for `views` and `view_overrides` tables, fixing upgrade path for existing databases
+
+### Improvements
+
+- Gemini provider now uses native `system_instruction` API field instead of fake user/model exchange
+- Extracted `_build_payload()` in Gemini provider, eliminating duplicated payload construction
+- Hoisted SQLite authorizer constants to class level for better performance
+- Removed tracked backup files (`cli.py.backup`, `cli.py.grouped-backup`)
+
+## v0.4.4 (2025-10-13)
+
+### New Features
+
+- **Anthropic provider**: Claude model support via `ebk/ai/llm_providers/anthropic.py`
+- **Gemini provider**: Google Gemini model support via `ebk/ai/llm_providers/gemini.py`
+- **Open Library integration**: Metadata lookup via Open Library API
+- **Echo export**: New export format in `ebk/exports/echo_export.py`
+- **CITATION.cff**: Added citation metadata file
+
+### Improvements
+
+- Code simplification and cleanup across CLI, decorators, and config modules
+- LLM provider deduplication and shared base class improvements
+- Simplified decorators module
+- Documentation cleanup: removed obsolete development docs
+
 ## v0.4.3 (2025-01-03)
 
 ### New Features

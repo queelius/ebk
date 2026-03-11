@@ -20,16 +20,36 @@ ebk is built around several key architectural principles:
 - `Book` - Core book entity with metadata
 - `Author` - Author information with sort names
 - `Subject` - Tags/subjects/categories
+- `Tag` - Hierarchical user-defined tags (separate from subjects)
 - `File` - Physical file records with hash-based deduplication
 - `ExtractedText` - Full text from ebooks
 - `TextChunk` - Overlapping chunks for semantic search
 - `Cover` - Cover images with thumbnails
+- `PersonalMetadata` - Ratings, favorites, reading status
+- `View` - Named view definitions (Views DSL)
+- `ViewOverride` - Per-book metadata overrides within views
 - `BooksFTS` - FTS5 virtual table for full-text search
 
 **Session Management** (`session.py`):
 - Database initialization and schema creation
 - FTS5 index setup
 - Connection pooling
+
+**Migrations** (`migrations.py`):
+- Sequential schema versioning via `schema_versions` table
+- Idempotent migrations (check-before-apply pattern)
+- Run with `ebk migrate` or `run_all_migrations()`
+- Current schema version: 7
+
+### Views DSL (`ebk/views/`)
+
+Composable query language for named library subsets:
+
+- **DSL Evaluator** (`dsl.py`) - Three-stage pipeline: `evaluate(view) = order(transform(select(library)))`
+- **View Service** (`service.py`) - CRUD, membership, override management
+- Supports: filters, set operations (union/intersect/difference), view references, raw SQL selectors
+- Security: SQL selectors use read-only connections + SQLite authorizer whitelist
+- Cycle detection for recursive view references with depth limits
 
 ### Service Layer (`ebk/services/`)
 
@@ -48,9 +68,10 @@ ebk is built around several key architectural principles:
 ### AI/LLM Layer (`ebk/ai/`)
 
 **LLM Providers** (`llm_providers/`):
-- `BaseLLMProvider` - Abstract interface
-- `OllamaProvider` - Local and remote Ollama
-- Future: OpenAI, Anthropic, MCP providers
+- `BaseLLMProvider` - Abstract interface with async context manager support
+- `OllamaProvider` - Local and remote Ollama (with native JSON mode)
+- `AnthropicProvider` - Claude models via Anthropic API
+- `GeminiProvider` - Google Gemini models via Google AI API
 
 **Metadata Enrichment** (`metadata_enrichment.py`):
 - Auto-tagging

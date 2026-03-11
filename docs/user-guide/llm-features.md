@@ -6,10 +6,10 @@ ebk includes AI-powered features for metadata enrichment using Large Language Mo
 
 The LLM features are built on an abstract provider system that supports multiple backends:
 
-- **Ollama** - Local and remote models (currently supported)
-- **OpenAI** - GPT models (planned)
-- **Anthropic** - Claude models (planned)
-- **Custom providers** - Extend with your own
+- **Ollama** - Local and remote open-source models
+- **Anthropic** - Claude models (requires API key)
+- **Google Gemini** - Gemini models (requires API key)
+- **Custom providers** - Extend `BaseLLMProvider` with your own
 
 ## Quick Start
 
@@ -180,6 +180,26 @@ ollama pull llama3.2
 # Ollama automatically listens on 0.0.0.0:11434
 ```
 
+### Anthropic (Claude)
+
+Use Anthropic's Claude models via API:
+
+```bash
+ebk config set llm.provider anthropic
+ebk config set llm.model claude-sonnet-4-20250514
+ebk config set llm.api_key sk-ant-...
+```
+
+### Google Gemini
+
+Use Google's Gemini models via API:
+
+```bash
+ebk config set llm.provider gemini
+ebk config set llm.model gemini-1.5-flash
+ebk config set llm.api_key AIza...
+```
+
 ### CLI Overrides
 
 Override config settings for individual commands:
@@ -238,16 +258,21 @@ Use LLM features programmatically:
 
 ```python
 from ebk.ai.llm_providers.ollama import OllamaProvider
+from ebk.ai.llm_providers.anthropic import AnthropicProvider
+from ebk.ai.llm_providers.gemini import GeminiProvider
 from ebk.ai.metadata_enrichment import MetadataEnrichmentService
 
-# Initialize provider
+# Ollama (local)
 provider = OllamaProvider.local(model="llama3.2")
 
-# Or remote
-provider = OllamaProvider.remote(
-    host="192.168.1.100",
-    model="llama3.2"
-)
+# Ollama (remote GPU server)
+provider = OllamaProvider.remote(host="192.168.1.100", model="llama3.2")
+
+# Anthropic
+provider = AnthropicProvider.create(api_key="sk-ant-...", model="claude-sonnet-4-20250514")
+
+# Gemini
+provider = GeminiProvider.create(api_key="AIza...", model="gemini-1.5-flash")
 
 # Create enrichment service
 service = MetadataEnrichmentService(provider)
@@ -571,10 +596,7 @@ ebk enrich ~/library --enhance-descriptions --filter "year:2020-"
 
 Planned LLM-powered features:
 
-- **Similarity detection** - Find duplicate books with different metadata
 - **Summary generation** - Create book summaries from content
-- **Reading level assessment** - Determine appropriate audience
-- **Topic extraction** - Identify key topics and themes
 - **Citation extraction** - Extract and link referenced works
 - **Question generation** - Create study questions
 - **Translation** - Translate metadata between languages

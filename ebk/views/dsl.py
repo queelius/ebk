@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Union
 from datetime import datetime, timezone
 import logging
+import sqlite3
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -258,17 +259,17 @@ class ViewEvaluator:
 
         raise ValueError(f"Unknown selector type in {context}: {list(selector.keys())}")
 
+    # Authorizer constants — resolved once at class load, not per callback invocation.
+    _AUTHORIZER_ALLOWED = frozenset({
+        sqlite3.SQLITE_SELECT,
+        sqlite3.SQLITE_READ,
+        sqlite3.SQLITE_FUNCTION,
+    })
+
     @staticmethod
     def _sqlite_authorizer(action, arg1, arg2, db_name, trigger_name):
         """SQLite authorizer callback that only allows read operations."""
-        import sqlite3
-        # Allow SELECT, READ, and FUNCTION actions; deny everything else
-        allowed = {
-            sqlite3.SQLITE_SELECT,   # SELECT statement
-            sqlite3.SQLITE_READ,     # Reading a column
-            sqlite3.SQLITE_FUNCTION, # Calling a function (e.g., COUNT, MAX)
-        }
-        if action in allowed:
+        if action in ViewEvaluator._AUTHORIZER_ALLOWED:
             return sqlite3.SQLITE_OK
         return sqlite3.SQLITE_DENY
 
@@ -293,15 +294,13 @@ class ViewEvaluator:
             {sql: "SELECT id FROM books WHERE language = 'en'"}
             {sql: "SELECT book_id FROM book_subjects WHERE subject_id = 1"}
         """
-        import sqlite3
-
         # Layer 1: Basic prefix check
         query_stripped = sql_query.strip().upper()
         if not query_stripped.startswith('SELECT'):
             raise ValueError(f"SQL selector must be a SELECT query in {context}")
 
-        # Reject multiple statements (semicolons outside string literals)
-        # Simple check: strip the query and reject if it contains ';' followed by non-whitespace
+        # Reject multiple statements (naive check — does not parse string literals,
+        # but the authorizer in Layer 3 provides the real defense)
         stripped = sql_query.strip().rstrip(';').strip()
         if ';' in stripped:
             raise ValueError(f"SQL selector must be a single statement in {context}")

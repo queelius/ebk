@@ -283,29 +283,47 @@ export_svc.export_opds(books, Path("catalog.xml"))
 
 ### ViewService
 
-Manage named views (saved queries).
+Manage named views — composable, non-destructive lenses over the library.
 
 ```python
 from ebk.views import ViewService
 
 view_svc = ViewService(lib.session)
 
-# Create a view
+# Create a view using the Views DSL
 view_svc.create(
     name="favorites",
-    definition={"favorite": True},
-    description="All favorite books"
+    definition={
+        "select": {"filter": {"favorite": True}},
+        "order": {"by": "rating", "desc": True}
+    },
+    description="All favorite books, sorted by rating"
+)
+
+# Compose views with set operations
+view_svc.create(
+    name="english-favorites",
+    definition={
+        "select": {
+            "intersect": [
+                {"view": "favorites"},
+                {"filter": {"language": "en"}}
+            ]
+        }
+    }
 )
 
 # List views
 views = view_svc.list()
 
-# Evaluate a view (get matching books)
+# Evaluate a view (get matching TransformedBook objects)
 books = view_svc.evaluate("favorites")
 
 # Delete a view
 view_svc.delete("favorites")
 ```
+
+The Views DSL supports selectors (`all`, `none`, `filter`, `ids`, `view`, `union`, `intersect`, `difference`, `sql`), transforms (`identity`, `override`, `compose`), and orderings (`by`, `custom`, `then`).
 
 ## Search
 

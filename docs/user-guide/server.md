@@ -558,19 +558,30 @@ templates = Jinja2Templates(directory="/path/to/templates")
 
 ### CORS Configuration
 
-Enable CORS for API access from web apps:
+By default, the server restricts CORS to localhost origins (`localhost:8000`, `127.0.0.1:8000`, `localhost:3000`, `127.0.0.1:3000`) for security. This prevents external websites from making authenticated requests to your local library.
+
+To add custom origins for a frontend app on a different port:
 
 ```python
+from ebk.server import app
 from fastapi.middleware.cors import CORSMiddleware
 
+# Replace the default CORS middleware with custom origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:8000",
+        "http://localhost:3000",
+        "http://localhost:5173",  # e.g., Vite dev server
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 ```
+
+!!! warning
+    Never use `allow_origins=["*"]` with `allow_credentials=True` — this allows any website to make authenticated requests to your library API.
 
 ## Next Steps
 

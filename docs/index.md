@@ -62,7 +62,7 @@ ebk:/$ find author:Knuth rating:>=4
 
 ### AI-Powered Features (Optional)
 
-Connect to Ollama for LLM-powered metadata enrichment:
+Connect to Ollama, Anthropic (Claude), or Google Gemini for LLM-powered metadata enrichment:
 
 - Auto-generate tags and categories
 - Enhance descriptions
