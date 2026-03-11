@@ -222,6 +222,11 @@ class Tag(Base):
         return ancestors
 
     @property
+    def full_path(self) -> str:
+        """Return the complete hierarchical path (alias for path column)."""
+        return self.path
+
+    @property
     def full_path_parts(self) -> List[str]:
         """Split path into components."""
         return self.path.split('/')

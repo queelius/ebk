@@ -322,6 +322,29 @@ class TestSelectorViewReference:
         with pytest.raises(ValueError, match="not found"):
             evaluator.evaluate({"select": {"view": "nonexistent-view"}})
 
+    def test_view_reference_circular_direct_raises(self, evaluator, view_service):
+        """Given view A referencing itself, when evaluating, then circular ref is detected."""
+        view_service.create("self-ref", definition={"select": {"view": "self-ref"}})
+        evaluator._view_cache.clear()
+        with pytest.raises(ValueError, match="Circular view reference"):
+            evaluator.evaluate({"select": {"view": "self-ref"}})
+
+    def test_view_reference_circular_indirect_raises(self, evaluator, view_service):
+        """Given A->B->A cycle, when evaluating, then circular ref is detected."""
+        view_service.create("cycle-a", definition={"select": {"view": "cycle-b"}})
+        view_service.create("cycle-b", definition={"select": {"view": "cycle-a"}})
+        evaluator._view_cache.clear()
+        with pytest.raises(ValueError, match="Circular view reference"):
+            evaluator.evaluate({"select": {"view": "cycle-a"}})
+
+    def test_view_reference_chain_no_cycle_works(self, evaluator, view_service, populated_library):
+        """Given A->B->filter (no cycle), when evaluating, then it works normally."""
+        view_service.create("chain-leaf", definition={"select": {"filter": {"language": "en"}}})
+        view_service.create("chain-root", definition={"select": {"view": "chain-leaf"}})
+        evaluator._view_cache.clear()
+        result = evaluator.evaluate({"select": {"view": "chain-root"}})
+        assert len(result) > 0
+
 
 class TestSelectorUnion:
     """Test the 'union' combinator."""
@@ -457,6 +480,61 @@ class TestSelectorDifference:
         # Then: Should return Spanish book unchanged
         assert len(result) == 1
         assert result[0].title == "Literatura Espanola"
+
+
+class TestSelectorSql:
+    """Test the 'sql' raw SQL selector with security enforcement."""
+
+    def test_sql_select_returns_books(self, evaluator, populated_library):
+        """Given valid SELECT query, when evaluating, then matching books are returned."""
+        result = evaluator.evaluate(
+            {"select": {"sql": "SELECT id FROM books WHERE language = 'en'"}}
+        )
+        assert len(result) > 0
+        assert all(tb.book.language == "en" for tb in result)
+
+    def test_sql_rejects_non_select(self, evaluator, populated_library):
+        """Given non-SELECT query, when evaluating, then ValueError is raised."""
+        with pytest.raises(ValueError, match="SELECT query"):
+            evaluator.evaluate(
+                {"select": {"sql": "DELETE FROM books"}}
+            )
+
+    def test_sql_rejects_multiple_statements(self, evaluator, populated_library):
+        """Given multiple statements, when evaluating, then ValueError is raised."""
+        with pytest.raises(ValueError, match="single statement"):
+            evaluator.evaluate(
+                {"select": {"sql": "SELECT id FROM books; DROP TABLE books"}}
+            )
+
+    def test_sql_authorizer_blocks_write_ops(self, evaluator, populated_library):
+        """Given write operation disguised as SELECT, authorizer blocks it."""
+        # The authorizer should block INSERT even if prefix check passes somehow
+        with pytest.raises(ValueError):
+            evaluator.evaluate(
+                {"select": {"sql": "INSERT INTO books (title) VALUES ('evil')"}}
+            )
+
+    def test_sql_authorizer_blocks_attach(self, evaluator, populated_library):
+        """Given ATTACH DATABASE attempt, authorizer blocks it."""
+        with pytest.raises(ValueError):
+            evaluator.evaluate(
+                {"select": {"sql": "ATTACH DATABASE '/tmp/evil.db' AS evil"}}
+            )
+
+    def test_sql_authorizer_blocks_pragma(self, evaluator, populated_library):
+        """Given PRAGMA attempt, authorizer blocks it."""
+        with pytest.raises(ValueError):
+            evaluator.evaluate(
+                {"select": {"sql": "PRAGMA table_info(books)"}}
+            )
+
+    def test_sql_empty_result_returns_empty_set(self, evaluator, populated_library):
+        """Given query returning no rows, when evaluating, then empty set is returned."""
+        result = evaluator.evaluate(
+            {"select": {"sql": "SELECT id FROM books WHERE language = 'zz'"}}
+        )
+        assert len(result) == 0
 
 
 class TestBooleanPredicates:

@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Current schema version - increment when adding new migrations
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 def get_engine(library_path: Path) -> Engine:
@@ -436,6 +436,74 @@ def migrate_enhance_annotations(library_path: Path, dry_run: bool = False) -> bo
     return True
 
 
+def migrate_add_views_tables(library_path: Path, dry_run: bool = False) -> bool:
+    """
+    Add views and view_overrides tables for the Views DSL feature.
+
+    This migration adds support for named, composable library views
+    with per-book metadata overrides.
+
+    Args:
+        library_path: Path to library directory
+        dry_run: If True, only check if migration is needed
+
+    Returns:
+        True if migration was applied (or would be applied in dry_run),
+        False if already up-to-date
+    """
+    engine = get_engine(library_path)
+
+    # Check if migration is needed
+    if table_exists(engine, 'views'):
+        logger.debug("Views table already exists, skipping migration")
+        return False
+
+    if dry_run:
+        logger.debug("Migration needed: views tables do not exist")
+        return True
+
+    logger.debug("Applying migration: Adding views and view_overrides tables")
+
+    with engine.begin() as conn:
+        # Create views table
+        conn.execute(text("""
+            CREATE TABLE views (
+                id INTEGER NOT NULL PRIMARY KEY,
+                name VARCHAR(200) NOT NULL UNIQUE,
+                description TEXT,
+                definition JSON NOT NULL DEFAULT '{}',
+                cached_count INTEGER,
+                cached_at DATETIME,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        """))
+        conn.execute(text("CREATE UNIQUE INDEX ix_views_name ON views (name)"))
+
+        # Create view_overrides table
+        conn.execute(text("""
+            CREATE TABLE view_overrides (
+                id INTEGER NOT NULL PRIMARY KEY,
+                view_id INTEGER NOT NULL,
+                book_id INTEGER NOT NULL,
+                title VARCHAR(500),
+                description TEXT,
+                position INTEGER,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                FOREIGN KEY(view_id) REFERENCES views (id) ON DELETE CASCADE,
+                FOREIGN KEY(book_id) REFERENCES books (id) ON DELETE CASCADE,
+                UNIQUE(view_id, book_id)
+            )
+        """))
+        conn.execute(text("CREATE INDEX ix_view_overrides_view_id ON view_overrides (view_id)"))
+        conn.execute(text("CREATE INDEX ix_view_overrides_book_id ON view_overrides (book_id)"))
+
+        logger.debug("Migration completed successfully")
+
+    return True
+
+
 # Migration registry: (version, name, function)
 # Add new migrations here with incrementing version numbers
 MIGRATIONS = [
@@ -445,6 +513,7 @@ MIGRATIONS = [
     (4, 'add_reviews_table', migrate_add_reviews_table),
     (5, 'add_enrichment_history_table', migrate_add_enrichment_history_table),
     (6, 'enhance_annotations', migrate_enhance_annotations),
+    (7, 'add_views_tables', migrate_add_views_tables),
 ]
 
 

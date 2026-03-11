@@ -95,9 +95,14 @@ class GeminiProvider(BaseLLMProvider):
             await self._client.aclose()
             self._client = None
 
-    def _build_endpoint(self, action: str = "generateContent") -> str:
-        """Build API endpoint with model and API key."""
-        return f"/v1beta/models/{self.config.model}:{action}?key={self.config.api_key}"
+    def _build_endpoint(self, action: str = "generateContent", model: Optional[str] = None) -> str:
+        """Build API endpoint for the given action and model."""
+        m = model or self.config.model
+        return f"/v1beta/models/{m}:{action}"
+
+    def _auth_headers(self) -> Dict[str, str]:
+        """Return authentication headers (avoids leaking API key in URLs/logs)."""
+        return {"x-goog-api-key": self.config.api_key}
 
     async def complete(
         self,
@@ -120,23 +125,10 @@ class GeminiProvider(BaseLLMProvider):
             await self.initialize()
 
         # Build request payload - Gemini uses contents format
-        contents = []
-
-        # Add system prompt as first user message if provided
-        if system_prompt:
-            contents.append({
-                "role": "user",
-                "parts": [{"text": f"System instruction: {system_prompt}"}]
-            })
-            contents.append({
-                "role": "model",
-                "parts": [{"text": "Understood. I will follow those instructions."}]
-            })
-
-        contents.append({
+        contents = [{
             "role": "user",
             "parts": [{"text": prompt}]
-        })
+        }]
 
         data = {
             "contents": contents,
@@ -146,12 +138,16 @@ class GeminiProvider(BaseLLMProvider):
             }
         }
 
+        # Use native system_instruction field instead of fake user/model exchange
+        if system_prompt:
+            data["system_instruction"] = {"parts": [{"text": system_prompt}]}
+
         if self.config.max_tokens or kwargs.get("max_tokens"):
             data["generationConfig"]["maxOutputTokens"] = kwargs.get("max_tokens", self.config.max_tokens)
 
-        # Make request
+        # Make request (API key in header, not URL)
         endpoint = self._build_endpoint()
-        response = await self._client.post(endpoint, json=data)
+        response = await self._client.post(endpoint, json=data, headers=self._auth_headers())
         response.raise_for_status()
 
         result = response.json()
@@ -200,22 +196,10 @@ class GeminiProvider(BaseLLMProvider):
             await self.initialize()
 
         # Build request payload
-        contents = []
-
-        if system_prompt:
-            contents.append({
-                "role": "user",
-                "parts": [{"text": f"System instruction: {system_prompt}"}]
-            })
-            contents.append({
-                "role": "model",
-                "parts": [{"text": "Understood. I will follow those instructions."}]
-            })
-
-        contents.append({
+        contents = [{
             "role": "user",
             "parts": [{"text": prompt}]
-        })
+        }]
 
         data = {
             "contents": contents,
@@ -225,13 +209,16 @@ class GeminiProvider(BaseLLMProvider):
             }
         }
 
+        if system_prompt:
+            data["system_instruction"] = {"parts": [{"text": system_prompt}]}
+
         if self.config.max_tokens or kwargs.get("max_tokens"):
             data["generationConfig"]["maxOutputTokens"] = kwargs.get("max_tokens", self.config.max_tokens)
 
         endpoint = self._build_endpoint("streamGenerateContent")
-        endpoint += "&alt=sse"  # Enable SSE streaming
+        endpoint += "?alt=sse"  # Enable SSE streaming
 
-        async with self._client.stream("POST", endpoint, json=data) as response:
+        async with self._client.stream("POST", endpoint, json=data, headers=self._auth_headers()) as response:
             response.raise_for_status()
 
             async for line in response.aiter_lines():
@@ -275,8 +262,8 @@ class GeminiProvider(BaseLLMProvider):
                 }
             }
 
-            endpoint = f"/v1beta/models/{embed_model}:embedContent?key={self.config.api_key}"
-            response = await self._client.post(endpoint, json=data)
+            endpoint = self._build_endpoint("embedContent", model=embed_model)
+            response = await self._client.post(endpoint, json=data, headers=self._auth_headers())
             response.raise_for_status()
 
             result = response.json()

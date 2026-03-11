@@ -108,9 +108,13 @@ class ViewEvaluator:
     Each stage is a pure function operating on sets of books.
     """
 
+    # Maximum depth for view references to prevent stack overflow
+    MAX_VIEW_DEPTH = 20
+
     def __init__(self, session: Session):
         self.session = session
         self._view_cache: Dict[str, View] = {}
+        self._evaluating_views: Set[str] = set()  # Cycle detection
 
     def evaluate(
         self,
@@ -254,12 +258,29 @@ class ViewEvaluator:
 
         raise ValueError(f"Unknown selector type in {context}: {list(selector.keys())}")
 
+    @staticmethod
+    def _sqlite_authorizer(action, arg1, arg2, db_name, trigger_name):
+        """SQLite authorizer callback that only allows read operations."""
+        import sqlite3
+        # Allow SELECT, READ, and FUNCTION actions; deny everything else
+        allowed = {
+            sqlite3.SQLITE_SELECT,   # SELECT statement
+            sqlite3.SQLITE_READ,     # Reading a column
+            sqlite3.SQLITE_FUNCTION, # Calling a function (e.g., COUNT, MAX)
+        }
+        if action in allowed:
+            return sqlite3.SQLITE_OK
+        return sqlite3.SQLITE_DENY
+
     def _evaluate_sql_selector(self, sql_query: str, context: str) -> Set[Book]:
         """
         Evaluate a raw SQL selector to get book IDs.
 
         The SQL query must return book IDs in the first column. Only SELECT
-        queries are allowed for security.
+        queries are allowed, enforced via three layers of defense:
+        1. Prefix check (must start with SELECT)
+        2. Read-only connection mode (SQLite URI)
+        3. SQLite authorizer callback (whitelist of allowed operations)
 
         Args:
             sql_query: SQL query that returns book IDs
@@ -274,28 +295,32 @@ class ViewEvaluator:
         """
         import sqlite3
 
-        # Security check: only allow SELECT queries
+        # Layer 1: Basic prefix check
         query_stripped = sql_query.strip().upper()
         if not query_stripped.startswith('SELECT'):
             raise ValueError(f"SQL selector must be a SELECT query in {context}")
 
-        # Check for dangerous operations
-        dangerous = ['DROP', 'DELETE', 'INSERT', 'UPDATE', 'CREATE', 'ALTER', 'ATTACH', 'DETACH']
-        for pattern in dangerous:
-            if pattern in query_stripped:
-                raise ValueError(f"SQL selector contains disallowed keyword '{pattern}' in {context}")
+        # Reject multiple statements (semicolons outside string literals)
+        # Simple check: strip the query and reject if it contains ';' followed by non-whitespace
+        stripped = sql_query.strip().rstrip(';').strip()
+        if ';' in stripped:
+            raise ValueError(f"SQL selector must be a single statement in {context}")
 
         # Get the database path from the session
-        # SQLAlchemy 2.x uses engine.url.database
         engine = self.session.get_bind()
         db_path = engine.url.database
 
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute(sql_query)
-            rows = cursor.fetchall()
-            conn.close()
+            # Layer 2: Open connection in read-only mode
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            # Layer 3: Set authorizer to only allow SELECT/READ operations
+            conn.set_authorizer(self._sqlite_authorizer)
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql_query)
+                rows = cursor.fetchall()
+            finally:
+                conn.close()
 
             # Extract book IDs from the first column
             book_ids = [row[0] for row in rows if row[0] is not None]
@@ -475,14 +500,27 @@ class ViewEvaluator:
         return query
 
     def _evaluate_view_reference(self, view_name: str, context: str) -> Set[Book]:
-        """Evaluate a view reference by name."""
+        """Evaluate a view reference by name, with cycle detection."""
+        if view_name in self._evaluating_views:
+            chain = context + f"→{view_name}"
+            raise ValueError(f"Circular view reference detected: {chain}")
+
+        if len(self._evaluating_views) >= self.MAX_VIEW_DEPTH:
+            raise ValueError(
+                f"View reference depth limit ({self.MAX_VIEW_DEPTH}) exceeded in {context}"
+            )
+
         view = self._get_view(view_name)
         if not view:
             raise ValueError(f"Referenced view '{view_name}' not found in {context}")
 
-        # Recursively evaluate the referenced view's selector
-        selector = view.definition.get('select', 'all')
-        return self._evaluate_selector(selector, f"{context}→{view_name}")
+        # Track this view as being evaluated, then clean up when done
+        self._evaluating_views.add(view_name)
+        try:
+            selector = view.definition.get('select', 'all')
+            return self._evaluate_selector(selector, f"{context}→{view_name}")
+        finally:
+            self._evaluating_views.discard(view_name)
 
     def _get_view(self, name: str) -> Optional[View]:
         """Get a view by name with caching."""

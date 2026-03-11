@@ -47,6 +47,10 @@ class LLMConfig:
         if self.extra_params is None:
             self.extra_params = {}
 
+    def __repr__(self):
+        key_display = f"{self.api_key[:4]}...{self.api_key[-4:]}" if self.api_key and len(self.api_key) > 8 else "***"
+        return f"LLMConfig(base_url={self.base_url!r}, api_key={key_display!r}, model={self.model!r})"
+
 
 @dataclass
 class LLMResponse:
