@@ -110,10 +110,9 @@ ebk mcp-serve [library_path]
 }
 ```
 
-**Scalar fields** (direct assignment):
-- `title`, `subtitle`, `language`, `publisher`, `publication_date`, `description`
-- `series`, `series_index`, `page_count`
-- `rating` (0-5), `favorite` (bool), `reading_status` (enum), `reading_progress` (0-100)
+**Scalar fields** (direct assignment, illustrative — full set derived from ORM at runtime):
+- Book: `title`, `subtitle`, `language`, `publisher`, `publication_date`, `description`, `series`, `series_index`, `page_count`, `edition`, `color`, `rights`, `source`, `word_count`, `keywords`, ...
+- PersonalMetadata: `rating` (0-5), `favorite` (bool), `reading_status` (enum), `reading_progress` (0-100), `date_started`, `date_finished`, `queue_position`, `personal_tags`, ...
 
 **Collection operations** (prefix-based):
 - `add_tags` / `remove_tags` — hierarchical tag paths
@@ -162,7 +161,7 @@ ebk mcp-serve [library_path]
 |------|--------|
 | `integrations/mcp/ebk_mcp_server.py` | Old MCP server that wraps CLI via subprocess — replaced by new `ebk/mcp/` |
 | `integrations/llm/` | Parallel LLM integration layer (Pydantic-based), unused by core package |
-| `integrations/PLUGINS.md`, `integrations/README.md` | References to removed LLM functionality — update or remove |
+| `integrations/PLUGINS.md`, `integrations/README.md` | Update to remove LLM/MCP references (keep files — `integrations/metadata/` and `integrations/network/` still exist) |
 | `docs/integrations/mcp.md` | Points to old MCP server — replace with new MCP docs |
 
 ### Remove from CLI (`cli.py`)
@@ -199,7 +198,7 @@ ebk mcp-serve [library_path]
 
 ### Update existing tests
 
-- `tests/test_core_modules.py` — remove `TestLLMConfig` class and any assertions on `cfg.llm`
+- `tests/test_core_modules.py` — remove all LLM/AI-related test code (`TestLLMConfig`, assertions on `cfg.llm`, etc.)
 
 ## Code Review Fixes (Bundled)
 
