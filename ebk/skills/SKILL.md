@@ -1,11 +1,11 @@
 ---
 name: ebk
-description: Use this skill when working with ebk - an eBook metadata management CLI with SQLite storage, full-text search, hierarchical tags, and a virtual filesystem shell. Invoke for library management, book operations, imports/exports, or ebk shell navigation.
+description: Use this skill when working with ebk - an eBook metadata management CLI with SQLite storage, full-text search, hierarchical tags, and MCP server for AI integration. Invoke for library management, book operations, imports/exports, or MCP queries.
 ---
 
 # ebk - eBook Metadata Management
 
-A CLI tool for managing ebook libraries with SQLite storage, full-text search, and a virtual filesystem shell.
+A CLI tool for managing ebook libraries with SQLite storage, full-text search, and an MCP server for AI assistant integration.
 
 ## Quick Reference
 
@@ -42,9 +42,9 @@ ebk book rate 42 --rating 5
 ebk book tag 42 --add "Work/Project-2024"
 ebk book purge ~/library --no-files --execute
 
-# Interactive
-ebk shell                    # VFS shell
+# Servers
 ebk serve                    # Web server
+ebk mcp-serve                # MCP server for Claude Code
 ```
 
 ## Command Groups
@@ -83,26 +83,27 @@ ebk query search "rating:>=4"
 ebk query search "pages:>500"
 ```
 
-## VFS Shell
+## MCP Server
 
-`ebk shell` provides filesystem-like navigation:
+`ebk mcp-serve` exposes the library to AI assistants via the Model Context Protocol:
 
+| Tool | Purpose |
+|------|---------|
+| `get_schema` | Database schema: tables, columns, relationships |
+| `execute_sql` | Read-only SQL SELECT queries (3-layer security) |
+| `update_books` | Batch book updates: scalars, tags, authors, merges |
+
+Configure in Claude Code settings:
+```json
+{
+  "mcpServers": {
+    "ebk": {
+      "command": "ebk",
+      "args": ["mcp-serve", "/path/to/library"]
+    }
+  }
+}
 ```
-/                          # Root
-/books/{id}/              # Book by ID
-/books/{id}/title         # Title as text
-/books/{id}/authors       # Authors list
-/books/{id}/metadata      # Full JSON metadata
-/books/{id}/files/        # Ebook files
-/books/{id}/similar/      # Similar books
-/authors/{name}/          # Browse by author
-/subjects/{subject}/      # Browse by subject
-/tags/{hierarchy}/        # Hierarchical tags
-```
-
-Shell commands: `ls`, `cd`, `cat`, `find`, `grep`, `ln`, `mv`, `rm`, `mkdir`
-
-Supports piping: `ls /books/ | grep Python | head 10`
 
 ## Python API
 
@@ -136,7 +137,7 @@ Config file: `~/.config/ebk/config.json`
 
 ```bash
 ebk config --library-path ~/my-library    # Set default library
-ebk config --llm-provider ollama          # Set LLM provider
+ebk config --server-port 9000             # Set web server port
 ebk config --show                         # Show current config
 ```
 
@@ -176,7 +177,7 @@ ebk query list --view unread-python
 ## Tips
 
 1. Use `ebk config --library-path` to set a default library
-2. `ebk shell` for interactive exploration
+2. `ebk mcp-serve` for AI-assisted library management
 3. `ebk query sql` for complex custom queries
 4. `ebk export opds` for Android reader compatibility
 5. Tags are hierarchical: `Work/Project-2024/Research`

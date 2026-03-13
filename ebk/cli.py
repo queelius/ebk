@@ -4839,10 +4839,7 @@ def tag_add(
     color: Optional[str] = typer.Option(None, "--color", "-c", help="Tag color in hex (e.g., '#FF5733')"),
 ):
     """
-    [DEPRECATED] Add a tag to a book.
-
-    This command is deprecated. Use VFS commands instead:
-        ebk vfs ln <library> /books/<id> /tags/<tag-path>/
+    Add a tag to a book.
 
     Creates tag hierarchy automatically if it doesn't exist.
 
@@ -4850,14 +4847,7 @@ def tag_add(
         ebk tag add 42 Work ~/my-library
         ebk tag add 42 Work/Project-2024 ~/my-library -d "2024 project books"
         ebk tag add 42 Reading-List ~/my-library -c "#3498db"
-
-    Migrating to VFS:
-        ebk vfs ln ~/my-library /books/42 /tags/Work/
-        ebk vfs mkdir ~/my-library /tags/Work/Project-2024/
-        ebk vfs ln ~/my-library /books/42 /tags/Work/Project-2024/
     """
-    console.print("[yellow]⚠ Warning: 'ebk tag add' is deprecated. Use 'ebk vfs ln' instead.[/yellow]")
-    console.print(f"[yellow]  Example: ebk vfs ln {library_path} /books/{book_id} /tags/{tag_path}/[/yellow]\n")
     from ebk.library_db import Library
     from ebk.services.tag_service import TagService
     from ebk.db.models import Book
@@ -4908,21 +4898,12 @@ def tag_remove(
     library_path: Path = typer.Argument(..., help="Path to library"),
 ):
     """
-    [DEPRECATED] Remove a tag from a book.
-
-    This command is deprecated. Use VFS commands instead:
-        ebk vfs rm <library> /tags/<tag-path>/<book-id>
+    Remove a tag from a book.
 
     Examples:
         ebk tag remove 42 Work ~/my-library
         ebk tag remove 42 Work/Project-2024 ~/my-library
-
-    Migrating to VFS:
-        ebk vfs rm ~/my-library /tags/Work/42
-        ebk vfs rm ~/my-library /tags/Work/Project-2024/42
     """
-    console.print("[yellow]⚠ Warning: 'ebk tag remove' is deprecated. Use 'ebk vfs rm' instead.[/yellow]")
-    console.print(f"[yellow]  Example: ebk vfs rm {library_path} /tags/{tag_path}/{book_id}[/yellow]\n")
     from ebk.library_db import Library
     from ebk.services.tag_service import TagService
     from ebk.db.models import Book
@@ -5023,22 +5004,13 @@ def tag_delete(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
     """
-    [DEPRECATED] Delete a tag.
-
-    This command is deprecated. Use VFS commands instead:
-        ebk vfs rm <library> /tags/<tag-path>/ [-r]
+    Delete a tag.
 
     Examples:
         ebk tag delete OldTag ~/my-library
         ebk tag delete OldProject ~/my-library -r     - Delete with children
         ebk tag delete Archive ~/my-library -r -f     - Delete without confirmation
-
-    Migrating to VFS:
-        ebk vfs rm ~/my-library /tags/OldTag/
-        ebk vfs rm ~/my-library /tags/OldProject/ -r
     """
-    console.print("[yellow]⚠ Warning: 'ebk tag delete' is deprecated. Use 'ebk vfs rm' instead.[/yellow]")
-    console.print(f"[yellow]  Example: ebk vfs rm {library_path} /tags/{tag_path}/{ ' -r' if recursive else ''}[/yellow]\n")
     from ebk.library_db import Library
     from ebk.services.tag_service import TagService
 
