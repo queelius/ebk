@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="ebk",
-    version="0.3.0",
+    version="0.5.0",
     description="A lightweight tool for managing eBook metadata",
     long_description=long_description,
     long_description_content_type="text/markdown",
