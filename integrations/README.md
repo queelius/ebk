@@ -18,25 +18,6 @@ The `streamlit-dashboard/` directory contains a web-based interface for browsing
 
 See the [Streamlit Dashboard README](streamlit-dashboard/README.md) for installation and deployment options.
 
-## MCP (Model Context Protocol) Integration
-
-The `mcp/` directory contains an MCP server implementation that allows AI assistants like Claude to interact with ebk libraries through a standardized protocol.
-
-### Features
-
-The MCP server exposes the following tools:
-- Import libraries from various sources (Calibre, ebooks, ZIP)
-- Export libraries to different formats (ZIP, Hugo)
-- Search libraries using regex or JMESPath
-- List and browse library contents
-- Add/update/remove entries
-- Merge multiple libraries
-- Get library statistics
-
-### Usage
-
-See the [MCP README](mcp/README.md) for setup and usage instructions.
-
 ## Visualization Integration
 
 The `viz/` directory contains documentation and examples for creating network visualizations of ebook libraries.

@@ -14,7 +14,6 @@ EBK uses a plugin architecture to keep the core lightweight while allowing power
 - **`integrations/`** - Bundled plugin implementations
   - `metadata/` - Metadata extractors (Google Books, OpenLibrary, etc.)
   - `network/` - Graph/network analysis
-  - `mcp/` - Model Context Protocol for AI assistants
   - `streamlit-dashboard/` - Web UI
 
 ## Installation
@@ -205,11 +204,7 @@ def validate_before_export(entries, format):
 
 - **GoogleBooksExtractor** - Fetch metadata from Google Books API
 - **NetworkAnalyzer** - Build co-author and subject graphs
-- **MCPServer** - Interface with AI assistants
-
 ### Community Plugins (future)
-
-- `ebk-openai-tagger` - AI-powered tag suggestions
 - `ebk-calibre-sync` - Bi-directional Calibre sync
 - `ebk-goodreads` - Goodreads integration
 - `ebk-citation` - Citation network analysis
