@@ -8,7 +8,6 @@ ebk is a Python-based eBook metadata management tool with:
 - **SQLAlchemy + SQLite backend** with FTS5 full-text search
 - **Fluent Query API** for programmatic library management
 - **Typer CLI** with Rich colorized output
-- **Virtual File System (VFS)** for Unix-like library navigation (web server)
 - **Hash-based deduplication** using SHA256
 - **Plugin architecture** for extensibility
 - **MCP server** for AI assistant integration (Claude Code, etc.)
@@ -67,18 +66,6 @@ ebk search "python" --offset 20          # Next page of results
 | `db/session.py` | Session management, FTS5 setup |
 | `mcp/` | MCP server: schema introspection, read-only SQL, book updates |
 
-### Virtual File System (vfs/)
-
-Presents library as navigable filesystem:
-```
-/books/{id}/.metadata     # JSON metadata
-/authors/{name}/          # Books by author
-/tags/{hierarchy}/        # Hierarchical tags
-/similar/{id}/            # Similar books
-```
-
-Key files: `base.py` (VFSNode base), `resolver.py` (path resolution), `nodes/` (node types)
-
 ### Search Parser
 
 Supports: `title:Python`, `author:Knuth`, `rating:>=4`, `"exact phrase"`, `AND/OR/NOT`
@@ -108,7 +95,6 @@ Library directory: `library.db`, `files/` (hash-prefixed storage), `covers/thumb
 
 Key test files in `/tests/`:
 - `test_search_parser.py` (98% coverage)
-- `test_vfs_resolver.py` (99% coverage)
 - `test_library_api.py`, `test_database_library.py`
 - `test_services.py`
 

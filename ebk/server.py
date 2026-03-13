@@ -18,7 +18,6 @@ from pydantic import BaseModel
 from .library_db import Library
 from .extract_metadata import extract_metadata
 from . import opds
-from . import vfs_router
 
 
 # Pydantic models for API
@@ -172,16 +171,12 @@ def init_library(library_path: Path):
     global _library, _library_path
     _library_path = library_path
     _library = Library.open(library_path)
-    # Initialize VFS for the library
-    vfs_router.init_vfs_from_library(_library)
 
 
 def set_library(library: Library):
     """Set the library instance directly (for testing)."""
     global _library, _library_path
     _library = library
-    # Initialize VFS for the library
-    vfs_router.init_vfs_from_library(_library)
     _library_path = library.library_path
 
 
@@ -223,8 +218,6 @@ app.add_middleware(
 # Include OPDS router
 app.include_router(opds.router)
 
-# Include VFS router
-app.include_router(vfs_router.router)
 
 
 @app.get("/", response_class=HTMLResponse)
