@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set, Union
 from datetime import datetime, timezone
 import logging
+import operator as _op
 import sqlite3
 
 from sqlalchemy.orm import Session
@@ -111,6 +112,16 @@ class ViewEvaluator:
 
     # Maximum depth for view references to prevent stack overflow
     MAX_VIEW_DEPTH = 20
+
+    # Operator map: DSL key → Python operator function
+    _COMPARISON_OPS = {
+        'gte': _op.ge,
+        'gt': _op.gt,
+        'lte': _op.le,
+        'lt': _op.lt,
+        'eq': _op.eq,
+        'ne': _op.ne,
+    }
 
     def __init__(self, session: Session):
         self.session = session
@@ -425,29 +436,19 @@ class ViewEvaluator:
     def _apply_comparison(self, query, field: str, comparison: Dict[str, Any], context: str):
         """Apply a comparison operator to a query."""
 
-        # Get the comparison operator and value
-        if 'gte' in comparison:
-            op, val = '>=', comparison['gte']
-        elif 'gt' in comparison:
-            op, val = '>', comparison['gt']
-        elif 'lte' in comparison:
-            op, val = '<=', comparison['lte']
-        elif 'lt' in comparison:
-            op, val = '<', comparison['lt']
-        elif 'eq' in comparison:
-            op, val = '==', comparison['eq']
-        elif 'ne' in comparison:
-            op, val = '!=', comparison['ne']
-        elif 'contains' in comparison:
+        # Special-case operators that don't fit the generic column-op-value pattern
+        if 'contains' in comparison:
             return self._apply_single_predicate(query, field, comparison['contains'], context)
-        elif 'in' in comparison:
+
+        if 'in' in comparison:
             vals = comparison['in']
             if field == 'language':
                 query = query.filter(Book.language.in_(vals))
             elif field == 'id':
                 query = query.filter(Book.id.in_(vals))
             return query
-        elif 'between' in comparison:
+
+        if 'between' in comparison:
             low, high = comparison['between']
             if field == 'rating':
                 query = query.join(Book.personal).filter(
@@ -458,44 +459,28 @@ class ViewEvaluator:
                     and_(Book.publication_date >= str(low), Book.publication_date <= str(high))
                 )
             return query
-        else:
+
+        # Generic comparison: look up the operator key and its function
+        op_key = next((k for k in self._COMPARISON_OPS if k in comparison), None)
+        if op_key is None:
             raise ValueError(f"Unknown comparison operator in {context}: {comparison}")
 
-        # Apply the comparison
+        op_fn = self._COMPARISON_OPS[op_key]
+        val = comparison[op_key]
+
+        # Field → (column, needs_join, value_transform)
         if field == 'rating':
             query = query.join(Book.personal)
-            if op == '>=':
-                query = query.filter(PersonalMetadata.rating >= val)
-            elif op == '>':
-                query = query.filter(PersonalMetadata.rating > val)
-            elif op == '<=':
-                query = query.filter(PersonalMetadata.rating <= val)
-            elif op == '<':
-                query = query.filter(PersonalMetadata.rating < val)
-            elif op == '==':
-                query = query.filter(PersonalMetadata.rating == val)
-            elif op == '!=':
-                query = query.filter(PersonalMetadata.rating != val)
+            column = PersonalMetadata.rating
         elif field == 'year':
-            year_str = str(val)
-            if op == '>=':
-                query = query.filter(Book.publication_date >= year_str)
-            elif op == '>':
-                query = query.filter(Book.publication_date > year_str)
-            elif op == '<=':
-                query = query.filter(Book.publication_date <= year_str)
-            elif op == '<':
-                query = query.filter(Book.publication_date < year_str)
+            column = Book.publication_date
+            val = str(val)
         elif field == 'pages':
-            if op == '>=':
-                query = query.filter(Book.page_count >= val)
-            elif op == '>':
-                query = query.filter(Book.page_count > val)
-            elif op == '<=':
-                query = query.filter(Book.page_count <= val)
-            elif op == '<':
-                query = query.filter(Book.page_count < val)
+            column = Book.page_count
+        else:
+            return query
 
+        query = query.filter(op_fn(column, val))
         return query
 
     def _evaluate_view_reference(self, view_name: str, context: str) -> Set[Book]:
