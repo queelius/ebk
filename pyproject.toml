@@ -150,7 +150,6 @@ exclude = ["tests*", "docs*", "examples*", "archive*"]
 ebk = [
     "templates/**/*",
     "static/**/*",
-    "skills/*.md",
 ]
 
 [tool.black]

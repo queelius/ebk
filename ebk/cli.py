@@ -89,7 +89,6 @@ queue_app = typer.Typer(help="Manage reading queue")
 view_app = typer.Typer(help="Manage views (composable, named subsets of the library)")
 lib_app = typer.Typer(help="Library management (init, migrate, backup, restore, check)")
 query_app = typer.Typer(help="Query and discover books (search, list, stats, sql)")
-skill_app = typer.Typer(help="Manage Claude Code skill installation")
 
 # Register command groups
 app.add_typer(import_app, name="import")
@@ -102,7 +101,6 @@ app.add_typer(queue_app, name="queue")
 app.add_typer(view_app, name="view")
 app.add_typer(lib_app, name="lib")
 app.add_typer(query_app, name="query")
-app.add_typer(skill_app, name="skill")
 
 @app.callback()
 def main(
@@ -153,7 +151,6 @@ def about():
     console.print("  ebk tag <subcommand>         Manage hierarchical tags")
     console.print("  ebk queue <subcommand>       Manage reading queue")
     console.print("  ebk view <subcommand>        Manage views (named library subsets)")
-    console.print("  ebk skill <subcommand>       Manage Claude Code skill")
     console.print("")
     console.print("[bold]Interactive:[/bold]")
     console.print("  ebk serve                    Start web server")
@@ -5944,131 +5941,6 @@ def view_edit(
         raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-# ============================================================================
-# Skill Commands - Manage Claude Code skill installation
-# ============================================================================
-
-@skill_app.command()
-def install():
-    """Install ebk skill for Claude Code.
-
-    Copies SKILL.md to ~/.claude/skills/ebk/ to enable Claude Code
-    to understand and assist with ebk library management.
-
-    Example:
-        ebk skill install
-    """
-    import importlib.resources
-    import shutil
-
-    skill_dir = Path.home() / ".claude" / "skills" / "ebk"
-
-    try:
-        # Get SKILL.md from package
-        try:
-            # Python 3.9+
-            skill_file = importlib.resources.files("ebk.skills").joinpath("SKILL.md")
-            skill_content = skill_file.read_text()
-        except (AttributeError, TypeError):
-            # Fallback for older Python
-            import pkg_resources
-            skill_content = pkg_resources.resource_string("ebk.skills", "SKILL.md").decode()
-
-        # Create skill directory
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
-        # Write SKILL.md
-        skill_path = skill_dir / "SKILL.md"
-        skill_path.write_text(skill_content)
-
-        console.print(f"[green]✓ Installed ebk skill to {skill_dir}[/green]")
-        console.print("[dim]Claude Code will now understand ebk commands and library structure[/dim]")
-
-    except Exception as e:
-        console.print(f"[red]Error installing skill: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@skill_app.command()
-def uninstall():
-    """Uninstall ebk skill from Claude Code.
-
-    Removes the skill directory from ~/.claude/skills/ebk/.
-
-    Example:
-        ebk skill uninstall
-    """
-    import shutil
-
-    skill_dir = Path.home() / ".claude" / "skills" / "ebk"
-
-    if not skill_dir.exists():
-        console.print("[yellow]Skill not installed[/yellow]")
-        return
-
-    try:
-        shutil.rmtree(skill_dir)
-        console.print(f"[green]✓ Uninstalled ebk skill from {skill_dir}[/green]")
-
-    except Exception as e:
-        console.print(f"[red]Error uninstalling skill: {e}[/red]")
-        raise typer.Exit(code=1)
-
-
-@skill_app.command()
-def status():
-    """Check ebk skill installation status.
-
-    Shows whether the skill is installed and displays version info.
-
-    Example:
-        ebk skill status
-    """
-    skill_dir = Path.home() / ".claude" / "skills" / "ebk"
-    skill_path = skill_dir / "SKILL.md"
-
-    if skill_path.exists():
-        console.print(f"[green]✓ Skill installed at {skill_dir}[/green]")
-
-        # Show first few lines of skill file
-        content = skill_path.read_text()
-        lines = content.split("\n")[:10]
-        console.print("\n[dim]Skill header:[/dim]")
-        for line in lines:
-            if line.strip():
-                console.print(f"  {line}")
-    else:
-        console.print("[yellow]Skill not installed[/yellow]")
-        console.print("[dim]Run 'ebk skill install' to install[/dim]")
-
-
-@skill_app.command()
-def show():
-    """Display the full SKILL.md content.
-
-    Shows the complete skill definition that Claude Code uses.
-
-    Example:
-        ebk skill show
-    """
-    import importlib.resources
-
-    try:
-        # Get SKILL.md from package
-        try:
-            skill_file = importlib.resources.files("ebk.skills").joinpath("SKILL.md")
-            content = skill_file.read_text()
-        except (AttributeError, TypeError):
-            import pkg_resources
-            content = pkg_resources.resource_string("ebk.skills", "SKILL.md").decode()
-
-        console.print(content)
-
-    except Exception as e:
-        console.print(f"[red]Error reading skill: {e}[/red]")
         raise typer.Exit(code=1)
 
 
