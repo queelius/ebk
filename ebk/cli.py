@@ -6138,5 +6138,18 @@ def show():
         raise typer.Exit(code=1)
 
 
+@app.command("mcp-serve")
+def mcp_serve(
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library directory"),
+):
+    """Start the MCP server for Claude Code integration."""
+    resolved_path = resolve_library_path(library_path)
+    if not resolved_path:
+        typer.echo("Error: No library path specified and no default configured.", err=True)
+        raise typer.Exit(1)
+    from ebk.mcp.server import run_server
+    run_server(resolved_path)
+
+
 if __name__ == "__main__":
     app()
