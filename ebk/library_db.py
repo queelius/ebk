@@ -39,6 +39,11 @@ class Library:
         self.import_service = ImportService(library_path, session)
         self.text_service = TextExtractionService(library_path)
 
+    @property
+    def db_path(self) -> Path:
+        """Path to the SQLite database file."""
+        return self.library_path / "library.db"
+
     @classmethod
     def open(cls, library_path: Path, echo: bool = False) -> 'Library':
         """
