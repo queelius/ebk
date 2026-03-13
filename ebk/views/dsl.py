@@ -520,22 +520,32 @@ class ViewEvaluator:
     def _evaluate_transform(
         self,
         transform: Union[str, Dict[str, Any]],
-        books: Set[Book],
+        books: Union[Set[Book], List[TransformedBook]],
         context: str
     ) -> List[TransformedBook]:
-        """Apply transforms to books."""
+        """Apply transforms to books.
 
-        # Start with identity transform (no overrides)
+        Args:
+            transform: The transform specification to apply.
+            books: Either a Set[Book] (initial call) or List[TransformedBook]
+                   (compose chain, preserving existing overrides).
+            context: Description of calling context for error messages.
+        """
+
+        # Normalize input: build TransformedBook dict preserving any existing overrides
+        if books and isinstance(next(iter(books)), TransformedBook):
+            transformed = {tb.book.id: tb for tb in books}
+        else:
+            transformed = {book.id: TransformedBook(book=book) for book in books}
+
+        # Identity transform: pass through existing TransformedBooks as-is
         if transform == 'identity':
-            return [TransformedBook(book=book) for book in books]
+            return list(transformed.values())
 
         if not isinstance(transform, dict):
             raise ValueError(f"Invalid transform in {context}: {transform}")
 
-        # Build initial transformed books
-        transformed = {book.id: TransformedBook(book=book) for book in books}
-
-        # Apply overrides
+        # Apply overrides (merging onto any existing overrides)
         if 'override' in transform:
             overrides = transform['override']
             for book_id_str, fields in overrides.items():
@@ -549,14 +559,12 @@ class ViewEvaluator:
                     if 'position' in fields:
                         tb.position = fields['position']
 
-        # Handle compose (chain of transforms)
+        # Handle compose (chain of transforms, preserving overrides)
         if 'compose' in transform:
             transforms = transform['compose']
             result = list(transformed.values())
             for t in transforms:
-                # Reapply each transform
-                book_set = {tb.book for tb in result}
-                result = self._evaluate_transform(t, book_set, context)
+                result = self._evaluate_transform(t, result, context)
             return result
 
         # Handle view reference (inherit transforms from another view)
@@ -564,9 +572,10 @@ class ViewEvaluator:
             view_name = transform['view']
             view = self._get_view(view_name)
             if view and 'transform' in view.definition:
-                book_set = {tb.book for tb in transformed.values()}
                 return self._evaluate_transform(
-                    view.definition['transform'], book_set, f"{context}→{view_name}"
+                    view.definition['transform'],
+                    list(transformed.values()),
+                    f"{context}→{view_name}"
                 )
 
         return list(transformed.values())

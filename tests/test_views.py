@@ -786,6 +786,100 @@ class TestTransformedBook:
         assert tb.personal == book.personal
 
 
+class TestComposeOverridePreservation:
+    """Test that compose transforms preserve overrides from earlier transforms."""
+
+    def test_compose_preserves_title_override(self, evaluator, populated_library):
+        """Override in first transform should survive compose chain."""
+        all_books = populated_library.get_all_books()
+        book = all_books[0]
+        book_set = set(all_books)
+        transform = {
+            'compose': [
+                {'override': {book.id: {'title': 'Overridden Title'}}},
+                'identity',
+            ]
+        }
+        result = evaluator._evaluate_transform(
+            transform, book_set, "test"
+        )
+        overridden = [tb for tb in result if tb.book.id == book.id]
+        assert len(overridden) == 1
+        assert overridden[0].title == 'Overridden Title'
+
+    def test_compose_chains_overrides(self, evaluator, populated_library):
+        """Overrides from multiple transforms in compose should all apply."""
+        all_books = populated_library.get_all_books()
+        book = all_books[0]
+        book_set = set(all_books)
+        transform = {
+            'compose': [
+                {'override': {book.id: {'title': 'Custom Title'}}},
+                {'override': {book.id: {'description': 'Custom Desc'}}},
+            ]
+        }
+        result = evaluator._evaluate_transform(
+            transform, book_set, "test"
+        )
+        overridden = [tb for tb in result if tb.book.id == book.id]
+        assert len(overridden) == 1
+        assert overridden[0].title == 'Custom Title'
+        assert overridden[0].description == 'Custom Desc'
+
+    def test_compose_preserves_position_override(self, evaluator, populated_library):
+        """Position override in first transform should survive compose chain."""
+        all_books = populated_library.get_all_books()
+        book = all_books[0]
+        book_set = set(all_books)
+        transform = {
+            'compose': [
+                {'override': {book.id: {'position': 42}}},
+                'identity',
+            ]
+        }
+        result = evaluator._evaluate_transform(
+            transform, book_set, "test"
+        )
+        overridden = [tb for tb in result if tb.book.id == book.id]
+        assert len(overridden) == 1
+        assert overridden[0].position == 42
+
+    def test_compose_later_override_wins(self, evaluator, populated_library):
+        """When two compose steps override the same field, the later one wins."""
+        all_books = populated_library.get_all_books()
+        book = all_books[0]
+        book_set = set(all_books)
+        transform = {
+            'compose': [
+                {'override': {book.id: {'title': 'First Title'}}},
+                {'override': {book.id: {'title': 'Second Title'}}},
+            ]
+        }
+        result = evaluator._evaluate_transform(
+            transform, book_set, "test"
+        )
+        overridden = [tb for tb in result if tb.book.id == book.id]
+        assert len(overridden) == 1
+        assert overridden[0].title == 'Second Title'
+
+    def test_compose_via_evaluate(self, evaluator, populated_library):
+        """Compose overrides should also work through the public evaluate API."""
+        all_books = populated_library.get_all_books()
+        book = all_books[0]
+        result = evaluator.evaluate({
+            'select': 'all',
+            'transform': {
+                'compose': [
+                    {'override': {book.id: {'title': 'Composed Title'}}},
+                    'identity',
+                ]
+            }
+        })
+        overridden = [tb for tb in result if tb.book.id == book.id]
+        assert len(overridden) == 1
+        assert overridden[0].title == 'Composed Title'
+
+
 # =============================================================================
 # Ordering Evaluation Tests
 # =============================================================================
