@@ -156,7 +156,6 @@ def about():
     console.print("  ebk skill <subcommand>       Manage Claude Code skill")
     console.print("")
     console.print("[bold]Interactive:[/bold]")
-    console.print("  ebk shell                    Launch VFS shell")
     console.print("  ebk serve                    Start web server")
     console.print("")
     console.print("[bold]Getting Started:[/bold]")
@@ -170,43 +169,6 @@ def about():
 # ============================================================================
 # Core Library Commands
 # ============================================================================
-
-@app.command()
-def shell(
-    library_path: Optional[Path] = typer.Argument(None, help="Path to the library (uses config default if not specified)"),
-):
-    """
-    Launch interactive shell for navigating the library.
-
-    The shell provides a Linux-like interface for browsing and
-    managing your library through a virtual filesystem.
-    If no library path is specified, uses the default from config.
-
-    Commands:
-        cd, pwd, ls    - Navigate the VFS
-        cat            - Read file content
-        grep, find     - Search and query
-        open           - Open files
-        !<bash>        - Execute bash commands
-        !ebk <cmd>     - Pass through to ebk CLI
-        help           - Show help
-
-    Example:
-        ebk shell               # Uses config default
-        ebk shell ~/my-library
-    """
-    from .repl import LibraryShell
-
-    library_path = resolve_library_path(library_path)
-
-    try:
-        shell = LibraryShell(library_path)
-        shell.run()
-    except Exception as e:
-        from rich.markup import escape
-        console.print(f"[red]Error launching shell: {escape(str(e))}[/red]")
-        raise typer.Exit(code=1)
-
 
 @lib_app.command()
 def init(

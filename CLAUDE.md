@@ -8,8 +8,7 @@ ebk is a Python-based eBook metadata management tool with:
 - **SQLAlchemy + SQLite backend** with FTS5 full-text search
 - **Fluent Query API** for programmatic library management
 - **Typer CLI** with Rich colorized output
-- **Virtual File System (VFS)** for Unix-like library navigation
-- **REPL Shell** with piping, grep, find, and file management
+- **Virtual File System (VFS)** for Unix-like library navigation (web server)
 - **Hash-based deduplication** using SHA256
 - **Plugin architecture** for extensibility
 - **MCP server** for AI assistant integration (Claude Code, etc.)
@@ -48,7 +47,6 @@ ebk config --library-path ~/my-library   # Set default library
 ebk list
 ebk search "python programming"
 ebk stats
-ebk shell
 
 # With pagination
 ebk list -n 20 --offset 40               # Page 3 of 20 results
@@ -81,12 +79,6 @@ Presents library as navigable filesystem:
 
 Key files: `base.py` (VFSNode base), `resolver.py` (path resolution), `nodes/` (node types)
 
-### REPL Shell (repl/)
-
-Unix-like shell with piping: `ls books/ | grep Python | head 10`
-
-Key files: `shell.py` (LibraryShell), `find.py`, `grep.py`, `text_utils.py`
-
 ### Search Parser
 
 Supports: `title:Python`, `author:Knuth`, `rating:>=4`, `"exact phrase"`, `AND/OR/NOT`
@@ -118,7 +110,7 @@ Key test files in `/tests/`:
 - `test_search_parser.py` (98% coverage)
 - `test_vfs_resolver.py` (99% coverage)
 - `test_library_api.py`, `test_database_library.py`
-- `test_repl.py`, `test_services.py`
+- `test_services.py`
 
 Fixtures in `conftest.py`: `temp_library`, `populated_library`
 
@@ -128,4 +120,3 @@ Fixtures in `conftest.py`: `temp_library`, `populated_library`
 - **Python API**: `from ebk.library_db import Library`
 - **Web Server**: `ebk serve` → FastAPI on port 8000
 - **MCP Server**: `ebk mcp-serve` → MCP over stdio for AI assistants
-- **REPL Shell**: `ebk shell` → Interactive VFS shell
