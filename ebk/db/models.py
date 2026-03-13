@@ -669,54 +669,6 @@ class Review(Base):
         return f"<Review(id={self.id}, book_id={self.book_id}, type='{self.review_type}')>"
 
 
-class EnrichmentHistory(Base):
-    """Track metadata enrichment provenance.
-
-    Records every change made to book metadata by automated enrichment,
-    allowing audit trails and rollback if needed.
-
-    Tracks:
-        - What field was changed
-        - Old and new values
-        - Source of the enrichment (LLM, metadata API, user)
-        - Confidence level
-    """
-    __tablename__ = 'enrichment_history'
-
-    id = Column(Integer, primary_key=True)
-    book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
-
-    # What was enriched
-    field_name = Column(String(100), nullable=False)  # description, tags, categories, difficulty
-    old_value = Column(Text)  # JSON of previous value
-    new_value = Column(Text)  # JSON of new value
-
-    # Source tracking
-    source_type = Column(String(50), nullable=False)  # llm, google_books, open_library, user
-    source_detail = Column(String(200))  # ollama:llama3.2, anthropic:claude-sonnet-4-20250514, etc.
-    confidence = Column(Float, default=1.0)  # 0.0-1.0
-
-    # Status
-    applied = Column(Boolean, default=True)  # Was this change applied?
-    reverted = Column(Boolean, default=False)  # Was this change reverted?
-
-    # Timestamps
-    enriched_at = Column(DateTime, default=utc_now, nullable=False)
-
-    # Relationship
-    book = relationship('Book', backref='enrichment_history')
-
-    __table_args__ = (
-        Index('idx_enrichment_book', 'book_id'),
-        Index('idx_enrichment_source', 'source_type'),
-        Index('idx_enrichment_field', 'field_name'),
-        Index('idx_enrichment_date', 'enriched_at'),
-    )
-
-    def __repr__(self):
-        return f"<EnrichmentHistory(id={self.id}, book_id={self.book_id}, field='{self.field_name}')>"
-
-
 # Full-Text Search Virtual Table (SQLite FTS5)
 # This will be created separately as it's SQLite-specific
 """

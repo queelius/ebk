@@ -140,31 +140,6 @@ class TestAddUniqueId:
 # CONFIG MODULE TESTS
 # ============================================================================
 
-class TestLLMConfig:
-    """Test LLM configuration dataclass."""
-
-    def test_default_values(self):
-        """LLMConfig should have sensible defaults."""
-        cfg = config.LLMConfig()
-        assert cfg.provider == "ollama"
-        assert cfg.model == "llama3.2"
-        assert cfg.host == "localhost"
-        assert cfg.port == 11434
-        assert cfg.api_key is None
-        assert 0 <= cfg.temperature <= 1
-
-    def test_custom_values(self):
-        """LLMConfig should accept custom values."""
-        cfg = config.LLMConfig(
-            provider="openai",
-            model="gpt-4",
-            api_key="test-key"
-        )
-        assert cfg.provider == "openai"
-        assert cfg.model == "gpt-4"
-        assert cfg.api_key == "test-key"
-
-
 class TestServerConfig:
     """Test server configuration dataclass."""
 
@@ -194,7 +169,6 @@ class TestEBKConfig:
     def test_default_initialization(self):
         """EBKConfig should initialize with default sub-configs."""
         cfg = config.EBKConfig()
-        assert isinstance(cfg.llm, config.LLMConfig)
         assert isinstance(cfg.server, config.ServerConfig)
         assert isinstance(cfg.cli, config.CLIConfig)
         assert isinstance(cfg.library, config.LibraryConfig)
@@ -205,24 +179,19 @@ class TestEBKConfig:
         result = cfg.to_dict()
 
         assert isinstance(result, dict)
-        assert "llm" in result
         assert "server" in result
         assert "cli" in result
         assert "library" in result
-        assert isinstance(result["llm"], dict)
 
     def test_from_dict_creates_config(self):
         """from_dict should reconstruct config from dictionary."""
         data = {
-            "llm": {"provider": "openai", "model": "gpt-4"},
             "server": {"port": 9000},
             "cli": {"verbose": True},
             "library": {"default_path": "/test/path"}
         }
         cfg = config.EBKConfig.from_dict(data)
 
-        assert cfg.llm.provider == "openai"
-        assert cfg.llm.model == "gpt-4"
         assert cfg.server.port == 9000
         assert cfg.cli.verbose is True
         assert cfg.library.default_path == "/test/path"
@@ -230,13 +199,11 @@ class TestEBKConfig:
     def test_round_trip_serialization(self):
         """to_dict followed by from_dict should preserve values."""
         original = config.EBKConfig()
-        original.llm.provider = "test-provider"
         original.server.port = 12345
 
         data = original.to_dict()
         restored = config.EBKConfig.from_dict(data)
 
-        assert restored.llm.provider == original.llm.provider
         assert restored.server.port == original.server.port
 
 
@@ -277,7 +244,7 @@ class TestLoadConfig:
             mock_path.return_value = Path("/nonexistent/config.json")
             result = config.load_config()
             # Should have default values
-            assert result.llm.provider == "ollama"
+            assert result.server.port == 8000
 
     def test_loads_from_existing_file(self):
         """Should load values from existing config file."""
@@ -285,8 +252,7 @@ class TestLoadConfig:
             mode='w', suffix='.json', delete=False
         ) as f:
             json.dump({
-                "llm": {"provider": "custom-provider"},
-                "server": {},
+                "server": {"port": 9999},
                 "cli": {},
                 "library": {}
             }, f)
@@ -295,7 +261,7 @@ class TestLoadConfig:
         try:
             with patch.object(config, 'get_config_path', return_value=temp_path):
                 result = config.load_config()
-                assert result.llm.provider == "custom-provider"
+                assert result.server.port == 9999
         finally:
             temp_path.unlink()
 
@@ -341,7 +307,7 @@ class TestSaveConfig:
 
                 with open(config_path) as f:
                     data = json.load(f)  # Should not raise
-                    assert "llm" in data
+                    assert "server" in data
 
     def test_creates_parent_directories(self):
         """save_config should create parent directories if needed."""
@@ -365,22 +331,22 @@ class TestUpdateConfig:
 
             # Create initial config
             initial = config.EBKConfig()
-            initial.llm.provider = "initial"
             initial.server.port = 1111
+            initial.cli.verbose = False
 
             with patch.object(config, 'get_config_path', return_value=config_path):
                 config.save_config(initial)
 
                 # Update only one field
-                config.update_config(llm_provider="updated")
+                config.update_config(server_port=2222)
 
                 # Reload and verify
                 result = config.load_config()
-                assert result.llm.provider == "updated"
-                assert result.server.port == 1111  # Unchanged
+                assert result.server.port == 2222
+                assert result.cli.verbose is False  # Unchanged
 
-    def test_update_llm_settings(self):
-        """Should be able to update all LLM settings."""
+    def test_update_server_settings(self):
+        """Should be able to update server settings."""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = Path(tmpdir) / "config.json"
 
@@ -388,14 +354,12 @@ class TestUpdateConfig:
                 config.save_config(config.EBKConfig())
 
                 config.update_config(
-                    llm_provider="openai",
-                    llm_model="gpt-4",
-                    llm_temperature=0.5
+                    server_host="127.0.0.1",
+                    server_port=9000,
                 )
 
                 result = config.load_config()
-                assert result.llm.provider == "openai"
-                assert result.llm.model == "gpt-4"
-                assert result.llm.temperature == 0.5
+                assert result.server.host == "127.0.0.1"
+                assert result.server.port == 9000
 
 

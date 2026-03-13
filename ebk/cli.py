@@ -4589,266 +4589,9 @@ def serve(
 
 
 @app.command()
-def enrich(
-    library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
-    provider: Optional[str] = typer.Option(None, help="LLM provider (ollama, openai) - defaults from config"),
-    model: Optional[str] = typer.Option(None, help="Model name - defaults from config"),
-    host: Optional[str] = typer.Option(None, help="Ollama host (for remote GPU) - defaults from config"),
-    port: Optional[int] = typer.Option(None, help="Ollama port - defaults from config"),
-    api_key: Optional[str] = typer.Option(None, help="API key (for OpenAI)"),
-    book_id: Optional[int] = typer.Option(None, help="Enrich specific book ID only"),
-    generate_tags: bool = typer.Option(True, help="Generate tags"),
-    categorize: bool = typer.Option(True, help="Categorize books"),
-    enhance_descriptions: bool = typer.Option(False, help="Enhance descriptions"),
-    assess_difficulty: bool = typer.Option(False, help="Assess difficulty levels"),
-    dry_run: bool = typer.Option(False, help="Show what would be done without saving"),
-):
-    """
-    Enrich book metadata using LLM.
-
-    Uses LLM to generate tags, categorize books, enhance descriptions,
-    and assess difficulty levels based on existing metadata and extracted text.
-
-    Configuration:
-        Default LLM settings are loaded from ~/.config/ebk/config.json
-        Command-line options override config file values.
-        Use 'ebk config' to view/edit your default configuration.
-
-    Examples:
-        # Enrich all books using configured defaults (library from config)
-        ebk enrich
-
-        # Enrich specific library
-        ebk enrich ~/my-library
-
-        # Override config to use different host
-        ebk enrich --host 192.168.1.100
-
-        # Enrich specific book
-        ebk enrich --book-id 42
-
-        # Generate tags and descriptions
-        ebk enrich --enhance-descriptions
-
-        # Dry run to see what would be generated
-        ebk enrich --dry-run
-    """
-    import asyncio
-    from ebk.library_db import Library
-    from ebk.ai.llm_providers.ollama import OllamaProvider
-    from ebk.ai.llm_providers.base import LLMConfig
-    from ebk.ai.metadata_enrichment import MetadataEnrichmentService
-    from ebk.config import load_config
-
-    # Resolve library path with config fallback
-    library_path = resolve_library_path(library_path)
-
-    # Load configuration and apply CLI overrides
-    config = load_config()
-    llm_cfg = config.llm
-
-    # Override config with CLI options if provided
-    if provider is not None:
-        llm_cfg.provider = provider
-    if model is not None:
-        llm_cfg.model = model
-    if host is not None:
-        llm_cfg.host = host
-    if port is not None:
-        llm_cfg.port = port
-    if api_key is not None:
-        llm_cfg.api_key = api_key
-
-    console.print(f"[dim]Using provider: {llm_cfg.provider}[/dim]")
-    console.print(f"[dim]Model: {llm_cfg.model}[/dim]")
-    console.print(f"[dim]Host: {llm_cfg.host}:{llm_cfg.port}[/dim]")
-
-    async def enrich_library():
-        # Initialize LLM provider
-        console.print(f"[blue]Initializing {llm_cfg.provider} provider...[/blue]")
-
-        if llm_cfg.provider == "ollama":
-            llm_provider = OllamaProvider.remote(
-                host=llm_cfg.host,
-                port=llm_cfg.port,
-                model=llm_cfg.model,
-                temperature=llm_cfg.temperature
-            )
-        elif llm_cfg.provider == "anthropic":
-            if not llm_cfg.api_key:
-                console.print("[red]Error: API key required for Anthropic (use --api-key or set in config)[/red]")
-                raise typer.Exit(code=1)
-            from ebk.ai.llm_providers.anthropic import AnthropicProvider
-            llm_provider = AnthropicProvider.create(
-                api_key=llm_cfg.api_key,
-                model=llm_cfg.model or "claude-sonnet-4-20250514",
-                temperature=llm_cfg.temperature
-            )
-        elif llm_cfg.provider == "gemini":
-            if not llm_cfg.api_key:
-                console.print("[red]Error: API key required for Gemini (use --api-key or set in config)[/red]")
-                raise typer.Exit(code=1)
-            from ebk.ai.llm_providers.gemini import GeminiProvider
-            llm_provider = GeminiProvider.create(
-                api_key=llm_cfg.api_key,
-                model=llm_cfg.model or "gemini-1.5-flash",
-                temperature=llm_cfg.temperature
-            )
-        elif llm_cfg.provider == "openai":
-            if not llm_cfg.api_key:
-                console.print("[red]Error: API key required for OpenAI (use --api-key or set in config)[/red]")
-                raise typer.Exit(code=1)
-            config = LLMConfig(
-                base_url="https://api.openai.com/v1",
-                api_key=llm_cfg.api_key,
-                model=llm_cfg.model
-            )
-            # Would need OpenAI provider implementation
-            console.print("[red]OpenAI provider not yet implemented[/red]")
-            raise typer.Exit(code=1)
-        else:
-            console.print(f"[red]Unknown provider: {llm_cfg.provider}. Supported: ollama, anthropic, gemini[/red]")
-            raise typer.Exit(code=1)
-
-        # Initialize provider
-        await llm_provider.initialize()
-
-        try:
-            # Test connection (only Ollama supports listing models)
-            if hasattr(llm_provider, 'list_models'):
-                models = await llm_provider.list_models()
-                console.print(f"[green]Connected! Available models: {', '.join(models[:5])}[/green]")
-            else:
-                console.print(f"[green]Connected to {llm_cfg.provider}![/green]")
-
-            # Initialize service
-            service = MetadataEnrichmentService(llm_provider)
-
-            # Open library
-            console.print(f"[blue]Opening library: {library_path}[/blue]")
-            lib = Library.open(library_path)
-
-            try:
-                # Get books to process
-                if book_id:
-                    books = [lib.get_book(book_id)]
-                    if not books[0]:
-                        console.print(f"[red]Book ID {book_id} not found[/red]")
-                        raise typer.Exit(code=1)
-                else:
-                    books = lib.query().all()
-
-                console.print(f"[blue]Processing {len(books)} books...[/blue]")
-
-                with Progress() as progress:
-                    task = progress.add_task("Enriching metadata...", total=len(books))
-
-                    for book in books:
-                        progress.console.print(f"\n[cyan]Processing: {book.title}[/cyan]")
-
-                        # Get extracted text if available
-                        text_sample = None
-                        if book.files:
-                            for file in book.files:
-                                if file.extracted_text and file.extracted_text.content:
-                                    text_sample = file.extracted_text.content[:5000]
-                                    break
-
-                        # Generate tags
-                        if generate_tags:
-                            progress.console.print("  Generating tags...")
-                            tags = await service.generate_tags(
-                                title=book.title,
-                                authors=[a.name for a in book.authors],
-                                subjects=[s.name for s in book.subjects],
-                                description=book.description,
-                                text_sample=text_sample
-                            )
-
-                            if tags:
-                                progress.console.print(f"  [green]Tags: {', '.join(tags)}[/green]")
-                                if not dry_run:
-                                    lib.add_tags(book.id, tags)
-
-                        # Categorize
-                        if categorize:
-                            progress.console.print("  Categorizing...")
-                            categories = await service.categorize(
-                                title=book.title,
-                                subjects=[s.name for s in book.subjects],
-                                description=book.description
-                            )
-
-                            if categories:
-                                progress.console.print(f"  [green]Categories: {', '.join(categories)}[/green]")
-                                if not dry_run:
-                                    # Add categories as subjects
-                                    for cat in categories:
-                                        lib.add_subject(book.id, cat)
-
-                        # Enhance description
-                        if enhance_descriptions and (not book.description or len(book.description) < 100):
-                            progress.console.print("  Enhancing description...")
-                            description = await service.enhance_description(
-                                title=book.title,
-                                existing_description=book.description,
-                                text_sample=text_sample
-                            )
-
-                            if description and description != book.description:
-                                progress.console.print(f"  [green]New description: {description[:100]}...[/green]")
-                                if not dry_run:
-                                    book.description = description
-                                    lib.session.commit()
-
-                        # Assess difficulty
-                        if assess_difficulty and text_sample:
-                            progress.console.print("  Assessing difficulty...")
-                            difficulty = await service.assess_difficulty(
-                                text_sample=text_sample,
-                                subjects=[s.name for s in book.subjects]
-                            )
-
-                            progress.console.print(f"  [green]Difficulty: {difficulty}[/green]")
-                            # Could store in keywords or custom field
-
-                        progress.update(task, advance=1)
-
-                if dry_run:
-                    console.print("\n[yellow]Dry run completed - no changes saved[/yellow]")
-                else:
-                    lib.session.commit()
-                    console.print("\n[green]Enrichment completed![/green]")
-
-            finally:
-                lib.close()
-
-        finally:
-            await llm_provider.cleanup()
-
-    # Run async function
-    try:
-        asyncio.run(enrich_library())
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Enrichment cancelled[/yellow]")
-    except Exception as e:
-        console.print(f"[red]Enrichment failed: {e}[/red]")
-        import traceback
-        traceback.print_exc()
-        raise typer.Exit(code=1)
-
-
-@app.command()
 def config(
     show: bool = typer.Option(False, "--show", help="Show current configuration"),
     init: bool = typer.Option(False, "--init", help="Initialize config file with defaults"),
-    # LLM settings
-    set_provider: Optional[str] = typer.Option(None, "--llm-provider", help="Set LLM provider (ollama, openai)"),
-    set_model: Optional[str] = typer.Option(None, "--llm-model", help="Set default model name"),
-    set_llm_host: Optional[str] = typer.Option(None, "--llm-host", help="Set Ollama/LLM host"),
-    set_llm_port: Optional[int] = typer.Option(None, "--llm-port", help="Set Ollama/LLM port"),
-    set_api_key: Optional[str] = typer.Option(None, "--llm-api-key", help="Set LLM API key"),
-    set_temperature: Optional[float] = typer.Option(None, "--llm-temperature", help="Set temperature (0.0-1.0)"),
     # Server settings
     set_server_host: Optional[str] = typer.Option(None, "--server-host", help="Set web server host"),
     set_server_port: Optional[int] = typer.Option(None, "--server-port", help="Set web server port"),
@@ -4874,14 +4617,11 @@ def config(
         # Set default library path
         ebk config --library-path ~/my-library
 
-        # Set remote Ollama host
-        ebk config --llm-host 192.168.0.225
-
         # Set server to auto-open browser
         ebk config --server-auto-open --server-host 0.0.0.0
 
         # Set multiple values
-        ebk config --llm-host 192.168.0.225 --llm-model llama3.2 --server-port 9000
+        ebk config --library-path ~/my-library --server-port 9000
     """
     from ebk.config import (
         load_config, save_config, ensure_config_exists,
@@ -4897,7 +4637,6 @@ def config(
 
     # Check if any settings provided
     has_settings = any([
-        set_provider, set_model, set_llm_host, set_llm_port, set_api_key, set_temperature,
         set_server_host, set_server_port, set_auto_open is not None,
         set_library_path, set_verbose is not None, set_color is not None
     ])
@@ -4916,18 +4655,6 @@ def config(
         else:
             console.print(f"  Default Path: [dim]not set[/dim]")
 
-        console.print("\n[bold cyan]LLM Settings:[/bold cyan]")
-        console.print(f"  Provider:    {config.llm.provider}")
-        console.print(f"  Model:       {config.llm.model}")
-        console.print(f"  Host:        {config.llm.host}")
-        console.print(f"  Port:        {config.llm.port}")
-        console.print(f"  Temperature: {config.llm.temperature}")
-        if config.llm.api_key:
-            masked = f"{config.llm.api_key[:4]}...{config.llm.api_key[-4:]}"
-            console.print(f"  API Key:     {masked}")
-        else:
-            console.print(f"  API Key:     [dim]not set[/dim]")
-
         console.print("\n[bold cyan]Server Settings:[/bold cyan]")
         console.print(f"  Host:        {config.server.host}")
         console.print(f"  Port:        {config.server.port}")
@@ -4939,25 +4666,13 @@ def config(
         console.print(f"  Color:       {config.cli.color}")
         console.print(f"  Page Size:   {config.cli.page_size}")
 
-        console.print(f"\n[dim]Edit with: ebk config --library-path <path> --llm-host <host> etc.[/dim]")
+        console.print(f"\n[dim]Edit with: ebk config --library-path <path> --server-port <port> etc.[/dim]")
         console.print(f"[dim]Or edit directly: {config_path}[/dim]\n")
         return
 
     # Handle setting values
     changes = []
 
-    if set_provider is not None:
-        changes.append(f"LLM provider: {set_provider}")
-    if set_model is not None:
-        changes.append(f"LLM model: {set_model}")
-    if set_llm_host is not None:
-        changes.append(f"LLM host: {set_llm_host}")
-    if set_llm_port is not None:
-        changes.append(f"LLM port: {set_llm_port}")
-    if set_api_key is not None:
-        changes.append("LLM API key: ****")
-    if set_temperature is not None:
-        changes.append(f"LLM temperature: {set_temperature}")
     if set_server_host is not None:
         changes.append(f"Server host: {set_server_host}")
     if set_server_port is not None:
@@ -4977,12 +4692,6 @@ def config(
             console.print(f"  • {change}")
 
         update_config(
-            llm_provider=set_provider,
-            llm_model=set_model,
-            llm_host=set_llm_host,
-            llm_port=set_llm_port,
-            llm_api_key=set_api_key,
-            llm_temperature=set_temperature,
             server_host=set_server_host,
             server_port=set_server_port,
             server_auto_open=set_auto_open,

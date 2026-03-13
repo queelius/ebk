@@ -14,18 +14,6 @@ from dataclasses import dataclass, asdict, field
 
 
 @dataclass
-class LLMConfig:
-    """LLM provider configuration."""
-    provider: str = "ollama"
-    model: str = "llama3.2"
-    host: str = "localhost"
-    port: int = 11434
-    api_key: Optional[str] = None
-    temperature: float = 0.7
-    max_tokens: Optional[int] = None
-
-
-@dataclass
 class ServerConfig:
     """Web server configuration."""
     host: str = "0.0.0.0"
@@ -51,7 +39,6 @@ class LibraryConfig:
 @dataclass
 class EBKConfig:
     """Main EBK configuration."""
-    llm: LLMConfig = field(default_factory=LLMConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
     cli: CLIConfig = field(default_factory=CLIConfig)
     library: LibraryConfig = field(default_factory=LibraryConfig)
@@ -59,7 +46,6 @@ class EBKConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "llm": asdict(self.llm),
             "server": asdict(self.server),
             "cli": asdict(self.cli),
             "library": asdict(self.library),
@@ -68,12 +54,10 @@ class EBKConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'EBKConfig':
         """Create from dictionary."""
-        llm_data = data.get("llm", {})
         server_data = data.get("server", {})
         cli_data = data.get("cli", {})
         library_data = data.get("library", {})
         return cls(
-            llm=LLMConfig(**llm_data),
             server=ServerConfig(**server_data),
             cli=CLIConfig(**cli_data),
             library=LibraryConfig(**library_data),
@@ -162,14 +146,6 @@ def ensure_config_exists() -> Path:
 
 
 def update_config(
-    # LLM settings
-    llm_provider: Optional[str] = None,
-    llm_model: Optional[str] = None,
-    llm_host: Optional[str] = None,
-    llm_port: Optional[int] = None,
-    llm_api_key: Optional[str] = None,
-    llm_temperature: Optional[float] = None,
-    llm_max_tokens: Optional[int] = None,
     # Server settings
     server_host: Optional[str] = None,
     server_port: Optional[int] = None,
@@ -188,22 +164,6 @@ def update_config(
     Only updates provided values, leaving others unchanged.
     """
     config = load_config()
-
-    # Update LLM config
-    if llm_provider is not None:
-        config.llm.provider = llm_provider
-    if llm_model is not None:
-        config.llm.model = llm_model
-    if llm_host is not None:
-        config.llm.host = llm_host
-    if llm_port is not None:
-        config.llm.port = llm_port
-    if llm_api_key is not None:
-        config.llm.api_key = llm_api_key
-    if llm_temperature is not None:
-        config.llm.temperature = llm_temperature
-    if llm_max_tokens is not None:
-        config.llm.max_tokens = llm_max_tokens
 
     # Update server config
     if server_host is not None:
