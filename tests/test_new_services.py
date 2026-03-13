@@ -17,7 +17,7 @@ from ebk.services import (
     ExportService,
     ViewService,
 )
-from ebk.db.models import Book, PersonalMetadata, Annotation
+from ebk.db.models import Book, PersonalMetadata, Annotation, Author, Tag
 
 
 @pytest.fixture
@@ -474,6 +474,84 @@ class TestExportService:
 
         # Should at least have built-in views
         assert isinstance(views_data, list)
+
+    def test_export_goodreads_csv(self, library_with_books):
+        """Test basic Goodreads CSV export."""
+        lib, books = library_with_books
+        svc = ExportService(lib.session, lib.library_path)
+
+        csv_output = svc.export_goodreads_csv(books)
+        lines = csv_output.strip().split('\n')
+
+        # At least header + 1 data row
+        assert len(lines) >= 2
+
+        header = lines[0]
+        assert 'Title' in header
+        assert 'Author' in header
+        assert 'ISBN' in header
+        assert 'My Rating' in header
+        assert 'Exclusive Shelf' in header
+        assert 'Bookshelves' in header
+
+    def test_export_goodreads_csv_multi_author(self, library_with_books):
+        """Test that every Goodreads CSV row has an Author field populated."""
+        lib, books = library_with_books
+
+        # Attach an author to every book
+        for book in books:
+            author = Author(name=f"Author for {book.title}")
+            lib.session.add(author)
+            book.authors.append(author)
+        lib.session.commit()
+
+        svc = ExportService(lib.session, lib.library_path)
+        csv_output = svc.export_goodreads_csv(books)
+
+        import csv as csv_mod
+        import io
+        reader = csv_mod.DictReader(io.StringIO(csv_output))
+        rows = list(reader)
+
+        assert len(rows) == len(books)
+        for row in rows:
+            assert row['Author'], f"Author field should be populated, got: {row['Author']!r}"
+
+    def test_export_calibre_csv(self, library_with_books):
+        """Test basic Calibre CSV export."""
+        lib, books = library_with_books
+        svc = ExportService(lib.session, lib.library_path)
+
+        csv_output = svc.export_calibre_csv(books)
+        lines = csv_output.strip().split('\n')
+
+        # At least header + 1 data row
+        assert len(lines) >= 2
+
+        header = lines[0]
+        assert 'title' in header
+
+    def test_export_calibre_csv_with_tags(self, library_with_books):
+        """Test Calibre CSV export includes tags when present."""
+        lib, books = library_with_books
+
+        # Add a tag to the first book using the session directly
+        tag = Tag(name="SubTag", path="TestTag/SubTag")
+        lib.session.add(tag)
+        books[0].tags.append(tag)
+        lib.session.commit()
+
+        svc = ExportService(lib.session, lib.library_path)
+        csv_output = svc.export_calibre_csv(books)
+
+        import csv as csv_mod
+        import io
+        reader = csv_mod.DictReader(io.StringIO(csv_output))
+        rows = list(reader)
+
+        assert len(rows) == len(books)
+        # The first book should have a non-empty tags field
+        assert rows[0]['tags'], "First book should have tags after adding a tag"
 
 
 # =============================================================================
