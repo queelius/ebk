@@ -857,6 +857,28 @@ class TestSearchQueryParserIntegration:
 class TestSearchQueryParserEdgeCases:
     """Test edge cases and error handling."""
 
+    def test_nested_parentheses(self):
+        """Nested parentheses should parse correctly."""
+        result = parse_search_query("(python OR java) AND (advanced OR beginner)")
+        assert result is not None
+        assert len(result.tokens) > 0 or len(result.filters) > 0
+
+    def test_colon_in_field_value(self):
+        """Colons in field values should not break parsing."""
+        result = parse_search_query("title:C++")
+        assert result is not None
+        assert any(f.value == "C++" for f in result.tokens if f.field == "title")
+
+    def test_multiple_colons_in_value(self):
+        """Multiple colons in a query should be handled."""
+        result = parse_search_query("description:http://example.com")
+        assert result is not None
+
+    def test_unbalanced_quotes_at_end(self):
+        """Unclosed quote at end of query."""
+        result = parse_search_query('title:"unclosed')
+        assert result is not None
+
     def test_parse_query_with_colon_but_no_value(self):
         # Given: A malformed field query with no value
         parser = SearchQueryParser()
