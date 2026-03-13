@@ -12,7 +12,7 @@ ebk is a Python-based eBook metadata management tool with:
 - **REPL Shell** with piping, grep, find, and file management
 - **Hash-based deduplication** using SHA256
 - **Plugin architecture** for extensibility
-- **AI-powered features** (optional): metadata enrichment via Ollama/OpenAI
+- **MCP server** for AI assistant integration (Claude Code, etc.)
 
 ## Development Commands
 
@@ -67,6 +67,7 @@ ebk search "python" --offset 20          # Next page of results
 | `config.py` | Configuration at `~/.config/ebk/config.json` |
 | `db/models.py` | SQLAlchemy ORM: Book, Author, Subject, File, Cover, Tag |
 | `db/session.py` | Session management, FTS5 setup |
+| `mcp/` | MCP server: schema introspection, read-only SQL, book updates |
 
 ### Virtual File System (vfs/)
 
@@ -126,4 +127,5 @@ Fixtures in `conftest.py`: `temp_library`, `populated_library`
 - **CLI**: `ebk` command → `ebk.cli:app`
 - **Python API**: `from ebk.library_db import Library`
 - **Web Server**: `ebk serve` → FastAPI on port 8000
+- **MCP Server**: `ebk mcp-serve` → MCP over stdio for AI assistants
 - **REPL Shell**: `ebk shell` → Interactive VFS shell

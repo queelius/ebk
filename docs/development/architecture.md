@@ -8,9 +8,9 @@ ebk is built around several key architectural principles:
 
 1. **SQLAlchemy ORM** - Database-first design with normalized schema
 2. **Service Layer** - Business logic separated from data access
-3. **Provider Pattern** - Pluggable LLM and metadata providers
-4. **Fluent API** - Method chaining for intuitive queries
-5. **Configuration Management** - Centralized settings with CLI overrides
+3. **Fluent API** - Method chaining for intuitive queries
+4. **Configuration Management** - Centralized settings with CLI overrides
+5. **MCP Integration** - AI assistant access via Model Context Protocol
 
 ## Core Components
 
@@ -23,7 +23,7 @@ ebk is built around several key architectural principles:
 - `Tag` - Hierarchical user-defined tags (separate from subjects)
 - `File` - Physical file records with hash-based deduplication
 - `ExtractedText` - Full text from ebooks
-- `TextChunk` - Overlapping chunks for semantic search
+- `TextChunk` - Overlapping chunks for search
 - `Cover` - Cover images with thumbnails
 - `PersonalMetadata` - Ratings, favorites, reading status
 - `View` - Named view definitions (Views DSL)
@@ -63,36 +63,29 @@ Composable query language for named library subsets:
 - PDF extraction (PyMuPDF, pypdf fallback)
 - EPUB extraction (ebooklib)
 - Plaintext handling
-- Chunking for semantic search
+- Chunking for search
 
-### AI/LLM Layer (`ebk/ai/`)
+### MCP Server (`ebk/mcp/`)
 
-**LLM Providers** (`llm_providers/`):
-- `BaseLLMProvider` - Abstract interface with async context manager support
-- `OllamaProvider` - Local and remote Ollama (with native JSON mode)
-- `AnthropicProvider` - Claude models via Anthropic API
-- `GeminiProvider` - Google Gemini models via Google AI API
+Model Context Protocol server for AI assistant integration (e.g., Claude Code). Launched via `ebk mcp-serve [library-path]` over stdio transport.
 
-**Metadata Enrichment** (`metadata_enrichment.py`):
-- Auto-tagging
-- Categorization
-- Description enhancement
-- Difficulty assessment
+**Tools:**
 
-**Knowledge Graph** (`knowledge_graph.py`):
-- NetworkX-based concept graph
-- Entity extraction
-- Relationship mapping
+- `get_schema` - Introspects the database via SQLAlchemy's inspection API, returning tables, columns, foreign keys, and ORM relationships.
+- `execute_sql` - Read-only SQL query execution with 3-layer security:
+    1. Prefix check (only `SELECT`, no multi-statement)
+    2. Read-only SQLite connection (`?mode=ro`)
+    3. SQLite authorizer callback (whitelist: `SELECT`, `READ`, `FUNCTION`)
+- `update_books` - Batch book metadata updates: scalar fields, collection operations (tags, authors, subjects), and book merging.
 
-**Semantic Search** (`semantic_search.py`):
-- Vector embeddings
-- Similarity search
-- Query expansion
+**Key files:**
+- `server.py` - FastMCP instance creation and stdio transport runner
+- `tools.py` - Tool implementations (`get_schema_impl`, `execute_sql_impl`, `update_books_impl`)
+- `sql_executor.py` - `ReadOnlySQLExecutor` with defense-in-depth
 
 ### Configuration (`ebk/config.py`)
 
-Four configuration sections:
-- `LLMConfig` - Provider, model, host, port, API key
+Three configuration sections:
 - `ServerConfig` - Host, port, auto-open, page size
 - `CLIConfig` - Verbosity, color, page size
 - `LibraryConfig` - Default library path
@@ -113,7 +106,7 @@ FastAPI-based REST API:
 Typer-based command-line interface:
 - `db-*` commands for library management
 - `serve` for web server
-- `enrich` for AI metadata enrichment
+- `mcp-serve` for MCP server
 - `config` for configuration management
 
 ## Design Patterns
@@ -137,26 +130,6 @@ Files deduplicated using SHA256:
 - Same file (same hash) → skipped
 - Same book, different format → added as additional format
 - Hash-prefixed storage: `files/ab/abc123.pdf`
-
-### Provider Pattern
-
-Swappable LLM backends:
-
-```python
-from ebk.ai.llm_providers.ollama import OllamaProvider
-
-# Local Ollama
-provider = OllamaProvider.local(model="llama3.2")
-
-# Remote GPU server
-provider = OllamaProvider.remote(
-    host="192.168.0.225",
-    model="llama3.2"
-)
-
-async with provider:
-    response = await provider.complete("prompt")
-```
 
 ### Configuration Hierarchy
 
@@ -182,13 +155,11 @@ my-library/
 │   │   └── abc123...pdf
 │   └── cd/
 │       └── cde456...epub
-├── covers/                 # Cover images
-│   ├── ab/
-│   │   └── abc123.jpg
-│   └── thumbnails/
-│       └── abc123_thumb.jpg
-└── vectors/                # Vector embeddings (future)
-    └── embeddings.pkl
+└── covers/                 # Cover images
+    ├── ab/
+    │   └── abc123.jpg
+    └── thumbnails/
+        └── abc123_thumb.jpg
 ```
 
 ## Key Technologies
@@ -197,18 +168,17 @@ my-library/
 - **SQLite** with **FTS5** - Database and full-text search
 - **FastAPI** - Web framework for REST API
 - **Typer** + **Rich** - CLI framework with colored output
-- **httpx** - Async HTTP client for LLM providers
 - **PyMuPDF** / **pypdf** - PDF text extraction
 - **ebooklib** - EPUB parsing
 - **Pillow** - Image processing for covers
-- **NetworkX** - Graph algorithms for knowledge graph
+- **FastMCP** - Model Context Protocol server
 
 ## Extension Points
 
-1. **LLM Providers** - Implement `BaseLLMProvider`
-2. **Plugins** - Use plugin registry in `ebk/plugins/`
-3. **Metadata Extractors** - Add to `integrations/metadata/`
-4. **Export Formats** - Add to `ebk/exports/`
+1. **Plugins** - Use plugin registry in `ebk/plugins/`
+2. **Metadata Extractors** - Add to `integrations/metadata/`
+3. **Export Formats** - Add to `ebk/exports/`
+4. **MCP Tools** - Add tools to `ebk/mcp/server.py`
 
 ## See Also
 

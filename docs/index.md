@@ -60,13 +60,13 @@ ebk:/$ find author:Knuth rating:>=4
 - **Bulk Edit** - Update multiple books at once (language, tags, rating, etc.)
 - **Similar Books** - Find related books using TF-IDF and metadata similarity
 
-### AI-Powered Features (Optional)
+### MCP Server (AI Integration)
 
-Connect to Ollama, Anthropic (Claude), or Google Gemini for LLM-powered metadata enrichment:
+A built-in [Model Context Protocol](https://modelcontextprotocol.io/) server lets AI assistants like Claude interact with your library:
 
-- Auto-generate tags and categories
-- Enhance descriptions
-- Assess reading difficulty
+- **Schema introspection** -- understand the data model before querying
+- **Read-only SQL** -- query the library with defense-in-depth security
+- **Batch updates** -- modify book metadata, tags, authors, and subjects
 
 ## Quick Example
 
@@ -140,7 +140,7 @@ ebk serve ~/library
 - **[Python API](user-guide/api.md)** - Programmatic library access
 - **[Search Syntax](user-guide/search.md)** - Advanced query language
 - **[Import/Export](user-guide/import-export.md)** - Data interchange
-- **[LLM Features](user-guide/llm-features.md)** - AI-powered enrichment
+- **[MCP Server](integrations/mcp.md)** - AI assistant integration
 
 ## Architecture
 
