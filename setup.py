@@ -58,12 +58,6 @@ setup(
             "matplotlib>=3.5.0",
             "pyvis>=0.3.0",
         ],
-        # AI integrations (future)
-        "ai": [
-            "openai>=1.0.0",
-            "anthropic>=0.7.0",
-            "transformers>=4.30.0",
-        ],
         # Legacy alias for viz -> network
         "viz": [
             "matplotlib>=3.5.0",
@@ -73,7 +67,7 @@ setup(
             "seaborn>=0.12.0"
         ],
         "mcp": [
-            "mcp>=0.1.0"
+            "mcp>=1.0,<2.0"
         ],
         "all": [
             # Include all optional dependencies
@@ -85,7 +79,7 @@ setup(
             "pyvis>=0.3.0",
             "plotly>=5.0.0",
             "seaborn>=0.12.0",
-            "mcp>=0.1.0"
+            "mcp>=1.0,<2.0"
         ],
         "dev": [
             "pytest>=7.0.0",
