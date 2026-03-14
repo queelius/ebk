@@ -1,7 +1,6 @@
 """Tests for MCP tool implementations."""
 import json
 import pytest
-from pathlib import Path
 from ebk.library_db import Library
 from ebk.mcp.tools import get_schema_impl, execute_sql_impl, update_books_impl
 

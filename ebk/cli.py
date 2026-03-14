@@ -5950,9 +5950,6 @@ def mcp_serve(
 ):
     """Start the MCP server for Claude Code integration."""
     resolved_path = resolve_library_path(library_path)
-    if not resolved_path:
-        typer.echo("Error: No library path specified and no default configured.", err=True)
-        raise typer.Exit(1)
     from ebk.mcp.server import run_server
     run_server(resolved_path)
 

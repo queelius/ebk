@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="ebk",
-    version="0.5.0",
+    version="0.5.1",
     description="A lightweight tool for managing eBook metadata",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -45,6 +45,8 @@ setup(
         # Metadata extractors
         "metadata": [
             "aiohttp>=3.8.0",  # For API calls
+            "beautifulsoup4>=4.12.0",  # For HTML parsing
+            "httpx>=0.24.0",  # Alternative HTTP client
         ],
         "google-books": [
             "aiohttp>=3.8.0",
@@ -67,7 +69,8 @@ setup(
             "seaborn>=0.12.0"
         ],
         "mcp": [
-            "mcp>=1.0,<2.0"
+            "mcp>=1.0,<2.0",
+            "pydantic>=2.0.0",
         ],
         "all": [
             # Include all optional dependencies
@@ -100,10 +103,9 @@ setup(
     },
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9", 
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Development Status :: 4 - Beta",
@@ -112,7 +114,7 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Text Processing :: Markup",
     ],
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     include_package_data=True,
     package_data={
         "ebk": ["exports/templates/**/*"],

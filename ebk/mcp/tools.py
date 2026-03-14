@@ -40,17 +40,16 @@ def get_schema_impl(db_path: Path) -> Dict[str, Any]:
     tables = {}
     for table_name in inspector.get_table_names():
         # Columns
+        pk_columns = set(
+            inspector.get_pk_constraint(table_name).get("constrained_columns", [])
+        )
         columns = []
         for col in inspector.get_columns(table_name):
             columns.append({
                 "name": col["name"],
                 "type": str(col["type"]),
                 "nullable": col.get("nullable", True),
-                "primary_key": col.get("name") in {
-                    pk_col for pk_col in (
-                        inspector.get_pk_constraint(table_name).get("constrained_columns", [])
-                    )
-                },
+                "primary_key": col["name"] in pk_columns,
             })
 
         # Foreign keys
@@ -195,7 +194,8 @@ def _apply_collection_ops(session: Session, book: Book, fields: Dict[str, Any]):
         for tag_path in fields["add_tags"]:
             _ensure_tag(session, book, tag_path)
     if "remove_tags" in fields:
-        book.tags = [t for t in book.tags if t.path not in fields["remove_tags"]]
+        remove_paths = set(fields["remove_tags"])
+        book.tags = [t for t in book.tags if t.path not in remove_paths]
     if "add_authors" in fields:
         for name in fields["add_authors"]:
             author = session.query(Author).filter_by(name=name).first()
@@ -205,7 +205,8 @@ def _apply_collection_ops(session: Session, book: Book, fields: Dict[str, Any]):
             if author not in book.authors:
                 book.authors.append(author)
     if "remove_authors" in fields:
-        book.authors = [a for a in book.authors if a.name not in fields["remove_authors"]]
+        remove_names = set(fields["remove_authors"])
+        book.authors = [a for a in book.authors if a.name not in remove_names]
     if "add_subjects" in fields:
         for name in fields["add_subjects"]:
             subject = session.query(Subject).filter_by(name=name).first()
@@ -215,7 +216,8 @@ def _apply_collection_ops(session: Session, book: Book, fields: Dict[str, Any]):
             if subject not in book.subjects:
                 book.subjects.append(subject)
     if "remove_subjects" in fields:
-        book.subjects = [s for s in book.subjects if s.name not in fields["remove_subjects"]]
+        remove_names = set(fields["remove_subjects"])
+        book.subjects = [s for s in book.subjects if s.name not in remove_names]
 
 
 def _ensure_tag(session: Session, book: Book, tag_path: str):

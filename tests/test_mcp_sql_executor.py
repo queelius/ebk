@@ -1,6 +1,5 @@
 """Tests for read-only SQL executor."""
 import pytest
-from pathlib import Path
 from ebk.library_db import Library
 from ebk.mcp.sql_executor import ReadOnlySQLExecutor
 

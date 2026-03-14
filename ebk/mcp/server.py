@@ -1,5 +1,8 @@
 """MCP server for ebk library management."""
+from pathlib import Path
+
 from mcp.server import FastMCP
+
 from ebk.library_db import Library
 from ebk.mcp.tools import get_schema_impl, execute_sql_impl, update_books_impl
 
@@ -44,7 +47,6 @@ def create_mcp_server(library: Library) -> FastMCP:
 
 def run_server(library_path):
     """Entry point: open library and run MCP server over stdio."""
-    from pathlib import Path
     lib = Library.open(Path(library_path))
     mcp = create_mcp_server(lib)
     try:
