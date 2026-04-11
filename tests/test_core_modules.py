@@ -1,5 +1,5 @@
 """
-Tests for core utility modules: config, ident, decorators.
+Tests for core utility modules: config, ident.
 
 Tests focus on behavior and contracts, not implementation details.
 """

@@ -13,11 +13,11 @@ from ebk.library_db import Library
 from ebk.services import (
     ReadingQueueService,
     PersonalMetadataService,
-    AnnotationService,
+    MarginaliaService,
     ExportService,
     ViewService,
 )
-from ebk.db.models import Book, PersonalMetadata, Annotation, Author, Tag
+from ebk.db.models import Book, PersonalMetadata, Author, Tag
 
 
 @pytest.fixture
@@ -281,72 +281,115 @@ class TestPersonalMetadataService:
 
 
 # =============================================================================
-# AnnotationService Tests
+# MarginaliaService Tests
 # =============================================================================
 
-class TestAnnotationService:
-    """Tests for the AnnotationService."""
+class TestMarginaliaService:
+    """Tests for the MarginaliaService."""
 
-    def test_create_annotation(self, library_with_books):
-        """Test creating an annotation."""
+    def test_create_note(self, library_with_books):
+        """Test creating a note on a book."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        annotation = svc.create(
-            books[0].id,
+        entry = svc.create(
             content="This is a test note",
-            annotation_type='note',
-            page_number=42
+            book_ids=[books[0].id],
+            page_number=42,
         )
 
-        assert annotation.id is not None
-        assert annotation.content == "This is a test note"
-        assert annotation.page_number == 42
+        assert entry.id is not None
+        assert entry.content == "This is a test note"
+        assert entry.page_number == 42
+        assert len(entry.books) == 1
 
-    def test_list_annotations(self, library_with_books):
-        """Test listing annotations for a book."""
+    def test_create_highlight(self, library_with_books):
+        """Test creating a highlight (text only, no note)."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        svc.create(books[0].id, "Note 1", page_number=1)
-        svc.create(books[0].id, "Note 2", page_number=2)
-        svc.create(books[0].id, "Highlight", annotation_type='highlight', page_number=3)
+        entry = svc.create(
+            highlighted_text="To be or not to be",
+            book_ids=[books[0].id],
+            page_number=47,
+        )
 
-        annotations = svc.list(books[0].id)
-        assert len(annotations) == 3
+        assert entry.highlighted_text == "To be or not to be"
+        assert entry.content is None
 
-        notes_only = svc.list(books[0].id, type_filter='note')
-        assert len(notes_only) == 2
-
-    def test_update_annotation(self, library_with_books):
-        """Test updating an annotation."""
+    def test_create_cross_book(self, library_with_books):
+        """Test creating marginalia spanning multiple books."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        annotation = svc.create(books[0].id, "Original content")
-        updated = svc.update(annotation.id, content="Updated content")
+        entry = svc.create(
+            content="Both books discuss similar themes",
+            book_ids=[books[0].id, books[1].id],
+        )
 
-        assert updated.content == "Updated content"
+        assert len(entry.books) == 2
 
-    def test_delete_annotation(self, library_with_books):
-        """Test deleting an annotation."""
+    def test_create_unattached(self, library_with_books):
+        """Test creating collection-level marginalia (no books)."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        annotation = svc.create(books[0].id, "To be deleted")
-        result = svc.delete(annotation.id)
+        entry = svc.create(content="Need a good intro to category theory")
+        assert len(entry.books) == 0
+
+    def test_list_for_book(self, library_with_books):
+        """Test listing marginalia for a book."""
+        lib, books = library_with_books
+        svc = MarginaliaService(lib.session, lib.library_path)
+
+        svc.create(content="Note 1", book_ids=[books[0].id], page_number=1)
+        svc.create(content="Note 2", book_ids=[books[0].id], page_number=2)
+        svc.create(highlighted_text="Highlight", book_ids=[books[0].id], page_number=3)
+
+        entries = svc.list_for_book(books[0].id)
+        assert len(entries) == 3
+
+    def test_list_unattached(self, library_with_books):
+        """Test listing unattached marginalia."""
+        lib, books = library_with_books
+        svc = MarginaliaService(lib.session, lib.library_path)
+
+        svc.create(content="Attached", book_ids=[books[0].id])
+        svc.create(content="Floating note")
+
+        unattached = svc.list_unattached()
+        assert len(unattached) == 1
+        assert unattached[0].content == "Floating note"
+
+    def test_update(self, library_with_books):
+        """Test updating marginalia."""
+        lib, books = library_with_books
+        svc = MarginaliaService(lib.session, lib.library_path)
+
+        entry = svc.create(content="Original", book_ids=[books[0].id])
+        updated = svc.update(entry.id, content="Updated")
+
+        assert updated.content == "Updated"
+
+    def test_delete(self, library_with_books):
+        """Test deleting marginalia."""
+        lib, books = library_with_books
+        svc = MarginaliaService(lib.session, lib.library_path)
+
+        entry = svc.create(content="To be deleted", book_ids=[books[0].id])
+        result = svc.delete(entry.id)
 
         assert result is True
-        assert svc.get(annotation.id) is None
+        assert svc.get(entry.id) is None
 
     def test_delete_all_for_book(self, library_with_books):
-        """Test deleting all annotations for a book."""
+        """Test deleting all single-book marginalia for a book."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        svc.create(books[0].id, "Note 1")
-        svc.create(books[0].id, "Note 2")
-        svc.create(books[1].id, "Other book note")
+        svc.create(content="Note 1", book_ids=[books[0].id])
+        svc.create(content="Note 2", book_ids=[books[0].id])
+        svc.create(content="Other book note", book_ids=[books[1].id])
 
         count = svc.delete_all_for_book(books[0].id)
         assert count == 2
@@ -354,40 +397,39 @@ class TestAnnotationService:
         assert svc.count(books[1].id) == 1
 
     def test_export_json(self, library_with_books):
-        """Test exporting annotations as JSON."""
+        """Test exporting marginalia as JSON."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        svc.create(books[0].id, "Test note", page_number=1)
+        svc.create(content="Test note", book_ids=[books[0].id], page_number=1)
 
         json_output = svc.export(books[0].id, format_type='json')
         data = json.loads(json_output)
 
-        assert 'annotations' in data
-        assert len(data['annotations']) == 1
+        assert 'marginalia' in data
+        assert len(data['marginalia']) == 1
 
     def test_export_markdown(self, library_with_books):
-        """Test exporting annotations as Markdown."""
+        """Test exporting marginalia as Markdown."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        svc.create(books[0].id, "Test note", page_number=1)
+        svc.create(content="Test note", book_ids=[books[0].id], page_number=1)
 
         md_output = svc.export(books[0].id, format_type='markdown')
-        assert '# Annotations' in md_output
+        assert '# Marginalia' in md_output
 
-    def test_count_by_type(self, library_with_books):
-        """Test counting annotations by type."""
+    def test_category_filter(self, library_with_books):
+        """Test filtering by category."""
         lib, books = library_with_books
-        svc = AnnotationService(lib.session, lib.library_path)
+        svc = MarginaliaService(lib.session, lib.library_path)
 
-        svc.create(books[0].id, "Note 1", annotation_type='note')
-        svc.create(books[0].id, "Note 2", annotation_type='note')
-        svc.create(books[0].id, "Highlight", annotation_type='highlight')
+        svc.create(content="Important", book_ids=[books[0].id], category="important")
+        svc.create(content="Casual", book_ids=[books[0].id], category="casual")
 
-        counts = svc.count_by_type(books[0].id)
-        assert counts.get('note', 0) == 2
-        assert counts.get('highlight', 0) == 1
+        important = svc.list_for_book(books[0].id, category="important")
+        assert len(important) == 1
+        assert important[0].content == "Important"
 
 
 # =============================================================================
@@ -415,7 +457,7 @@ class TestExportService:
 
         json_output = svc.export_json(
             books,
-            include_annotations=False,
+            include_marginalia=False,
             include_personal=False,
             pretty=False
         )

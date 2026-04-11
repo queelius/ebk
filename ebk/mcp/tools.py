@@ -2,26 +2,26 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import create_engine, inspect as sa_inspect
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from ebk.db.models import Base, Book, Author, Subject, Tag, PersonalMetadata
 from ebk.mcp.sql_executor import ReadOnlySQLExecutor
 
 
-def get_schema_impl(db_path: Path) -> Dict[str, Any]:
+def get_schema_impl(session: Session) -> Dict[str, Any]:
     """Introspect the database and return a complete schema description.
 
     Uses SQLAlchemy's inspection API to extract table structure and
     the ORM registry to include relationship metadata.
 
     Args:
-        db_path: Path to the SQLite database file.
+        session: Active SQLAlchemy session.
 
     Returns:
         Dict with {"tables": {table_name: {columns, foreign_keys, relationships}}}
     """
-    engine = create_engine(f"sqlite:///{db_path}")
+    engine = session.get_bind()
     inspector = sa_inspect(engine)
 
     # Build a mapping from table name -> list of relationships using ORM mappers
@@ -70,7 +70,6 @@ def get_schema_impl(db_path: Path) -> Dict[str, Any]:
             "relationships": relationships,
         }
 
-    engine.dispose()
     return {"tables": tables}
 
 
@@ -119,45 +118,51 @@ def update_books_impl(
     errors = {}
 
     for book_id_str, fields in updates.items():
-        book_id = int(book_id_str)
         try:
-            book = session.get(Book, book_id)
-            if not book:
-                errors[book_id] = f"Book {book_id} not found"
-                continue
+            book_id = int(book_id_str)
+        except (ValueError, TypeError):
+            errors[book_id_str] = f"Invalid book ID: {book_id_str!r}"
+            continue
 
-            # Check merge_into exclusivity
-            if "merge_into" in fields:
-                if len(fields) > 1:
-                    errors[book_id] = "merge_into is mutually exclusive with other fields"
+        try:
+            with session.begin_nested():
+                book = session.get(Book, book_id)
+                if not book:
+                    errors[book_id] = f"Book {book_id} not found"
                     continue
-                _merge_book(session, book, fields["merge_into"])
+
+                # Check merge_into exclusivity
+                if "merge_into" in fields:
+                    if len(fields) > 1:
+                        errors[book_id] = "merge_into is mutually exclusive with other fields"
+                        continue
+                    _merge_book(session, book, fields["merge_into"])
+                    updated.append(book_id)
+                    continue
+
+                # Validate all fields first
+                unknown = set(fields.keys()) - book_cols - personal_cols - _COLLECTION_OPS - _SPECIAL_OPS
+                if unknown:
+                    errors[book_id] = f"Unknown fields: {', '.join(sorted(unknown))}"
+                    continue
+
+                # Apply scalar Book fields
+                for key in set(fields.keys()) & book_cols:
+                    setattr(book, key, fields[key])
+
+                # Apply PersonalMetadata fields
+                pm_fields = set(fields.keys()) & personal_cols
+                if pm_fields:
+                    if not book.personal:
+                        book.personal = PersonalMetadata(book_id=book.id)
+                        session.add(book.personal)
+                    for key in pm_fields:
+                        setattr(book.personal, key, fields[key])
+
+                # Apply collection operations
+                _apply_collection_ops(session, book, fields)
+
                 updated.append(book_id)
-                continue
-
-            # Validate all fields first
-            unknown = set(fields.keys()) - book_cols - personal_cols - _COLLECTION_OPS - _SPECIAL_OPS
-            if unknown:
-                errors[book_id] = f"Unknown fields: {', '.join(sorted(unknown))}"
-                continue
-
-            # Apply scalar Book fields
-            for key in set(fields.keys()) & book_cols:
-                setattr(book, key, fields[key])
-
-            # Apply PersonalMetadata fields
-            pm_fields = set(fields.keys()) & personal_cols
-            if pm_fields:
-                if not book.personal:
-                    book.personal = PersonalMetadata(book_id=book.id)
-                    session.add(book.personal)
-                for key in pm_fields:
-                    setattr(book.personal, key, fields[key])
-
-            # Apply collection operations
-            _apply_collection_ops(session, book, fields)
-
-            updated.append(book_id)
         except Exception as e:
             errors[book_id] = str(e)
 

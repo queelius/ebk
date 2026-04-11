@@ -393,7 +393,6 @@ EVENTS = {
     
     # Metadata events
     'metadata.extracted': 'Metadata extracted from source',
-    'metadata.enriched': 'Metadata enriched from external source',
     'metadata.validated': 'Metadata validated',
     
     # Tag events

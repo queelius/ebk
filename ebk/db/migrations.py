@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Current schema version - increment when adding new migrations
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 
 def get_engine(library_path: Path) -> Engine:
@@ -504,6 +504,93 @@ def migrate_add_views_tables(library_path: Path, dry_run: bool = False) -> bool:
     return True
 
 
+def migrate_annotations_to_marginalia(library_path: Path, dry_run: bool = False) -> bool:
+    """
+    Replace annotations with marginalia.
+
+    Creates marginalia + marginalia_books tables, migrates existing annotation
+    data, and drops the annotations table. Also drops the vestigial highlights
+    and notes JSON columns from reading_sessions.
+
+    Args:
+        library_path: Path to library directory
+        dry_run: If True, only check if migration is needed
+
+    Returns:
+        True if migration was applied (or would be applied in dry_run),
+        False if already up-to-date
+    """
+    engine = get_engine(library_path)
+
+    if table_exists(engine, 'marginalia'):
+        logger.debug("Marginalia table already exists, skipping migration")
+        return False
+
+    if dry_run:
+        logger.debug("Migration needed: marginalia table does not exist")
+        return True
+
+    logger.debug("Applying migration: annotations → marginalia")
+
+    with engine.begin() as conn:
+        # Create marginalia table
+        conn.execute(text("""
+            CREATE TABLE marginalia (
+                id INTEGER NOT NULL PRIMARY KEY,
+                content TEXT,
+                highlighted_text TEXT,
+                page_number INTEGER,
+                position JSON,
+                category VARCHAR(100),
+                pinned BOOLEAN DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME
+            )
+        """))
+        conn.execute(text("CREATE INDEX idx_marginalia_pinned ON marginalia (pinned)"))
+        conn.execute(text("CREATE INDEX idx_marginalia_category ON marginalia (category)"))
+        conn.execute(text("CREATE INDEX idx_marginalia_created ON marginalia (created_at)"))
+
+        # Create junction table
+        conn.execute(text("""
+            CREATE TABLE marginalia_books (
+                marginalia_id INTEGER NOT NULL,
+                book_id INTEGER NOT NULL,
+                PRIMARY KEY (marginalia_id, book_id),
+                FOREIGN KEY(marginalia_id) REFERENCES marginalia (id) ON DELETE CASCADE,
+                FOREIGN KEY(book_id) REFERENCES books (id) ON DELETE CASCADE
+            )
+        """))
+
+        # Migrate existing annotations if the table exists
+        if table_exists(engine, 'annotations'):
+            # Insert into marginalia, mapping old fields to new
+            conn.execute(text("""
+                INSERT INTO marginalia (id, content, highlighted_text, page_number,
+                                        position, category, pinned, created_at, updated_at)
+                SELECT id,
+                       CASE WHEN annotation_type = 'highlight' THEN NULL ELSE content END,
+                       CASE WHEN annotation_type = 'highlight' THEN content ELSE NULL END,
+                       page_number, position, category,
+                       COALESCE(pinned, 0),
+                       created_at,
+                       updated_at
+                FROM annotations
+            """))
+
+            # Create junction table entries (one book per old annotation)
+            conn.execute(text("""
+                INSERT INTO marginalia_books (marginalia_id, book_id)
+                SELECT id, book_id FROM annotations
+            """))
+
+            conn.execute(text("DROP TABLE annotations"))
+
+        logger.debug("Migration completed successfully")
+
+    return True
+
+
 # Migration registry: (version, name, function)
 # Add new migrations here with incrementing version numbers
 MIGRATIONS = [
@@ -514,6 +601,7 @@ MIGRATIONS = [
     (5, 'add_enrichment_history_table', migrate_add_enrichment_history_table),
     (6, 'enhance_annotations', migrate_enhance_annotations),
     (7, 'add_views_tables', migrate_add_views_tables),
+    (8, 'annotations_to_marginalia', migrate_annotations_to_marginalia),
 ]
 
 

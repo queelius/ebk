@@ -41,7 +41,7 @@ class ExportService:
     def export_json(
         self,
         books: List[Book],
-        include_annotations: bool = True,
+        include_marginalia: bool = True,
         include_personal: bool = True,
         pretty: bool = True,
     ) -> str:
@@ -50,7 +50,7 @@ class ExportService:
 
         Args:
             books: List of Book objects to export
-            include_annotations: Include notes and annotations
+            include_marginalia: Include notes and annotations
             include_personal: Include ratings, favorites, reading status
             pretty: Pretty-print the JSON output
 
@@ -64,7 +64,7 @@ class ExportService:
         }
 
         for book in books:
-            book_data = self._book_to_dict(book, include_annotations, include_personal)
+            book_data = self._book_to_dict(book, include_marginalia, include_personal)
             export_data["books"].append(book_data)
 
         if pretty:
@@ -233,7 +233,7 @@ class ExportService:
     def _book_to_dict(
         self,
         book: Book,
-        include_annotations: bool = True,
+        include_marginalia: bool = True,
         include_personal: bool = True,
     ) -> Dict[str, Any]:
         """Convert a Book object to a dictionary for export."""
@@ -287,17 +287,18 @@ class ExportService:
                 "queue_position": pm.queue_position,
             }
 
-        if include_annotations:
-            data["annotations"] = [
+        if include_marginalia:
+            data["marginalia"] = [
                 {
-                    "id": a.id,
-                    "type": a.annotation_type,
-                    "content": a.content,
-                    "page": a.page_number,
-                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "id": m.id,
+                    "content": m.content,
+                    "highlighted_text": m.highlighted_text,
+                    "page": m.page_number,
+                    "category": m.category,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
                 }
-                for a in book.annotations
-            ] if hasattr(book, 'annotations') and book.annotations else []
+                for m in book.marginalia
+            ] if hasattr(book, 'marginalia') and book.marginalia else []
 
         return data
 

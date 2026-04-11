@@ -41,7 +41,7 @@ book_subjects = Table(
     Column('book_id', Integer, ForeignKey('books.id', ondelete='CASCADE'), primary_key=True),
     Column('subject_id', Integer, ForeignKey('subjects.id', ondelete='CASCADE'), primary_key=True),
     Column('relevance_score', Float, default=1.0),  # How central is this topic (0-1)
-    Column('source', String(50), default='user')  # calibre, ai_extracted, user_added
+    Column('source', String(50), default='user')  # calibre, user_added
 )
 
 book_tags = Table(
@@ -50,6 +50,13 @@ book_tags = Table(
     Column('book_id', Integer, ForeignKey('books.id', ondelete='CASCADE'), primary_key=True),
     Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True),
     Column('created_at', DateTime, default=utc_now)  # When tag was added
+)
+
+marginalia_books = Table(
+    'marginalia_books',
+    Base.metadata,
+    Column('marginalia_id', Integer, ForeignKey('marginalia.id', ondelete='CASCADE'), primary_key=True),
+    Column('book_id', Integer, ForeignKey('books.id', ondelete='CASCADE'), primary_key=True),
 )
 
 
@@ -100,7 +107,7 @@ class Book(Base):
     covers = relationship('Cover', back_populates='book', cascade='all, delete-orphan')
     concepts = relationship('BookConcept', back_populates='book', cascade='all, delete-orphan')
     sessions = relationship('ReadingSession', back_populates='book', cascade='all, delete-orphan')
-    annotations = relationship('Annotation', back_populates='book', cascade='all, delete-orphan')
+    marginalia = relationship('Marginalia', secondary=marginalia_books, back_populates='books', lazy='selectin')
     personal = relationship('PersonalMetadata', back_populates='book', uselist=False, cascade='all, delete-orphan')
 
     # Indexes
@@ -453,9 +460,6 @@ class ReadingSession(Base):
     start_time = Column(DateTime, default=utc_now, nullable=False)
     end_time = Column(DateTime)
     pages_read = Column(Integer, default=0)
-
-    highlights = Column(JSON)  # Array of highlight texts
-    notes = Column(JSON)  # Array of note objects
     comprehension_score = Column(Float)  # From quiz results
 
     book = relationship('Book', back_populates='sessions')
@@ -467,36 +471,47 @@ class ReadingSession(Base):
         return None
 
 
-class Annotation(Base):
-    """Highlights, notes, bookmarks with rich content support."""
-    __tablename__ = 'annotations'
+class Marginalia(Base):
+    """Reader's notes, highlights, and observations on books.
+
+    Marginalia generalize annotations by supporting multiple scopes:
+    - location: anchored to a specific position in a single book
+    - book: about a book as a whole (reaction, summary, connections)
+    - collection: about a group of books or a topic spanning works
+
+    The scope is derived from context:
+    - 0 books in junction table → collection-level
+    - 1 book + location fields → location-level
+    - 1 book, no location → book-level
+    - 2+ books → cross-book (a form of collection)
+    """
+    __tablename__ = 'marginalia'
 
     id = Column(Integer, primary_key=True)
-    book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
-    session_id = Column(Integer, ForeignKey('reading_sessions.id', ondelete='SET NULL'))
 
-    annotation_type = Column(String(20), nullable=False)  # highlight, note, bookmark
+    # The reader's note (markdown)
+    content = Column(Text)
+    # The passage being annotated (separate from the reader's note)
+    highlighted_text = Column(Text)
+
+    # Location within a book (for location-scoped entries)
     page_number = Column(Integer)
-    position = Column(JSON)  # {char_offset: int} or {x: float, y: float}
-    content = Column(Text, nullable=False)  # The highlighted text or note content
-    color = Column(String(20))  # For highlights
+    position = Column(JSON)  # {char_offset, cfi, x, y, ...}
 
-    # Rich content support (new fields)
-    title = Column(String(255))  # Optional title for the annotation
-    content_format = Column(String(20), default='plain')  # plain, markdown, html
-    category = Column(String(100))  # User-defined category
-    pinned = Column(Boolean, default=False)  # Pin to top
+    # Organization
+    category = Column(String(100), index=True)
+    pinned = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
-    book = relationship('Book', back_populates='annotations')
-    session = relationship('ReadingSession')
+    # Relationships
+    books = relationship('Book', secondary=marginalia_books, back_populates='marginalia', lazy='selectin')
 
     __table_args__ = (
-        Index('idx_annotation_book', 'book_id', 'annotation_type'),
-        Index('idx_annotation_pinned', 'book_id', 'pinned'),
-        Index('idx_annotation_category', 'category'),
+        Index('idx_marginalia_pinned', 'pinned'),
+        Index('idx_marginalia_category', 'category'),
+        Index('idx_marginalia_created', 'created_at'),
     )
 
 

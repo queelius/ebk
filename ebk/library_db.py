@@ -583,66 +583,41 @@ class Library:
             self.session.commit()
             logger.debug(f"Added subject '{subject_name}' to book {book_id}")
 
-    def add_annotation(self, book_id: int, content: str,
-                      page: Optional[int] = None,
-                      annotation_type: str = 'note'):
-        """
-        Add an annotation/comment to a book.
-
-        Args:
-            book_id: Book ID
-            content: Annotation text
-            page: Page number (optional)
-            annotation_type: Type of annotation (note, highlight, bookmark)
+    def add_marginalia(
+        self,
+        book_ids: Optional[List[int]] = None,
+        content: Optional[str] = None,
+        highlighted_text: Optional[str] = None,
+        page_number: Optional[int] = None,
+        category: Optional[str] = None,
+    ) -> int:
+        """Add a marginalia entry, optionally linked to one or more books.
 
         Returns:
-            Annotation ID
+            Marginalia ID
         """
-        from .db.models import Annotation
-
-        annotation = Annotation(
-            book_id=book_id,
+        from .services.marginalia_service import MarginaliaService
+        service = MarginaliaService(self.session, self.library_path)
+        entry = service.create(
             content=content,
-            page_number=page,
-            annotation_type=annotation_type,
-            created_at=datetime.now()
+            highlighted_text=highlighted_text,
+            book_ids=book_ids,
+            page_number=page_number,
+            category=category,
         )
-        self.session.add(annotation)
-        self.session.commit()
+        return entry.id
 
-        logger.debug(f"Added annotation to book {book_id}")
-        return annotation.id
+    def get_marginalia(self, book_id: int) -> List:
+        """Get all marginalia for a book."""
+        from .services.marginalia_service import MarginaliaService
+        service = MarginaliaService(self.session)
+        return service.list_for_book(book_id)
 
-    def get_annotations(self, book_id: int) -> List:
-        """
-        Get all annotations for a book.
-
-        Args:
-            book_id: Book ID
-
-        Returns:
-            List of Annotation objects
-        """
-        from .db.models import Annotation
-
-        return self.session.query(Annotation).filter_by(
-            book_id=book_id
-        ).order_by(Annotation.created_at.desc()).all()
-
-    def delete_annotation(self, annotation_id: int):
-        """
-        Delete an annotation.
-
-        Args:
-            annotation_id: Annotation ID
-        """
-        from .db.models import Annotation
-
-        annotation = self.session.get(Annotation, annotation_id)
-        if annotation:
-            self.session.delete(annotation)
-            self.session.commit()
-            logger.debug(f"Deleted annotation {annotation_id}")
+    def delete_marginalia(self, marginalia_id: int):
+        """Delete a marginalia entry."""
+        from .services.marginalia_service import MarginaliaService
+        service = MarginaliaService(self.session)
+        service.delete(marginalia_id)
 
     # -------------------------------------------------------------------------
     # Review Methods
@@ -926,7 +901,7 @@ class Library:
         from .db.models import (
             Book, Author, Subject, Tag, File, Cover, Contributor,
             Identifier, PersonalMetadata, BookConcept, ReadingSession,
-            Annotation, utc_now
+            utc_now
         )
 
         # Get primary book
@@ -1081,12 +1056,10 @@ class Library:
                     update(ReadingSession).where(ReadingSession.id == sess.id).values(book_id=primary.id)
                 )
 
-            # Annotations - move to primary using SQL
-            from .db.models import Annotation as AnnotationModel
-            for annotation in list(secondary.annotations):
-                self.session.execute(
-                    update(AnnotationModel).where(AnnotationModel.id == annotation.id).values(book_id=primary.id)
-                )
+            # Marginalia - add primary to any marginalia that references secondary
+            for entry in list(secondary.marginalia):
+                if primary not in entry.books:
+                    entry.books.append(primary)
 
             # Expire secondary so ORM doesn't cascade delete moved items
             self.session.expire(secondary)

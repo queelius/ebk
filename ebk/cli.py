@@ -13,16 +13,6 @@ from rich.prompt import Confirm
 from rich.traceback import install
 from rich.table import Table
 
-# Export functions (still available)
-try:
-    from .exports.hugo import export_hugo
-    from .exports.zip import export_zipfile
-    from .exports.jinja_export import JinjaExporter
-except ImportError:
-    export_hugo = None
-    export_zipfile = None
-    JinjaExporter = None
-
 # Initialize Rich Traceback for better error messages
 install(show_locals=True)
 
@@ -83,7 +73,7 @@ import_app = typer.Typer(help="Import books from various sources")
 export_app = typer.Typer(help="Export library data to various formats")
 book_app = typer.Typer(help="Book operations (info, read, rate, favorite, status, tag, purge)")
 review_app = typer.Typer(help="Manage book reviews")
-note_app = typer.Typer(help="Manage book annotations and notes")
+note_app = typer.Typer(help="Manage marginalia (notes, highlights, cross-book observations)")
 tag_app = typer.Typer(help="Manage hierarchical tags for organizing books")
 queue_app = typer.Typer(help="Manage reading queue")
 view_app = typer.Typer(help="Manage views (composable, named subsets of the library)")
@@ -147,7 +137,7 @@ def about():
     console.print("  ebk import <subcommand>      Import books (add, folder, calibre, isbn)")
     console.print("  ebk export <subcommand>      Export library (json, csv, html, opds)")
     console.print("  ebk book <subcommand>        Book operations (info, read, rate, tag, purge)")
-    console.print("  ebk note <subcommand>        Manage annotations")
+    console.print("  ebk note <subcommand>        Manage marginalia")
     console.print("  ebk tag <subcommand>         Manage hierarchical tags")
     console.print("  ebk queue <subcommand>       Manage reading queue")
     console.print("  ebk view <subcommand>        Manage views (named library subsets)")
@@ -1493,7 +1483,7 @@ def sql(
     for advanced filtering, aggregations, and custom reports.
 
     Available tables: books, authors, subjects, files, covers, tags,
-    personal_metadata, annotations, books_fts (full-text search)
+    personal_metadata, marginalia, marginalia_books, books_fts (full-text search)
 
     Examples:
         ebk query sql "SELECT title, language FROM books WHERE language = 'en'"
@@ -3017,61 +3007,65 @@ def purge(
 
 @note_app.command(name="add")
 def note_add(
-    book_id: int = typer.Argument(..., help="Book ID"),
-    library_path: Path = typer.Argument(..., help="Path to library"),
-    content: str = typer.Option(..., "--content", "-c", help="Note/annotation text"),
+    book_id: int = typer.Argument(..., help="Book ID (use 0 for collection-level note)"),
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+    content: str = typer.Option(..., "--content", "-c", help="Your note (markdown)"),
+    highlight: Optional[str] = typer.Option(None, "--highlight", "-H", help="Passage being annotated"),
     page: Optional[int] = typer.Option(None, "--page", "-p", help="Page number"),
-    note_type: str = typer.Option("note", "--type", "-t", help="Annotation type (note, highlight, bookmark)")
+    category: Optional[str] = typer.Option(None, "--category", help="Category for organization"),
 ):
-    """
-    Add a note/annotation to a book.
+    """Add marginalia to a book.
 
     Examples:
-        ebk note add 42 ~/my-library --content "Great explanation of algorithms"
-        ebk note add 42 ~/my-library --content "Important theorem" --page 42
-        ebk note add 42 ~/my-library --content "Key passage" --type highlight
+        ebk note add 42 --content "Great explanation of algorithms"
+        ebk note add 42 --highlight "To be or not to be" --content "Hamlet's dilemma" --page 42
+        ebk note add 0 --content "Need a good intro to category theory" --category wishlist
     """
     from .library_db import Library
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
-        annotation_id = lib.add_annotation(book_id, content, page=page, annotation_type=note_type)
+        book_ids = [book_id] if book_id > 0 else None
+        entry_id = lib.add_marginalia(
+            book_ids=book_ids,
+            content=content,
+            highlighted_text=highlight,
+            page_number=page,
+            category=category,
+        )
 
-        book = lib.get_book(book_id)
-        if book:
+        if book_id > 0:
+            book = lib.get_book(book_id)
             loc_info = f" (page {page})" if page else ""
-            console.print(f"[green]✓ Added {note_type} to '{book.title}'{loc_info}[/green]")
-            console.print(f"  Annotation ID: {annotation_id}")
+            console.print(f"[green]✓ Added marginalia to '{book.title}'{loc_info}[/green]")
         else:
-            console.print(f"[yellow]Book {book_id} not found[/yellow]")
+            console.print("[green]✓ Added collection-level marginalia[/green]")
+        console.print(f"  ID: {entry_id}")
 
         lib.close()
 
     except Exception as e:
-        console.print(f"[red]Error adding note: {e}[/red]")
+        console.print(f"[red]Error adding marginalia: {e}[/red]")
         raise typer.Exit(code=1)
 
 
 @note_app.command(name="list")
 def note_list(
     book_id: int = typer.Argument(..., help="Book ID"),
-    library_path: Path = typer.Argument(..., help="Path to library")
+    library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
+    category: Optional[str] = typer.Option(None, "--category", help="Filter by category"),
 ):
-    """
-    List all notes/annotations for a book.
+    """List marginalia for a book.
 
     Example:
-        ebk note list 42 ~/my-library
+        ebk note list 42
+        ebk note list 42 --category important
     """
     from .library_db import Library
 
-    if not library_path.exists():
-        console.print(f"[red]Error: Library not found: {library_path}[/red]")
-        raise typer.Exit(code=1)
+    library_path = resolve_library_path(library_path)
 
     try:
         lib = Library.open(library_path)
@@ -3082,24 +3076,34 @@ def note_list(
             lib.close()
             raise typer.Exit(code=1)
 
-        annotations = lib.get_annotations(book_id)
+        from .services.marginalia_service import MarginaliaService
+        service = MarginaliaService(lib.session)
+        entries = service.list_for_book(book_id, category=category)
 
-        if not annotations:
-            console.print(f"[yellow]No notes found for '{book.title}'[/yellow]")
+        if not entries:
+            console.print(f"[yellow]No marginalia for '{book.title}'[/yellow]")
         else:
-            console.print(f"\n[bold]Notes for: {book.title}[/bold]\n")
+            console.print(f"\n[bold]Marginalia: {book.title}[/bold]\n")
 
-            for i, ann in enumerate(annotations, 1):
-                type_info = f"[{ann.annotation_type}]" if ann.annotation_type else "[note]"
-                page_info = f" Page {ann.page_number}" if ann.page_number else ""
-                console.print(f"{i}. {type_info}{page_info}")
-                console.print(f"   {ann.content}")
-                console.print(f"   [dim]ID: {ann.id} | Added: {ann.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]\n")
+            for i, m in enumerate(entries, 1):
+                page_info = f" p.{m.page_number}" if m.page_number else ""
+                cat_info = f" [{m.category}]" if m.category else ""
+                pin = "📌 " if m.pinned else ""
+                console.print(f"{pin}{i}.{page_info}{cat_info}")
+                if m.highlighted_text:
+                    console.print(f"   > {m.highlighted_text}")
+                if m.content:
+                    console.print(f"   {m.content}")
+                cross = [b for b in m.books if b.id != book_id]
+                if cross:
+                    refs = ", ".join(f"'{b.title}'" for b in cross)
+                    console.print(f"   [dim]Also: {refs}[/dim]")
+                console.print(f"   [dim]ID: {m.id} | {m.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]\n")
 
         lib.close()
 
     except Exception as e:
-        console.print(f"[red]Error listing notes: {e}[/red]")
+        console.print(f"[red]Error listing marginalia: {e}[/red]")
         raise typer.Exit(code=1)
 
 
@@ -3107,20 +3111,16 @@ def note_list(
 def note_extract(
     book_id: int = typer.Argument(..., help="Book ID"),
     library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
-    format_filter: Optional[str] = typer.Option(None, "--format", "-f", help="Extract from specific format (pdf, epub)")
+    format_filter: Optional[str] = typer.Option(None, "--format", "-f", help="Extract from specific format (pdf, epub)"),
 ):
-    """
-    Extract annotations/highlights from book files (PDF, EPUB).
-
-    This extracts highlights, notes, and bookmarks embedded in the actual
-    ebook files by reading apps and saves them to the library database.
+    """Extract highlights/notes from book files (PDF, EPUB) into marginalia.
 
     Examples:
         ebk note extract 42                    # Extract from all formats
         ebk note extract 42 --format pdf       # Extract only from PDF
     """
     from .library_db import Library
-    from .services.annotation_extraction import extract_and_save_annotations
+    from .services.annotation_extraction import extract_and_save_marginalia
 
     library_path = resolve_library_path(library_path)
 
@@ -3133,24 +3133,22 @@ def note_extract(
             lib.close()
             raise typer.Exit(code=1)
 
-        console.print(f"[cyan]Extracting annotations from: {book.title}[/cyan]")
-
-        # Show available files
+        console.print(f"[cyan]Extracting from: {book.title}[/cyan]")
         for f in book.files:
             filename = Path(f.path).name if f.path else "unknown"
             console.print(f"  [dim]- {f.format.upper()}: {filename}[/dim]")
 
-        count = extract_and_save_annotations(lib, book_id, format_filter)
+        count = extract_and_save_marginalia(lib, book_id, format_filter)
 
         if count > 0:
-            console.print(f"[green]✓ Extracted and saved {count} annotation(s)[/green]")
+            console.print(f"[green]✓ Extracted {count} marginalia entries[/green]")
         else:
-            console.print("[yellow]No new annotations found to extract[/yellow]")
+            console.print("[yellow]No new marginalia found to extract[/yellow]")
 
         lib.close()
 
     except Exception as e:
-        console.print(f"[red]Error extracting annotations: {e}[/red]")
+        console.print(f"[red]Error extracting marginalia: {e}[/red]")
         raise typer.Exit(code=1)
 
 
@@ -3159,18 +3157,16 @@ def note_export(
     book_id: int = typer.Argument(..., help="Book ID"),
     library_path: Optional[Path] = typer.Argument(None, help="Path to library"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file (default: stdout)"),
-    format_type: str = typer.Option("markdown", "--format", "-f", help="Output format (markdown, json, txt)")
+    format_type: str = typer.Option("markdown", "--format", "-f", help="Output format (markdown, json)"),
 ):
-    """
-    Export annotations for a book.
+    """Export marginalia for a book.
 
     Examples:
-        ebk note export 42                          # Print to stdout as markdown
-        ebk note export 42 -o notes.md              # Save as markdown
+        ebk note export 42                          # Print as markdown
         ebk note export 42 -o notes.json -f json    # Save as JSON
     """
     from .library_db import Library
-    import json
+    from .services.marginalia_service import MarginaliaService
 
     library_path = resolve_library_path(library_path)
 
@@ -3183,73 +3179,20 @@ def note_export(
             lib.close()
             raise typer.Exit(code=1)
 
-        annotations = lib.get_annotations(book_id)
+        service = MarginaliaService(lib.session)
+        result = service.export(book_id, format_type=format_type)
 
-        if not annotations:
-            console.print(f"[yellow]No annotations for '{book.title}'[/yellow]")
-            lib.close()
-            return
-
-        # Format output
-        if format_type == "json":
-            data = {
-                "book": {
-                    "id": book.id,
-                    "title": book.title,
-                    "authors": [a.name for a in book.authors]
-                },
-                "annotations": [
-                    {
-                        "type": a.annotation_type,
-                        "content": a.content,
-                        "page": a.page_number,
-                        "color": a.color,
-                        "created_at": a.created_at.isoformat()
-                    }
-                    for a in annotations
-                ]
-            }
-            result = json.dumps(data, indent=2)
-
-        elif format_type == "txt":
-            lines = [f"Annotations: {book.title}", "=" * 50, ""]
-            for a in annotations:
-                page = f" (p.{a.page_number})" if a.page_number else ""
-                lines.append(f"[{a.annotation_type}]{page}")
-                lines.append(a.content)
-                lines.append("")
-            result = "\n".join(lines)
-
-        else:  # markdown
-            authors = ", ".join(a.name for a in book.authors) or "Unknown"
-            lines = [f"# Annotations: {book.title}", f"*{authors}*", ""]
-
-            # Group by type
-            by_type = {}
-            for a in annotations:
-                by_type.setdefault(a.annotation_type, []).append(a)
-
-            for atype, items in by_type.items():
-                lines.append(f"## {atype.title()}s")
-                lines.append("")
-                for a in items:
-                    page = f" *(page {a.page_number})*" if a.page_number else ""
-                    lines.append(f"- {a.content}{page}")
-                lines.append("")
-
-            result = "\n".join(lines)
-
-        # Output
         if output:
             output.write_text(result)
-            console.print(f"[green]✓ Exported {len(annotations)} annotations to {output}[/green]")
+            count = service.count(book_id)
+            console.print(f"[green]✓ Exported {count} marginalia to {output}[/green]")
         else:
             console.print(result)
 
         lib.close()
 
     except Exception as e:
-        console.print(f"[red]Error exporting annotations: {e}[/red]")
+        console.print(f"[red]Error exporting marginalia: {e}[/red]")
         raise typer.Exit(code=1)
 
 
@@ -3261,7 +3204,7 @@ def note_export(
 def export_json(
     library_path: Path = typer.Argument(..., help="Path to library"),
     output_file: Path = typer.Argument(..., help="Output JSON file"),
-    include_annotations: bool = typer.Option(True, "--annotations/--no-annotations", help="Include annotations"),
+    include_marginalia: bool = typer.Option(True, "--marginalia/--no-marginalia", help="Include marginalia"),
     view: Optional[str] = typer.Option(None, "--view", "-V", help="Export only books from this view"),
 ):
     """
@@ -3325,19 +3268,18 @@ def export_json(
                     "tags": book.personal.personal_tags
                 }
 
-            # Add annotations if requested
-            if include_annotations:
-                annotations = lib.get_annotations(book.id)
-                book_data["annotations"] = [
+            # Add marginalia if requested
+            if include_marginalia:
+                book_data["marginalia"] = [
                     {
-                        "id": ann.id,
-                        "type": ann.annotation_type,
-                        "content": ann.content,
-                        "page": ann.page_number,
-                        "position": ann.position,
-                        "created_at": ann.created_at.isoformat()
+                        "id": m.id,
+                        "content": m.content,
+                        "highlighted_text": m.highlighted_text,
+                        "page": m.page_number,
+                        "category": m.category,
+                        "created_at": m.created_at.isoformat() if m.created_at else None,
                     }
-                    for ann in annotations
+                    for m in book.marginalia
                 ]
 
             export_data["books"].append(book_data)
@@ -5950,7 +5892,11 @@ def mcp_serve(
 ):
     """Start the MCP server for Claude Code integration."""
     resolved_path = resolve_library_path(library_path)
-    from ebk.mcp.server import run_server
+    try:
+        from ebk.mcp.server import run_server
+    except ImportError:
+        console.print("[red]MCP dependencies not installed. Run: pip install ebk[mcp][/red]")
+        raise typer.Exit(code=1)
     run_server(resolved_path)
 
 

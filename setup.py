@@ -31,75 +31,31 @@ setup(
         "PyMuPDF>=1.23.0",  # For advanced PDF processing (fitz)
         "ebooklib>=0.18",
         "Pillow>=10.0.0",
-        "jmespath>=1.0.0",
         "jinja2>=3.0.0",
         "xmltodict>=0.13.0"
     ],
     extras_require={
-        # Optional dependencies for integrations
-        "streamlit": [
-            "streamlit>=1.28.0",
-            "pandas>=2.0.0",
-            "altair>=5.0.0"
-        ],
-        # Metadata extractors
-        "metadata": [
-            "aiohttp>=3.8.0",  # For API calls
-            "beautifulsoup4>=4.12.0",  # For HTML parsing
-            "httpx>=0.24.0",  # Alternative HTTP client
-        ],
-        "google-books": [
-            "aiohttp>=3.8.0",
-        ],
-        # Network analysis
-        "network": [
-            # Basic network analysis (no heavy deps)
-        ],
-        "network-advanced": [
-            "networkx>=3.0",
-            "matplotlib>=3.5.0",
-            "pyvis>=0.3.0",
-        ],
-        # Legacy alias for viz -> network
-        "viz": [
-            "matplotlib>=3.5.0",
-            "networkx>=3.0",
-            "pyvis>=0.3.0",
-            "plotly>=5.0.0",
-            "seaborn>=0.12.0"
-        ],
         "mcp": [
             "mcp>=1.0,<2.0",
             "pydantic>=2.0.0",
         ],
         "all": [
-            # Include all optional dependencies
-            "streamlit>=1.28.0",
-            "pandas>=2.0.0", 
-            "altair>=5.0.0",
-            "matplotlib>=3.5.0",
-            "networkx>=3.0",
-            "pyvis>=0.3.0",
-            "plotly>=5.0.0",
-            "seaborn>=0.12.0",
-            "mcp>=1.0,<2.0"
+            "mcp>=1.0,<2.0",
+            "pydantic>=2.0.0",
         ],
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
             "black>=23.0.0",
-            "isort>=5.0.0",
-            "flake8>=6.0.0",
+            "ruff>=0.1.0",
             "mypy>=1.0.0",
-            "pylint>=2.0.0",
             "pre-commit>=3.0.0",
             "mkdocs>=1.5.0",
             "mkdocs-material>=9.0.0",
             "mkdocstrings[python]>=0.24.0",
-            "pymdown-extensions>=10.0",
             "twine>=4.0.0",
-            "build>=0.10.0"
-        ]
+            "build>=0.10.0",
+        ],
     },
     classifiers=[
         "Programming Language :: Python :: 3",

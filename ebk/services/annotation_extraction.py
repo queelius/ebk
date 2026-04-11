@@ -305,46 +305,56 @@ def extract_annotations_from_book(
     return all_annotations
 
 
-def extract_and_save_annotations(
+def extract_and_save_marginalia(
     library,
     book_id: int,
     file_format: Optional[str] = None
 ) -> int:
-    """
-    Extract annotations from a book's files and save to database.
+    """Extract annotations from a book's files and save as marginalia.
 
     Args:
         library: Library instance
-        book_id: Book ID to extract annotations for
+        book_id: Book ID to extract from
         file_format: Optional specific format to extract from (e.g., 'pdf')
 
     Returns:
-        Number of annotations extracted and saved
+        Number of marginalia entries extracted and saved
     """
+    from .marginalia_service import MarginaliaService
+
     book = library.get_book(book_id)
     if not book:
         logger.error(f"Book {book_id} not found")
         return 0
 
-    annotations = extract_annotations_from_book(book, library.library_path, file_format)
+    extracted = extract_annotations_from_book(book, library.library_path, file_format)
+    service = MarginaliaService(library.session, library.library_path)
     total_saved = 0
 
-    for annot in annotations:
-        # Skip duplicates (same content, same page, same type)
-        existing = [a for a in book.annotations
-                   if a.content == annot.content
-                   and a.page_number == annot.page_number
-                   and a.annotation_type == annot.annotation_type]
+    for annot in extracted:
+        # Determine highlighted_text vs content based on type
+        if annot.annotation_type == 'highlight':
+            highlighted_text = annot.content
+            content = annot.note  # Popup note attached to highlight
+        else:
+            highlighted_text = None
+            content = annot.content
+
+        # Skip duplicates
+        existing = [
+            m for m in book.marginalia
+            if (m.highlighted_text or m.content) == annot.content
+            and m.page_number == annot.page_number
+        ]
         if existing:
             continue
 
-        library.add_annotation(
-            book_id=book_id,
-            content=annot.content,
-            annotation_type=annot.annotation_type,
+        service.create(
+            content=content,
+            highlighted_text=highlighted_text,
+            book_ids=[book_id],
             page_number=annot.page_number,
             position=annot.position,
-            color=annot.color
         )
         total_saved += 1
 

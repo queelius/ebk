@@ -21,7 +21,7 @@ def create_mcp_server(library: Library) -> FastMCP:
         "Use this to understand the data model before writing SQL queries.",
     )
     def get_schema() -> dict:
-        return get_schema_impl(library.db_path)
+        return get_schema_impl(library.session)
 
     @mcp.tool(
         name="execute_sql",

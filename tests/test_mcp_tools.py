@@ -15,13 +15,13 @@ def lib(tmp_path):
 
 class TestGetSchema:
     def test_returns_tables(self, lib):
-        result = get_schema_impl(lib.db_path)
+        result = get_schema_impl(lib.session)
         assert "tables" in result
         assert "books" in result["tables"]
         assert "authors" in result["tables"]
 
     def test_includes_columns(self, lib):
-        result = get_schema_impl(lib.db_path)
+        result = get_schema_impl(lib.session)
         books = result["tables"]["books"]
         assert "columns" in books
         col_names = [c["name"] for c in books["columns"]]
@@ -29,7 +29,7 @@ class TestGetSchema:
         assert "unique_id" in col_names
 
     def test_includes_foreign_keys(self, lib):
-        result = get_schema_impl(lib.db_path)
+        result = get_schema_impl(lib.session)
         # Find a table with foreign keys (e.g., files has book_id)
         has_fk = any(
             len(t.get("foreign_keys", [])) > 0
@@ -38,14 +38,14 @@ class TestGetSchema:
         assert has_fk
 
     def test_includes_relationships(self, lib):
-        result = get_schema_impl(lib.db_path)
+        result = get_schema_impl(lib.session)
         books = result["tables"]["books"]
         assert "relationships" in books
         rel_names = [r["name"] for r in books["relationships"]]
         assert "authors" in rel_names or "files" in rel_names
 
     def test_serializable(self, lib):
-        result = get_schema_impl(lib.db_path)
+        result = get_schema_impl(lib.session)
         # Must be JSON-serializable
         serialized = json.dumps(result)
         assert len(serialized) > 0
@@ -235,3 +235,26 @@ class TestUpdateBooks:
             {str(books[1].id): {"merge_into": books[0].id, "title": "Conflict"}}
         )
         assert books[1].id in result["errors"] or str(books[1].id) in result["errors"]
+
+    def test_non_integer_book_id_returns_error(self, populated_library):
+        result = update_books_impl(
+            populated_library.session,
+            {"abc": {"title": "Bad ID"}}
+        )
+        assert "abc" in result["errors"]
+        assert not result["updated"]
+
+    def test_partial_batch_error_does_not_rollback_success(self, populated_library):
+        books = populated_library.get_all_books()
+        book_id = books[0].id
+        result = update_books_impl(
+            populated_library.session,
+            {
+                str(book_id): {"title": "Partial Success"},
+                "99999": {"title": "Ghost"},
+            }
+        )
+        assert book_id in result["updated"]
+        assert 99999 in result["errors"]
+        book = populated_library.get_book(book_id)
+        assert book.title == "Partial Success"

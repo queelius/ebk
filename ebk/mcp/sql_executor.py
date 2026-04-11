@@ -11,7 +11,6 @@ _AUTHORIZER_ALLOWED = frozenset({
 })
 
 _SELECT_PREFIX = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
-_MULTI_STATEMENT = re.compile(r";\s*\S")
 
 DEFAULT_MAX_ROWS = 1000
 
@@ -39,10 +38,6 @@ class ReadOnlySQLExecutor:
         # Layer 1: Prefix check
         if not _SELECT_PREFIX.match(sql):
             return {"error": "Only SELECT queries are allowed"}
-
-        # Check for multi-statement
-        if _MULTI_STATEMENT.search(sql):
-            return {"error": "Multiple SQL statements are not allowed"}
 
         try:
             # Layer 2: Read-only connection

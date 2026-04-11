@@ -9,7 +9,7 @@ from .import_service import ImportService
 from .export_service import ExportService
 from .queue_service import ReadingQueueService
 from .personal_metadata_service import PersonalMetadataService
-from .annotation_service import AnnotationService
+from .marginalia_service import MarginaliaService
 from .view_service import ViewService
 
 __all__ = [
@@ -21,7 +21,7 @@ __all__ = [
     # Personal/user services
     'ReadingQueueService',
     'PersonalMetadataService',
-    'AnnotationService',
+    'MarginaliaService',
 
     # Library organization
     'ViewService',

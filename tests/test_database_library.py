@@ -784,59 +784,49 @@ class TestSubjects:
         assert subject_names.count("Python Programming") == 1
 
 
-class TestAnnotations:
-    """Test annotation functionality."""
+class TestMarginalia:
+    """Test marginalia functionality."""
 
-    def test_add_annotation(self, temp_library):
-        """Test adding annotation to book."""
-        # Given: A book
+    def test_add_marginalia(self, temp_library):
+        """Test adding marginalia to a book."""
         test_file = temp_library.library_path / "book.txt"
         test_file.write_text("Test")
         book = temp_library.add_book(test_file, metadata={"title": "Test"}, extract_text=False)
 
-        # When: We add an annotation
-        annotation_id = temp_library.add_annotation(
-            book.id,
-            "Important passage",
-            page=42,
-            annotation_type="highlight"
+        entry_id = temp_library.add_marginalia(
+            book_ids=[book.id],
+            highlighted_text="Important passage",
+            page_number=42,
         )
 
-        # Then: Annotation should be created
-        assert annotation_id is not None
+        assert entry_id is not None
 
-    def test_get_annotations(self, temp_library):
-        """Test retrieving annotations for a book."""
-        # Given: A book with annotations
+    def test_get_marginalia(self, temp_library):
+        """Test retrieving marginalia for a book."""
         test_file = temp_library.library_path / "book.txt"
         test_file.write_text("Test")
         book = temp_library.add_book(test_file, metadata={"title": "Test"}, extract_text=False)
-        temp_library.add_annotation(book.id, "Note 1", page=10)
-        temp_library.add_annotation(book.id, "Note 2", page=20)
+        temp_library.add_marginalia(book_ids=[book.id], content="Note 1", page_number=10)
+        temp_library.add_marginalia(book_ids=[book.id], content="Note 2", page_number=20)
 
-        # When: We get annotations
-        annotations = temp_library.get_annotations(book.id)
+        entries = temp_library.get_marginalia(book.id)
 
-        # Then: Should return all annotations
-        assert len(annotations) == 2
-        contents = [a.content for a in annotations]
+        assert len(entries) == 2
+        contents = [m.content for m in entries]
         assert "Note 1" in contents
         assert "Note 2" in contents
 
-    def test_delete_annotation(self, temp_library):
-        """Test deleting an annotation."""
-        # Given: A book with an annotation
+    def test_delete_marginalia(self, temp_library):
+        """Test deleting marginalia."""
         test_file = temp_library.library_path / "book.txt"
         test_file.write_text("Test")
         book = temp_library.add_book(test_file, metadata={"title": "Test"}, extract_text=False)
-        annotation_id = temp_library.add_annotation(book.id, "Note to delete")
+        entry_id = temp_library.add_marginalia(book_ids=[book.id], content="Note to delete")
 
-        # When: We delete it
-        temp_library.delete_annotation(annotation_id)
+        temp_library.delete_marginalia(entry_id)
 
-        # Then: Annotation should be deleted
-        annotations = temp_library.get_annotations(book.id)
-        assert len(annotations) == 0
+        entries = temp_library.get_marginalia(book.id)
+        assert len(entries) == 0
 
 
 class TestVirtualLibraries:
