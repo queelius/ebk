@@ -12,10 +12,11 @@ import shutil
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .library_db import Library
 from .extract_metadata import extract_metadata
+from .services.marginalia_service import MarginaliaService
 from . import opds
 
 
@@ -151,6 +152,62 @@ class ViewOverrideRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     position: Optional[int] = None
+
+
+# Marginalia-related models
+class MarginaliaCreate(BaseModel):
+    book_ids: List[int] = Field(default_factory=list)
+    content: Optional[str] = None
+    highlighted_text: Optional[str] = None
+    page_number: Optional[int] = None
+    position: Optional[dict] = None
+    category: Optional[str] = None
+    color: Optional[str] = None
+    pinned: bool = False
+
+
+class MarginaliaUpdate(BaseModel):
+    content: Optional[str] = None
+    highlighted_text: Optional[str] = None
+    category: Optional[str] = None
+    color: Optional[str] = None
+    pinned: Optional[bool] = None
+
+
+class MarginaliaOut(BaseModel):
+    uuid: str
+    uri: str
+    content: Optional[str]
+    highlighted_text: Optional[str]
+    page_number: Optional[int]
+    position: Optional[dict]
+    category: Optional[str]
+    color: Optional[str]
+    pinned: bool
+    scope: str
+    archived_at: Optional[str]
+    created_at: str
+    updated_at: str
+    book_ids: List[int]
+
+    @classmethod
+    def from_orm(cls, m) -> "MarginaliaOut":
+        return cls(
+            uuid=m.uuid,
+            uri=m.uri,
+            content=m.content,
+            highlighted_text=m.highlighted_text,
+            page_number=m.page_number,
+            position=m.position,
+            category=m.category,
+            color=m.color,
+            pinned=bool(m.pinned),
+            scope=m.scope,
+            archived_at=m.archived_at.isoformat() if m.archived_at else None,
+            created_at=m.created_at.isoformat(),
+            updated_at=m.updated_at.isoformat() if m.updated_at else m.created_at.isoformat(),
+            book_ids=[b.id for b in m.books],
+        )
 
 
 # Global library instance
@@ -1238,6 +1295,112 @@ async def import_view_yaml(yaml_content: str = Form(...), overwrite: bool = Form
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Marginalia endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/marginalia", response_model=MarginaliaOut, status_code=201)
+def create_marginalia(payload: MarginaliaCreate):
+    """Create a new marginalia entry."""
+    lib = get_library()
+    svc = MarginaliaService(lib.session, library_path=lib.library_path)
+    m = svc.create(
+        content=payload.content,
+        highlighted_text=payload.highlighted_text,
+        book_ids=payload.book_ids,
+        page_number=payload.page_number,
+        position=payload.position,
+        category=payload.category,
+        color=payload.color,
+        pinned=payload.pinned,
+    )
+    return MarginaliaOut.from_orm(m)
+
+
+@app.get("/api/marginalia", response_model=List[MarginaliaOut])
+def list_marginalia(
+    book_id: Optional[int] = None,
+    scope: Optional[str] = None,
+    include_archived: bool = False,
+    limit: int = 100,
+):
+    """List marginalia. For now, book_id is required (cross-book listing TBD)."""
+    lib = get_library()
+    svc = MarginaliaService(lib.session, library_path=lib.library_path)
+    if book_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="book_id is required for now (cross-book listing not yet supported)",
+        )
+    rows = svc.list_for_book(
+        book_id,
+        scope=scope,
+        include_archived=include_archived,
+        limit=limit,
+    )
+    return [MarginaliaOut.from_orm(m) for m in rows]
+
+
+@app.get("/api/marginalia/{uuid}", response_model=MarginaliaOut)
+def get_marginalia(uuid: str):
+    """Get a marginalia entry by uuid."""
+    lib = get_library()
+    svc = MarginaliaService(lib.session, library_path=lib.library_path)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise HTTPException(status_code=404, detail=f"Marginalia {uuid} not found")
+    return MarginaliaOut.from_orm(m)
+
+
+@app.patch("/api/marginalia/{uuid}", response_model=MarginaliaOut)
+def update_marginalia(uuid: str, payload: MarginaliaUpdate):
+    """Update editable fields of a marginalia entry."""
+    lib = get_library()
+    svc = MarginaliaService(lib.session, library_path=lib.library_path)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise HTTPException(status_code=404, detail=f"Marginalia {uuid} not found")
+    if payload.content is not None:
+        m.content = payload.content
+    if payload.highlighted_text is not None:
+        m.highlighted_text = payload.highlighted_text
+    if payload.category is not None:
+        m.category = payload.category
+    if payload.color is not None:
+        m.color = payload.color
+    if payload.pinned is not None:
+        m.pinned = payload.pinned
+    lib.session.commit()
+    return MarginaliaOut.from_orm(m)
+
+
+@app.delete("/api/marginalia/{uuid}", status_code=204)
+def delete_marginalia(uuid: str, hard: bool = False):
+    """Soft-delete (default) or hard-delete a marginalia entry."""
+    lib = get_library()
+    svc = MarginaliaService(lib.session, library_path=lib.library_path)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise HTTPException(status_code=404, detail=f"Marginalia {uuid} not found")
+    if hard:
+        svc.hard_delete(m)
+    else:
+        svc.archive(m)
+    return None
+
+
+@app.post("/api/marginalia/{uuid}/restore", response_model=MarginaliaOut)
+def restore_marginalia(uuid: str):
+    """Restore a soft-deleted marginalia entry."""
+    lib = get_library()
+    svc = MarginaliaService(lib.session, library_path=lib.library_path)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise HTTPException(status_code=404, detail=f"Marginalia {uuid} not found")
+    svc.restore(m)
+    return MarginaliaOut.from_orm(m)
 
 
 def get_web_interface() -> str:
