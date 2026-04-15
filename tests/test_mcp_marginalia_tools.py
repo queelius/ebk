@@ -88,3 +88,42 @@ def test_add_rejects_invalid_uri(lib_and_book):
     lib, _ = lib_and_book
     with pytest.raises(ValueError):
         add_marginalia_impl(lib.session, book_uris=["not-a-uri"], content="x")
+
+
+def test_all_marginalia_impls_accept_uris(lib_and_book):
+    """get/update/delete/restore should accept either a bare uuid or a full URI."""
+    lib, book = lib_and_book
+    created = add_marginalia_impl(lib.session, book_uris=[book.uri], content="orig")
+    uri = created["uri"]
+
+    # get by URI
+    fetched = get_marginalia_impl(lib.session, uuid=uri)
+    assert fetched["uuid"] == created["uuid"]
+
+    # update by URI
+    updated = update_marginalia_impl(lib.session, uuid=uri, content="edited")
+    assert updated["content"] == "edited"
+
+    # delete (soft) by URI
+    delete_marginalia_impl(lib.session, uuid=uri)
+    # get by URI still works (archived; default filter hides it from list, not get)
+    archived = get_marginalia_impl(lib.session, uuid=uri)
+    assert archived["archived_at"] is not None
+
+    # restore by URI
+    restored = restore_marginalia_impl(lib.session, uuid=uri)
+    assert restored["archived_at"] is None
+
+    # hard-delete by URI
+    delete_marginalia_impl(lib.session, uuid=uri, hard=True)
+    with pytest.raises(LookupError):
+        get_marginalia_impl(lib.session, uuid=uri)
+
+
+def test_marginalia_impls_reject_wrong_kind_uri(lib_and_book):
+    """Passing a book URI where a marginalia URI is expected raises ValueError."""
+    lib, book = lib_and_book
+    with pytest.raises(ValueError):
+        get_marginalia_impl(lib.session, uuid=book.uri)
+    with pytest.raises(ValueError):
+        delete_marginalia_impl(lib.session, uuid=book.uri)

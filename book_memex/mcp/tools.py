@@ -303,6 +303,29 @@ def _resolve_book_uris(session: Session, book_uris: List[str]) -> List[int]:
     return ids
 
 
+def _extract_uuid(value: str, expected_kind: str) -> str:
+    """Accept either a bare uuid or a full book-memex://<kind>/<uuid> URI.
+
+    Returns the bare uuid. Raises ValueError on malformed input or wrong kind.
+    LLM clients routinely pass URIs from earlier responses; MCP tools that
+    take a `uuid` parameter should run inputs through this helper so both
+    forms work.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"expected string, got {type(value).__name__}")
+    if not value.startswith("book-memex://"):
+        return value
+    try:
+        parsed = parse_uri(value)
+    except InvalidUriError as exc:
+        raise ValueError(f"invalid URI {value!r}: {exc}") from exc
+    if parsed.kind != expected_kind:
+        raise ValueError(
+            f"expected a {expected_kind!r} URI, got {parsed.kind!r}: {value}"
+        )
+    return parsed.id
+
+
 def add_marginalia_impl(
     session: Session,
     *,
@@ -351,17 +374,8 @@ def list_marginalia_impl(
 
 def get_marginalia_impl(session: Session, *, uuid: str) -> Dict[str, Any]:
     """Get a marginalia record by uuid or by full book-memex marginalia URI."""
+    lookup = _extract_uuid(uuid, "marginalia")
     svc = MarginaliaService(session)
-    # Accept a full URI like "book-memex://marginalia/<uuid>" or just the uuid.
-    lookup = uuid
-    if isinstance(lookup, str) and lookup.startswith("book-memex://"):
-        try:
-            parsed = parse_uri(lookup)
-        except InvalidUriError as exc:
-            raise ValueError(f"invalid URI {lookup!r}: {exc}") from exc
-        if parsed.kind != "marginalia":
-            raise ValueError(f"expected a marginalia URI, got {parsed.kind!r}: {lookup}")
-        lookup = parsed.id
     m = svc.get_by_uuid(lookup)
     if m is None:
         raise LookupError(f"Marginalia {uuid} not found")
@@ -378,9 +392,10 @@ def update_marginalia_impl(
     color: Optional[str] = None,
     pinned: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """Update editable fields of a marginalia by uuid."""
+    """Update editable fields of a marginalia by uuid or marginalia URI."""
+    lookup = _extract_uuid(uuid, "marginalia")
     svc = MarginaliaService(session)
-    m = svc.get_by_uuid(uuid)
+    m = svc.get_by_uuid(lookup)
     if m is None:
         raise LookupError(f"Marginalia {uuid} not found")
     if content is not None:
@@ -400,22 +415,24 @@ def update_marginalia_impl(
 def delete_marginalia_impl(
     session: Session, *, uuid: str, hard: bool = False
 ) -> Dict[str, Any]:
-    """Archive (soft-delete) or permanently delete a marginalia by uuid."""
+    """Archive (soft-delete) or permanently delete a marginalia by uuid or URI."""
+    lookup = _extract_uuid(uuid, "marginalia")
     svc = MarginaliaService(session)
-    m = svc.get_by_uuid(uuid)
+    m = svc.get_by_uuid(lookup)
     if m is None:
         raise LookupError(f"Marginalia {uuid} not found")
     if hard:
         svc.hard_delete(m)
     else:
         svc.archive(m)
-    return {"status": "ok", "uuid": uuid, "hard": hard}
+    return {"status": "ok", "uuid": m.uuid, "hard": hard}
 
 
 def restore_marginalia_impl(session: Session, *, uuid: str) -> Dict[str, Any]:
-    """Restore a soft-deleted marginalia (clear archived_at)."""
+    """Restore a soft-deleted marginalia by uuid or URI (clears archived_at)."""
+    lookup = _extract_uuid(uuid, "marginalia")
     svc = MarginaliaService(session)
-    m = svc.get_by_uuid(uuid)
+    m = svc.get_by_uuid(lookup)
     if m is None:
         raise LookupError(f"Marginalia {uuid} not found")
     svc.restore(m)
@@ -460,12 +477,13 @@ def end_reading_session_impl(
     uuid: str,
     end_anchor: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """End a reading session by uuid. Idempotent: ending a session that is
-    already ended returns it unchanged (except for an updated end_anchor if
-    provided).
+    """End a reading session by uuid or URI. Idempotent: ending a session
+    that is already ended returns it unchanged (except for an updated
+    end_anchor if provided).
     """
+    lookup = _extract_uuid(uuid, "reading")
     svc = ReadingSessionService(session)
-    rs = svc.end(uuid, end_anchor=end_anchor)
+    rs = svc.end(lookup, end_anchor=end_anchor)
     return _reading_session_to_dict(rs)
 
 
@@ -487,24 +505,26 @@ def list_reading_sessions_impl(
 def delete_reading_session_impl(
     session: Session, *, uuid: str, hard: bool = False,
 ) -> Dict[str, Any]:
-    """Soft-delete (archive) a reading session, or hard-delete when hard=True."""
+    """Soft-delete (archive) a reading session by uuid or URI, or hard-delete."""
+    lookup = _extract_uuid(uuid, "reading")
     svc = ReadingSessionService(session)
-    rs = svc.get_by_uuid(uuid)
+    rs = svc.get_by_uuid(lookup)
     if rs is None:
         raise LookupError(f"ReadingSession {uuid} not found")
     if hard:
         svc.hard_delete(rs)
     else:
         svc.archive(rs)
-    return {"status": "ok", "uuid": uuid, "hard": hard}
+    return {"status": "ok", "uuid": rs.uuid, "hard": hard}
 
 
 def restore_reading_session_impl(
     session: Session, *, uuid: str,
 ) -> Dict[str, Any]:
-    """Restore a soft-deleted reading session."""
+    """Restore a soft-deleted reading session by uuid or URI."""
+    lookup = _extract_uuid(uuid, "reading")
     svc = ReadingSessionService(session)
-    rs = svc.get_by_uuid(uuid)
+    rs = svc.get_by_uuid(lookup)
     if rs is None:
         raise LookupError(f"ReadingSession {uuid} not found")
     svc.restore(rs)

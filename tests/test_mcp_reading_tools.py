@@ -86,3 +86,32 @@ def test_progress_rejects_backward(lib_and_book):
     )
     p = get_reading_progress_impl(lib.session, book_id=book.id)
     assert p["percentage"] == 20
+
+
+def test_reading_session_impls_accept_uris(lib_and_book):
+    """end/delete/restore should accept either a bare uuid or a full URI."""
+    lib, book = lib_and_book
+    started = start_reading_session_impl(lib.session, book_id=book.id)
+    uri = started["uri"]
+
+    # end by URI
+    ended = end_reading_session_impl(lib.session, uuid=uri)
+    assert ended["end_time"] is not None
+
+    # soft-delete by URI
+    delete_reading_session_impl(lib.session, uuid=uri)
+    # restore by URI
+    restored = restore_reading_session_impl(lib.session, uuid=uri)
+    assert restored["archived_at"] is None
+
+    # hard-delete by URI
+    delete_reading_session_impl(lib.session, uuid=uri, hard=True)
+
+
+def test_reading_session_impls_reject_wrong_kind_uri(lib_and_book):
+    """Passing a book URI where a reading URI is expected raises ValueError."""
+    lib, book = lib_and_book
+    with pytest.raises(ValueError):
+        end_reading_session_impl(lib.session, uuid=book.uri)
+    with pytest.raises(ValueError):
+        delete_reading_session_impl(lib.session, uuid=book.uri)
