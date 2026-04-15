@@ -18,16 +18,16 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from ebk.library_db import Library
-from ebk.db.models import Book, Author, Subject, PersonalMetadata, View, ViewOverride
-from ebk.views.dsl import (
+from book_memex.library_db import Library
+from book_memex.db.models import Book, Author, Subject, PersonalMetadata, View, ViewOverride
+from book_memex.views.dsl import (
     ViewEvaluator,
     TransformedBook,
     BUILTIN_VIEWS,
     get_builtin_view,
     is_builtin_view,
 )
-from ebk.views.service import ViewService
+from book_memex.views.service import ViewService
 
 
 # =============================================================================
@@ -2044,7 +2044,7 @@ class TestFilterEdgeCases:
     def test_filter_by_tag(self, evaluator, populated_library):
         """Given books with tags, when filtering by tag, then matching books returned."""
         # Given: A book with a tag
-        from ebk.db.models import Tag
+        from book_memex.db.models import Tag
 
         all_books = populated_library.get_all_books()
         tag = Tag(name="important", path="important")

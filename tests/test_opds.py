@@ -21,10 +21,10 @@ import xml.etree.ElementTree as ET
 
 from fastapi.testclient import TestClient
 
-from ebk.library_db import Library
-from ebk.server import app, create_app
-from ebk import opds
-from ebk.db.models import Book, Author, Subject, Cover
+from book_memex.library_db import Library
+from book_memex.server import app, create_app
+from book_memex import opds
+from book_memex.db.models import Book, Author, Subject, Cover
 
 
 # OPDS MIME types for validation
@@ -990,7 +990,7 @@ class TestOPDSCoverWithFile:
         )
 
         # Add cover to database
-        from ebk.db.models import Cover
+        from book_memex.db.models import Cover
         cover = Cover(book_id=book.id, path="covers/test_cover.jpg", is_primary=True)
         lib.session.add(cover)
         lib.session.commit()
@@ -1032,7 +1032,7 @@ class TestOPDSBookEntryWithCover:
         cover_path.write_bytes(b'\xff\xd8\xff\xe0\x00\x10JFIF')  # Minimal JPEG header
 
         # Add cover to database
-        from ebk.db.models import Cover
+        from book_memex.db.models import Cover
         cover = Cover(book_id=book.id, path="covers/cover.jpg", is_primary=True)
         lib.session.add(cover)
         lib.session.commit()
@@ -1154,7 +1154,7 @@ class TestOPDSPaginationEdgeCases:
         client = TestClient(app)
 
         # Get the author ID
-        from ebk.db.models import Author
+        from book_memex.db.models import Author
         author = lib.session.query(Author).filter(Author.name == "Prolific Author").first()
 
         # When: We request page 2 of that author's books with limit=3
@@ -1185,7 +1185,7 @@ class TestOPDSPaginationEdgeCases:
         client = TestClient(app)
 
         # Get the subject ID
-        from ebk.db.models import Subject
+        from book_memex.db.models import Subject
         subject = lib.session.query(Subject).filter(Subject.name == "Common Subject").first()
 
         # When: We request page 2 of that subject's books with limit=3
@@ -1306,7 +1306,7 @@ class TestOPDSCoverMediaTypes:
         cover_path.write_bytes(b'\x89PNG\r\n\x1a\n')
 
         # Add cover to database
-        from ebk.db.models import Cover
+        from book_memex.db.models import Cover
         cover = Cover(book_id=book.id, path="covers/cover.png", is_primary=True)
         lib.session.add(cover)
         lib.session.commit()
@@ -1334,7 +1334,7 @@ class TestOPDSCoverMediaTypes:
         )
 
         # Add cover to database pointing to non-existent file
-        from ebk.db.models import Cover
+        from book_memex.db.models import Cover
         cover = Cover(book_id=book.id, path="covers/missing.jpg", is_primary=True)
         lib.session.add(cover)
         lib.session.commit()
@@ -1361,7 +1361,7 @@ class TestOPDSCoverMediaTypes:
         )
 
         # Add cover to database with no path
-        from ebk.db.models import Cover
+        from book_memex.db.models import Cover
         cover = Cover(book_id=book.id, path="", is_primary=True)
         lib.session.add(cover)
         lib.session.commit()

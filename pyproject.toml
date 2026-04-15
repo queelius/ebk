@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ebk"
+name = "book-memex"
 version = "0.5.1"
-description = "A lightweight, extensible tool for managing eBook metadata"
+description = "book-memex - a lightweight, extensible tool for managing eBook metadata (renamed from ebk)"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -53,10 +53,13 @@ Issues = "https://github.com/queelius/ebk/issues"
 Changelog = "https://github.com/queelius/ebk/blob/main/CHANGELOG.md"
 
 [project.scripts]
-ebk = "ebk.cli:app"
+book-memex = "book_memex.cli:app"
+book-memex-mcp-serve = "book_memex.mcp.server:run_server"
+ebk = "book_memex._ebk_alias:main"
+ebk-mcp-serve = "book_memex.mcp.server:run_server"
 
 # Plugin entry points removed - integrations are optional extras
-# [project.entry-points."ebk.plugins"]
+# [project.entry-points."book_memex.plugins"]
 # google_books = "integrations.metadata:GoogleBooksExtractor"
 # network_analyzer = "integrations.network:NetworkAnalyzer"
 
@@ -98,11 +101,11 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ebk*"]
+include = ["book_memex*"]
 exclude = ["tests*", "docs*", "examples*", "archive*"]
 
 [tool.setuptools.package-data]
-ebk = [
+book_memex = [
     "templates/**/*",
     "static/**/*",
 ]
@@ -156,7 +159,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["ebk"]
+source = ["book_memex"]
 omit = [
     "*/tests/*",
     "*/test_*.py",

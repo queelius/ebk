@@ -7,12 +7,12 @@ import asyncio
 from unittest.mock import Mock, AsyncMock, patch
 from typing import Dict, Any, List
 
-from ebk.plugins.base import (
+from book_memex.plugins.base import (
     Plugin, MetadataExtractor, TagSuggester, ContentAnalyzer,
     TagSuggestion, ContentAnalysis, ValidationResult, ValidationError
 )
-from ebk.plugins.registry import PluginRegistry, register_plugin
-from ebk.plugins.hooks import HookRegistry, hook, trigger_hook
+from book_memex.plugins.registry import PluginRegistry, register_plugin
+from book_memex.plugins.hooks import HookRegistry, hook, trigger_hook
 
 # Optional integration - may not be installed
 try:
@@ -351,14 +351,14 @@ class TestHookDecorator:
     
     def setup_method(self):
         """Setup for decorator tests."""
-        from ebk.plugins.hooks import hooks
+        from book_memex.plugins.hooks import hooks
         # Clear any existing hooks
         hooks.clear_hooks()
         self.call_count = 0
     
     def test_hook_decorator(self):
         """Test using hook decorator."""
-        from ebk.plugins.hooks import hook, hooks
+        from book_memex.plugins.hooks import hook, hooks
         
         @hook("test.decorated")
         def decorated_hook(value):
@@ -369,7 +369,7 @@ class TestHookDecorator:
     
     def test_hook_decorator_with_priority(self):
         """Test hook decorator with priority."""
-        from ebk.plugins.hooks import hook, hooks
+        from book_memex.plugins.hooks import hook, hooks
         
         results = []
         

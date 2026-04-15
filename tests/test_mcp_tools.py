@@ -1,8 +1,8 @@
 """Tests for MCP tool implementations."""
 import json
 import pytest
-from ebk.library_db import Library
-from ebk.mcp.tools import get_schema_impl, execute_sql_impl, update_books_impl
+from book_memex.library_db import Library
+from book_memex.mcp.tools import get_schema_impl, execute_sql_impl, update_books_impl
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ class TestGetSchema:
 @pytest.fixture
 def populated_library(lib):
     """Library with sample books for testing."""
-    from ebk.db.models import Book, Author
+    from book_memex.db.models import Book, Author
     import uuid
     session = lib.session
 

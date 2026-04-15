@@ -1,10 +1,10 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "ebk"
-version: "0.4.3"
+title: "book-memex"
+version: "0.5.1"
 license: MIT
 repository-code: "https://github.com/queelius/ebk"
-url: "https://pypi.org/project/ebk/"
+url: "https://pypi.org/project/book-memex/"
 authors:
   - family-names: "Towell"
     given-names: "Alexander"

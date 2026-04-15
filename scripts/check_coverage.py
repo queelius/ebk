@@ -33,10 +33,10 @@ def get_module_functions_and_classes(filepath):
 def analyze_test_coverage():
     """Analyze which modules and functions might need more tests."""
     
-    ebk_path = Path("ebk")
+    ebk_path = Path("book_memex")
     tests_path = Path("tests")
     
-    # Get all Python files in ebk package
+    # Get all Python files in book_memex package
     ebk_files = list(ebk_path.rglob("*.py"))
     test_files = list(tests_path.glob("test_*.py"))
     
@@ -117,7 +117,7 @@ def analyze_test_coverage():
     # Summary
     print("\n📋 Summary:")
     print("-" * 40)
-    print(f"  Total ebk modules: {len(ebk_files)}")
+    print(f"  Total book_memex modules: {len(ebk_files)}")
     print(f"  Test files: {len(test_files)}")
     print(f"  Untested modules: {len(untested_modules)}")
     

@@ -13,9 +13,9 @@ import tempfile
 import shutil
 from pathlib import Path
 
-from ebk.library_db import Library
-from ebk.services.tag_service import TagService
-from ebk.db.models import Tag
+from book_memex.library_db import Library
+from book_memex.services.tag_service import TagService
+from book_memex.db.models import Tag
 
 
 @pytest.fixture
@@ -330,7 +330,7 @@ class TestTagCascadeDeletion:
         tag_service.delete_tag("Work")
 
         # Book should still exist
-        from ebk.db.models import Book
+        from book_memex.db.models import Book
         book = tag_service.session.query(Book).filter_by(id=book_id).first()
         assert book is not None
 

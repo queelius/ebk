@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Set, Tuple
 from collections import defaultdict
 
-from ebk.plugins.base import Plugin
+from book_memex.plugins.base import Plugin
 
 
 class NetworkAnalyzer(Plugin):

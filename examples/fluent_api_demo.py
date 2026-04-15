@@ -3,7 +3,7 @@
 Demonstration of ebk's fluent API.
 """
 
-from ebk import Library
+from book_memex import Library
 from pathlib import Path
 import tempfile
 

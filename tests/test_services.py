@@ -12,10 +12,10 @@ import hashlib
 from ebooklib import epub
 import ebooklib
 
-from ebk.library_db import Library
-from ebk.services.import_service import ImportService
-from ebk.services.text_extraction import TextExtractionService
-from ebk.db.models import Book, File, ExtractedText
+from book_memex.library_db import Library
+from book_memex.services.import_service import ImportService
+from book_memex.services.text_extraction import TextExtractionService
+from book_memex.db.models import Book, File, ExtractedText
 
 
 @pytest.fixture
@@ -116,7 +116,7 @@ class TestImportService:
         authors = ["John Doe", "Alice Brown", "Bob Anderson"]
 
         # When: We generate sort names for each
-        from ebk.services.import_service import get_sort_name
+        from book_memex.services.import_service import get_sort_name
         sort_names = [get_sort_name(name) for name in authors]
 
         # Then: Sorting by sort_name should order by last name

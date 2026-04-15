@@ -8,9 +8,9 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from ebk.library_db import Library
-from ebk.db.models import Book, Author, Subject, File, ExtractedText, Cover
-from ebk.db.session import init_db, get_session, close_db, session_scope, get_or_create
+from book_memex.library_db import Library
+from book_memex.db.models import Book, Author, Subject, File, ExtractedText, Cover
+from book_memex.db.session import init_db, get_session, close_db, session_scope, get_or_create
 
 
 @pytest.fixture

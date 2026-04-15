@@ -6,7 +6,7 @@ boolean operators, comparison operators, and generate proper FTS queries and SQL
 """
 
 import pytest
-from ebk.search_parser import (
+from book_memex.search_parser import (
     SearchQueryParser,
     ParsedQuery,
     SearchToken,

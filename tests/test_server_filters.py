@@ -15,8 +15,8 @@ import re
 
 from fastapi.testclient import TestClient
 
-from ebk.library_db import Library
-from ebk.server import app, set_library
+from book_memex.library_db import Library
+from book_memex.server import app, set_library
 
 
 # ============================================================================

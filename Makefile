@@ -44,7 +44,7 @@ test: $(VENV)/bin/activate
 
 # Run tests with coverage
 test-coverage: $(VENV)/bin/activate
-	$(VENV_PYTHON) -m pytest tests/ -v --cov=ebk --cov-report=html --cov-report=term
+	$(VENV_PYTHON) -m pytest tests/ -v --cov=book_memex --cov-report=html --cov-report=term
 	@echo "📊 Coverage report generated in htmlcov/index.html"
 
 # Run specific test file
@@ -57,19 +57,19 @@ test-file: $(VENV)/bin/activate
 
 # Run linting
 lint: $(VENV)/bin/activate
-	$(VENV_PYTHON) -m flake8 ebk/ tests/ --max-line-length=100 --exclude=$(VENV)
-	$(VENV_PYTHON) -m mypy ebk/ --ignore-missing-imports
-	$(VENV_PYTHON) -m pylint ebk/ --disable=C0114,C0115,C0116,R0903,R0913
+	$(VENV_PYTHON) -m flake8 book_memex/ tests/ --max-line-length=100 --exclude=$(VENV)
+	$(VENV_PYTHON) -m mypy book_memex/ --ignore-missing-imports
+	$(VENV_PYTHON) -m pylint book_memex/ --disable=C0114,C0115,C0116,R0903,R0913
 
 # Format code
 format: $(VENV)/bin/activate
-	$(VENV_PYTHON) -m black ebk/ tests/
-	$(VENV_PYTHON) -m isort ebk/ tests/
+	$(VENV_PYTHON) -m black book_memex/ tests/
+	$(VENV_PYTHON) -m isort book_memex/ tests/
 
 # Check formatting without applying
 format-check: $(VENV)/bin/activate
-	$(VENV_PYTHON) -m black --check ebk/ tests/
-	$(VENV_PYTHON) -m isort --check-only ebk/ tests/
+	$(VENV_PYTHON) -m black --check book_memex/ tests/
+	$(VENV_PYTHON) -m isort --check-only book_memex/ tests/
 
 # Clean build artifacts
 clean:
@@ -106,11 +106,11 @@ upload-test: build
 
 # Run the CLI
 run: $(VENV)/bin/activate
-	$(VENV_PYTHON) -m ebk $(ARGS)
+	$(VENV_PYTHON) -m book_memex $(ARGS)
 
 # Run specific CLI command
-ebk: $(VENV)/bin/activate
-	@$(VENV_PYTHON) -m ebk $(filter-out $@,$(MAKECMDGOALS))
+book-memex: $(VENV)/bin/activate
+	@$(VENV_PYTHON) -m book_memex $(filter-out $@,$(MAKECMDGOALS))
 
 # Catch-all target to allow passing arguments to ebk
 %:
