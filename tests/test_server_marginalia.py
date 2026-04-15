@@ -23,6 +23,14 @@ def client_and_book():
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def test_create_marginalia_empty_body_returns_400(client_and_book):
+    """Empty body violates 'at least content or highlighted_text' and must 400, not 500."""
+    client, _, _ = client_and_book
+    r = client.post("/api/marginalia", json={})
+    assert r.status_code == 400
+    assert "content" in r.json()["detail"].lower() or "highlighted_text" in r.json()["detail"].lower()
+
+
 def test_create_marginalia(client_and_book):
     client, book, _ = client_and_book
     r = client.post("/api/marginalia", json={

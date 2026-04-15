@@ -1306,16 +1306,19 @@ def create_marginalia(payload: MarginaliaCreate):
     """Create a new marginalia entry."""
     lib = get_library()
     svc = MarginaliaService(lib.session, library_path=lib.library_path)
-    m = svc.create(
-        content=payload.content,
-        highlighted_text=payload.highlighted_text,
-        book_ids=payload.book_ids,
-        page_number=payload.page_number,
-        position=payload.position,
-        category=payload.category,
-        color=payload.color,
-        pinned=payload.pinned,
-    )
+    try:
+        m = svc.create(
+            content=payload.content,
+            highlighted_text=payload.highlighted_text,
+            book_ids=payload.book_ids,
+            page_number=payload.page_number,
+            position=payload.position,
+            category=payload.category,
+            color=payload.color,
+            pinned=payload.pinned,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return MarginaliaOut.from_orm(m)
 
 
