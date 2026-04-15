@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 from .library_db import Library
 from .extract_metadata import extract_metadata
 from .services.marginalia_service import MarginaliaService
+from .services.reading_session_service import ReadingSessionService
+from .db.models import PersonalMetadata
 from . import opds
 
 
@@ -208,6 +210,58 @@ class MarginaliaOut(BaseModel):
             updated_at=m.updated_at.isoformat() if m.updated_at else m.created_at.isoformat(),
             book_ids=[b.id for b in m.books],
         )
+
+
+# Reading-session payloads ----------------------------------------------------
+
+class StartSessionIn(BaseModel):
+    book_id: int
+    start_anchor: Optional[dict] = None
+
+
+class EndSessionIn(BaseModel):
+    end_anchor: Optional[dict] = None
+
+
+class ReadingSessionOut(BaseModel):
+    uuid: str
+    uri: str
+    book_id: int
+    start_time: str
+    end_time: Optional[str]
+    start_anchor: Optional[dict]
+    end_anchor: Optional[dict]
+    pages_read: Optional[int]
+    archived_at: Optional[str]
+
+    @classmethod
+    def from_orm(cls, rs) -> "ReadingSessionOut":
+        return cls(
+            uuid=rs.uuid,
+            uri=rs.uri,
+            book_id=rs.book_id,
+            start_time=rs.start_time.isoformat(),
+            end_time=rs.end_time.isoformat() if rs.end_time else None,
+            start_anchor=rs.start_anchor,
+            end_anchor=rs.end_anchor,
+            pages_read=rs.pages_read,
+            archived_at=rs.archived_at.isoformat() if rs.archived_at else None,
+        )
+
+
+# Reading-progress payloads ---------------------------------------------------
+
+class ProgressIn(BaseModel):
+    book_id: int
+    anchor: dict
+    percentage: Optional[float] = None
+
+
+class ProgressOut(BaseModel):
+    book_id: int
+    anchor: Optional[dict]
+    percentage: Optional[float]
+    updated_at: Optional[str]
 
 
 # Global library instance
@@ -1404,6 +1458,146 @@ def restore_marginalia(uuid: str):
         raise HTTPException(status_code=404, detail=f"Marginalia {uuid} not found")
     svc.restore(m)
     return MarginaliaOut.from_orm(m)
+
+
+# ---------------------------------------------------------------------------
+# Reading-session endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/reading/sessions/start", response_model=ReadingSessionOut, status_code=201)
+def start_reading_session(payload: StartSessionIn):
+    """Begin a new reading session."""
+    lib = get_library()
+    svc = ReadingSessionService(lib.session)
+    try:
+        rs = svc.start(book_id=payload.book_id, start_anchor=payload.start_anchor)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ReadingSessionOut.from_orm(rs)
+
+
+@app.post("/api/reading/sessions/{uuid}/end", response_model=ReadingSessionOut)
+def end_reading_session(uuid: str, payload: EndSessionIn):
+    """Close a reading session (idempotent once ended)."""
+    lib = get_library()
+    svc = ReadingSessionService(lib.session)
+    try:
+        rs = svc.end(uuid, end_anchor=payload.end_anchor)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ReadingSessionOut.from_orm(rs)
+
+
+@app.get("/api/reading/sessions", response_model=List[ReadingSessionOut])
+def list_reading_sessions(
+    book_id: int,
+    include_archived: bool = False,
+    limit: int = 50,
+):
+    """List reading sessions for a book, newest first."""
+    lib = get_library()
+    svc = ReadingSessionService(lib.session)
+    rows = svc.list_for_book(book_id, include_archived=include_archived, limit=limit)
+    return [ReadingSessionOut.from_orm(r) for r in rows]
+
+
+@app.delete("/api/reading/sessions/{uuid}", status_code=204)
+def delete_reading_session(uuid: str, hard: bool = False):
+    """Soft-delete (default) or hard-delete a reading session."""
+    lib = get_library()
+    svc = ReadingSessionService(lib.session)
+    rs = svc.get_by_uuid(uuid)
+    if rs is None:
+        raise HTTPException(status_code=404, detail=f"ReadingSession {uuid} not found")
+    if hard:
+        svc.hard_delete(rs)
+    else:
+        svc.archive(rs)
+    return None
+
+
+@app.post("/api/reading/sessions/{uuid}/restore", response_model=ReadingSessionOut)
+def restore_reading_session(uuid: str):
+    """Restore a soft-deleted reading session."""
+    lib = get_library()
+    svc = ReadingSessionService(lib.session)
+    rs = svc.get_by_uuid(uuid)
+    if rs is None:
+        raise HTTPException(status_code=404, detail=f"ReadingSession {uuid} not found")
+    svc.restore(rs)
+    return ReadingSessionOut.from_orm(rs)
+
+
+# ---------------------------------------------------------------------------
+# Reading-progress endpoints
+# ---------------------------------------------------------------------------
+
+def _get_or_create_personal(session, book_id: int) -> PersonalMetadata:
+    """Fetch the PersonalMetadata row for ``book_id`` or create a blank one."""
+    pm = session.query(PersonalMetadata).filter_by(book_id=book_id).first()
+    if pm is None:
+        pm = PersonalMetadata(book_id=book_id)
+        session.add(pm)
+        session.flush()
+    return pm
+
+
+@app.get("/api/reading/progress", response_model=ProgressOut)
+def get_reading_progress(book_id: int):
+    """Return current reading progress for a book. Defaults to nulls if no row exists."""
+    lib = get_library()
+    pm = lib.session.query(PersonalMetadata).filter_by(book_id=book_id).first()
+    if pm is None:
+        return ProgressOut(book_id=book_id, anchor=None, percentage=None, updated_at=None)
+    return ProgressOut(
+        book_id=book_id,
+        anchor=pm.progress_anchor,
+        percentage=float(pm.reading_progress) if pm.reading_progress is not None else None,
+        updated_at=pm.date_added.isoformat() if pm.date_added else None,
+    )
+
+
+@app.post("/api/reading/progress", response_model=ProgressOut)
+def post_reading_progress(payload: ProgressIn):
+    """Auto-sync endpoint: accept only if new percentage is at or after current."""
+    lib = get_library()
+    pm = _get_or_create_personal(lib.session, payload.book_id)
+    current_pct = pm.reading_progress or 0
+    if payload.percentage is not None and payload.percentage < current_pct:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Progress would go backwards: current={current_pct}, "
+                f"new={payload.percentage}. Use PATCH to force-set."
+            ),
+        )
+    pm.progress_anchor = payload.anchor
+    if payload.percentage is not None:
+        pm.reading_progress = int(round(payload.percentage))
+    lib.session.commit()
+    return ProgressOut(
+        book_id=payload.book_id,
+        anchor=pm.progress_anchor,
+        percentage=float(pm.reading_progress) if pm.reading_progress is not None else None,
+        updated_at=None,
+    )
+
+
+@app.patch("/api/reading/progress", response_model=ProgressOut)
+def patch_reading_progress(payload: ProgressIn):
+    """Explicit-set endpoint: always wins, bypasses the forward-only check."""
+    lib = get_library()
+    pm = _get_or_create_personal(lib.session, payload.book_id)
+    pm.progress_anchor = payload.anchor
+    if payload.percentage is not None:
+        pm.reading_progress = int(round(payload.percentage))
+    lib.session.commit()
+    return ProgressOut(
+        book_id=payload.book_id,
+        anchor=pm.progress_anchor,
+        percentage=float(pm.reading_progress) if pm.reading_progress is not None else None,
+        updated_at=None,
+    )
 
 
 def get_web_interface() -> str:
