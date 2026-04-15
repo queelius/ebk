@@ -141,8 +141,9 @@ class Book(Base):
                 return cover
         return self.covers[0] if self.covers else None
 
-    @hybrid_property
+    @property
     def uri(self) -> str:
+        """book-memex URI for this Book. Instance-only; not usable in SQL filters."""
         return _uri.build_book_uri(self.unique_id)
 
     def __repr__(self):
@@ -494,8 +495,9 @@ class ReadingSession(Base):
             return (self.end_time - self.start_time).total_seconds() / 60
         return None
 
-    @hybrid_property
+    @property
     def uri(self) -> str:
+        """book-memex URI for this ReadingSession. Instance-only; not usable in SQL filters."""
         return _uri.build_reading_uri(self.uuid)
 
 
@@ -547,8 +549,9 @@ class Marginalia(Base):
         Index('idx_marginalia_archived', 'archived_at'),
     )
 
-    @hybrid_property
+    @property
     def uri(self) -> str:
+        """book-memex URI for this Marginalia. Instance-only; not usable in SQL filters."""
         return _uri.build_marginalia_uri(self.uuid)
 
     @property

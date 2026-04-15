@@ -2,12 +2,11 @@
 import tempfile
 import shutil
 from pathlib import Path
-from datetime import datetime
 
 import pytest
 
 from book_memex.library_db import Library
-from book_memex.db.models import Book, Marginalia, ReadingSession, PersonalMetadata
+from book_memex.db.models import Book, Marginalia, ReadingSession, PersonalMetadata, utc_now
 from book_memex.core.uri import parse_uri
 
 
@@ -63,7 +62,7 @@ def test_reading_session_new_columns(temp_library):
     book = _add_sample_book(temp_library)
     rs = ReadingSession(
         book_id=book.id,
-        start_time=datetime.utcnow(),
+        start_time=utc_now(),
         start_anchor={"cfi": "epubcfi(/6/4!/4)"},
     )
     temp_library.session.add(rs)
@@ -78,7 +77,7 @@ def test_reading_session_new_columns(temp_library):
 
 def test_reading_session_uri_property(temp_library):
     book = _add_sample_book(temp_library)
-    rs = ReadingSession(book_id=book.id, start_time=datetime.utcnow())
+    rs = ReadingSession(book_id=book.id, start_time=utc_now())
     temp_library.session.add(rs)
     temp_library.session.commit()
     parsed = parse_uri(rs.uri)
