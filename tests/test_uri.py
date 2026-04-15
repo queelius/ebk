@@ -3,6 +3,7 @@ import pytest
 
 from book_memex.core.uri import (
     build_book_uri,
+    build_book_fragment_uri,
     build_marginalia_uri,
     build_reading_uri,
     parse_uri,
@@ -28,6 +29,12 @@ class TestBuilders:
     def test_builder_rejects_empty_id(self):
         with pytest.raises(ValueError):
             build_book_uri("")
+
+    def test_book_fragment_uri(self):
+        assert build_book_fragment_uri("abc", "page=47") == "book-memex://book/abc#page=47"
+
+    def test_book_fragment_uri_empty_fragment(self):
+        assert build_book_fragment_uri("abc", "") == "book-memex://book/abc"
 
 
 class TestParser:
