@@ -5,8 +5,8 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from ebk.db.models import Book, Author, Subject, ExtractedText, File
-from ebk.similarity import (
+from book_memex.db.models import Book, Author, Subject, ExtractedText, File
+from book_memex.similarity import (
     BookSimilarity,
     ContentExtractor,
     AuthorsExtractor,

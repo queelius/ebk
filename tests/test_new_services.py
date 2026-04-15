@@ -9,15 +9,15 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from ebk.library_db import Library
-from ebk.services import (
+from book_memex.library_db import Library
+from book_memex.services import (
     ReadingQueueService,
     PersonalMetadataService,
     MarginaliaService,
     ExportService,
     ViewService,
 )
-from ebk.db.models import Book, PersonalMetadata, Author, Tag
+from book_memex.db.models import Book, PersonalMetadata, Author, Tag
 
 
 @pytest.fixture
@@ -605,7 +605,7 @@ class TestViewServiceIntegration:
 
     def test_import_view_service(self):
         """Test that ViewService is accessible via services layer."""
-        from ebk.services import ViewService
+        from book_memex.services import ViewService
         assert ViewService is not None
 
     def test_view_service_basic(self, library_with_books):

@@ -8,8 +8,8 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from ebk.library_db import Library
-from ebk.db.models import Book, Author, Subject
+from book_memex.library_db import Library
+from book_memex.db.models import Book, Author, Subject
 
 
 @pytest.fixture
@@ -656,7 +656,7 @@ class TestFavorites:
         temp_library.set_favorite(book.id, True)
 
         # Then: It should be marked as favorite
-        from ebk.db.models import PersonalMetadata
+        from book_memex.db.models import PersonalMetadata
         personal = temp_library.session.query(PersonalMetadata).filter_by(book_id=book.id).first()
         assert personal is not None
         assert personal.favorite is True
@@ -673,7 +673,7 @@ class TestFavorites:
         temp_library.set_favorite(book.id, False)
 
         # Then: It should not be favorite
-        from ebk.db.models import PersonalMetadata
+        from book_memex.db.models import PersonalMetadata
         personal = temp_library.session.query(PersonalMetadata).filter_by(book_id=book.id).first()
         assert personal.favorite is False
 
@@ -708,7 +708,7 @@ class TestPersonalTags:
         temp_library.add_tags(book.id, ["important", "read-later"])
 
         # Then: Tags should be added
-        from ebk.db.models import PersonalMetadata
+        from book_memex.db.models import PersonalMetadata
         personal = temp_library.session.query(PersonalMetadata).filter_by(book_id=book.id).first()
         assert "important" in personal.personal_tags
         assert "read-later" in personal.personal_tags
@@ -725,7 +725,7 @@ class TestPersonalTags:
         temp_library.add_tags(book.id, ["important", "new"])
 
         # Then: Should not have duplicates
-        from ebk.db.models import PersonalMetadata
+        from book_memex.db.models import PersonalMetadata
         personal = temp_library.session.query(PersonalMetadata).filter_by(book_id=book.id).first()
         assert personal.personal_tags.count("important") == 1
         assert "new" in personal.personal_tags
@@ -742,7 +742,7 @@ class TestPersonalTags:
         temp_library.remove_tags(book.id, ["read-later"])
 
         # Then: Tags should be removed
-        from ebk.db.models import PersonalMetadata
+        from book_memex.db.models import PersonalMetadata
         personal = temp_library.session.query(PersonalMetadata).filter_by(book_id=book.id).first()
         assert "important" in personal.personal_tags
         assert "archive" in personal.personal_tags
@@ -899,7 +899,7 @@ class TestBookDeletion:
         temp_library.delete_book(book_id)
 
         # Then: Book should be deleted
-        from ebk.db.models import Book
+        from book_memex.db.models import Book
         deleted_book = temp_library.session.query(Book).filter_by(id=book_id).first()
         assert deleted_book is None
 
@@ -937,7 +937,7 @@ class TestEdgeCases:
         book = temp_library.add_book(test_file, metadata={"title": "Test"}, extract_text=False)
 
         # Ensure no PersonalMetadata exists
-        from ebk.db.models import PersonalMetadata
+        from book_memex.db.models import PersonalMetadata
         personal = temp_library.session.query(PersonalMetadata).filter_by(book_id=book.id).first()
         if personal:
             temp_library.session.delete(personal)
@@ -959,7 +959,7 @@ class TestEdgeCases:
         book = temp_library.add_book(test_file, metadata={"title": "Test"}, extract_text=False)
 
         # Ensure no PersonalMetadata exists
-        from ebk.db.models import PersonalMetadata
+        from book_memex.db.models import PersonalMetadata
         personal = temp_library.session.query(PersonalMetadata).filter_by(book_id=book.id).first()
         if personal:
             temp_library.session.delete(personal)

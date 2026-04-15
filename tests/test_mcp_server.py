@@ -3,8 +3,8 @@ import pytest
 
 mcp_mod = pytest.importorskip("mcp")
 
-from ebk.library_db import Library
-from ebk.mcp.server import create_mcp_server
+from book_memex.library_db import Library
+from book_memex.mcp.server import create_mcp_server
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def mcp_server(tmp_path):
 class TestMCPServer:
     def test_server_creates_successfully(self, mcp_server):
         assert mcp_server is not None
-        assert mcp_server.name == "ebk"
+        assert mcp_server.name == "book-memex"
 
     def test_server_has_instructions(self, mcp_server):
         assert mcp_server.instructions is not None

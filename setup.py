@@ -6,9 +6,9 @@ this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
 setup(
-    name="ebk",
+    name="book-memex",
     version="0.5.1",
-    description="A lightweight tool for managing eBook metadata",
+    description="book-memex - a lightweight tool for managing eBook metadata (renamed from ebk)",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Alex Towell",
@@ -17,7 +17,10 @@ setup(
     packages=find_packages(),
     entry_points={
         "console_scripts": [
-            "ebk=ebk.cli:app"
+            "book-memex=book_memex.cli:app",
+            "book-memex-mcp-serve=book_memex.mcp.server:run_server",
+            "ebk=book_memex._ebk_alias:main",
+            "ebk-mcp-serve=book_memex.mcp.server:run_server",
         ],
     },
     install_requires=[
@@ -73,6 +76,6 @@ setup(
     python_requires='>=3.10',
     include_package_data=True,
     package_data={
-        "ebk": ["exports/templates/**/*"],
+        "book_memex": ["exports/templates/**/*"],
     },
 )

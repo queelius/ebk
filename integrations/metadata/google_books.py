@@ -11,7 +11,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from ebk.plugins.base import MetadataExtractor
+from book_memex.plugins.base import MetadataExtractor
 
 logger = logging.getLogger(__name__)
 

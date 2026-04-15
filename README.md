@@ -1,6 +1,9 @@
-# ebk
+# book-memex
 
-**ebk** is a powerful eBook metadata management tool with a SQLAlchemy + SQLite database backend. It provides a comprehensive fluent API for programmatic use, a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), full-text search with FTS5 indexing, automatic text extraction and chunking for semantic search, hash-based file deduplication, and optional AI-powered features including knowledge graphs and semantic search. 
+> Renamed from `ebk` (previous name). The `ebk` CLI entrypoint is still available
+> as a deprecation shim and will be removed in the release after v1.
+
+**book-memex** is a powerful eBook metadata management tool with a SQLAlchemy + SQLite database backend. It provides a comprehensive fluent API for programmatic use, a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), full-text search with FTS5 indexing, automatic text extraction and chunking for semantic search, hash-based file deduplication, and optional AI-powered features including knowledge graphs and semantic search.
 
 
 ---
@@ -89,7 +92,7 @@
 ### Basic Installation
 
 ```bash
-pip install ebk
+pip install book-memex
 ```
 
 ### From Source
@@ -104,16 +107,16 @@ pip install .
 
 ```bash
 # With Streamlit dashboard
-pip install ebk[streamlit]
+pip install book-memex[streamlit]
 
 # With visualization tools
-pip install ebk[viz]
+pip install book-memex[viz]
 
 # With all optional features
-pip install ebk[all]
+pip install book-memex[all]
 
 # For development
-pip install ebk[dev]
+pip install book-memex[dev]
 ```
 
 > **Note**: Requires Python 3.10+
@@ -126,74 +129,74 @@ pip install ebk[dev]
 
 ```bash
 # Create default configuration file at ~/.config/ebk/config.json
-ebk config init
+book-memex config init
 
 # View current configuration
-ebk config show
+book-memex config show
 
 # Set default library path
-ebk config set library.default_path ~/my-library
+book-memex config set library.default_path ~/my-library
 ```
 
 ### 2. Create and Populate Library
 
 ```bash
 # Initialize a new library
-ebk init ~/my-library
+book-memex init ~/my-library
 
 # Import a single ebook with auto-metadata extraction
-ebk import book.pdf ~/my-library
+book-memex import book.pdf ~/my-library
 
 # Import from Calibre library
-ebk import-calibre ~/Calibre/Library --output ~/my-library
+book-memex import-calibre ~/Calibre/Library --output ~/my-library
 
 # Search using full-text search
-ebk search "python programming" ~/my-library
+book-memex search "python programming" ~/my-library
 
 # List books with filtering
-ebk list ~/my-library --author "Knuth" --limit 20
+book-memex list ~/my-library --author "Knuth" --limit 20
 
 # Get statistics
-ebk stats ~/my-library
+book-memex stats ~/my-library
 ```
 
 ### 3. Launch Web Interface
 
 ```bash
 # Start web server (uses config defaults)
-ebk serve ~/my-library
+book-memex serve ~/my-library
 
 # Custom port and host
-ebk serve ~/my-library --port 8080 --host 127.0.0.1
+book-memex serve ~/my-library --port 8080 --host 127.0.0.1
 
 # Auto-open browser
-ebk config set server.auto_open_browser true
-ebk serve ~/my-library
+book-memex config set server.auto_open_browser true
+book-memex serve ~/my-library
 ```
 
 ### 4. AI-Powered Metadata Enrichment
 
 ```bash
 # Configure LLM provider
-ebk config set llm.provider ollama
-ebk config set llm.model llama3.2
-ebk config set llm.host localhost
+book-memex config set llm.provider ollama
+book-memex config set llm.model llama3.2
+book-memex config set llm.host localhost
 
 # Enrich library metadata using LLM
-ebk enrich ~/my-library
+book-memex enrich ~/my-library
 
 # Enrich with all features
-ebk enrich ~/my-library --generate-tags --categorize --enhance-descriptions
+book-memex enrich ~/my-library --generate-tags --categorize --enhance-descriptions
 
 # Use remote GPU server
-ebk enrich ~/my-library --host 192.168.1.100
+book-memex enrich ~/my-library --host 192.168.1.100
 ```
 
 ---
 
 ## Configuration
 
-ebk uses a centralized configuration system stored at `~/.config/ebk/config.json`. This configuration file manages settings for LLM providers, web server, CLI defaults, and library preferences.
+book-memex uses a centralized configuration system stored at `~/.config/ebk/config.json` (path preserved from the `ebk` era so existing configs keep working). This configuration file manages settings for LLM providers, web server, CLI defaults, and library preferences.
 
 ### Configuration File Structure
 
@@ -229,22 +232,22 @@ ebk uses a centralized configuration system stored at `~/.config/ebk/config.json
 
 ```bash
 # Initialize configuration (creates default config file)
-ebk config init
+book-memex config init
 
 # View current configuration
-ebk config show
+book-memex config show
 
 # Edit configuration in your default editor
-ebk config edit
+book-memex config edit
 
 # Set specific values
-ebk config set llm.provider ollama
-ebk config set llm.model mistral
-ebk config set server.port 8080
-ebk config set library.default_path ~/my-library
+book-memex config set llm.provider ollama
+book-memex config set llm.model mistral
+book-memex config set server.port 8080
+book-memex config set library.default_path ~/my-library
 
 # Get specific value
-ebk config get llm.model
+book-memex config get llm.model
 ```
 
 ### LLM Provider Configuration
@@ -253,18 +256,18 @@ Configure LLM providers for metadata enrichment:
 
 ```bash
 # Local Ollama (default)
-ebk config set llm.provider ollama
-ebk config set llm.host localhost
-ebk config set llm.port 11434
-ebk config set llm.model llama3.2
+book-memex config set llm.provider ollama
+book-memex config set llm.host localhost
+book-memex config set llm.port 11434
+book-memex config set llm.model llama3.2
 
 # Remote GPU server
-ebk config set llm.host 192.168.1.100
+book-memex config set llm.host 192.168.1.100
 
 # OpenAI-compatible API (future)
-ebk config set llm.provider openai
-ebk config set llm.api_key sk-...
-ebk config set llm.model gpt-4
+book-memex config set llm.provider openai
+book-memex config set llm.api_key sk-...
+book-memex config set llm.model gpt-4
 ```
 
 ### CLI Overrides
@@ -273,20 +276,20 @@ All commands support CLI arguments that override configuration defaults:
 
 ```bash
 # These override config settings
-ebk serve ~/library --port 9000 --host 127.0.0.1
-ebk enrich ~/library --host 192.168.1.50 --model mistral
+book-memex serve ~/library --port 9000 --host 127.0.0.1
+book-memex enrich ~/library --host 192.168.1.50 --model mistral
 ```
 
 ## CLI Usage
 
-ebk uses [Typer](https://typer.tiangolo.com/) with [Rich](https://github.com/Textualize/rich) for a beautiful, colorized CLI experience.
+book-memex uses [Typer](https://typer.tiangolo.com/) with [Rich](https://github.com/Textualize/rich) for a beautiful, colorized CLI experience.
 
 ### General CLI Structure
 
 ```bash
-ebk --help                 # See all available commands
-ebk <command> --help       # See specific command usage
-ebk --verbose <command>    # Enable verbose output
+book-memex --help                 # See all available commands
+book-memex <command> --help       # See specific command usage
+book-memex --verbose <command>    # Enable verbose output
 ```
 
 ### Database Commands
@@ -295,36 +298,36 @@ Core library management with SQLAlchemy + SQLite backend:
 
 ```bash
 # Initialize library
-ebk init ~/my-library
+book-memex init ~/my-library
 
 # Import books
-ebk import book.pdf ~/my-library
-ebk import ~/books/*.epub ~/my-library
-ebk import-calibre ~/Calibre/Library --output ~/my-library
+book-memex import book.pdf ~/my-library
+book-memex import ~/books/*.epub ~/my-library
+book-memex import-calibre ~/Calibre/Library --output ~/my-library
 
 # Search with advanced syntax
-ebk search "machine learning" ~/my-library              # Plain full-text search
-ebk search "title:Python rating:>=4" ~/my-library       # Field-specific with filters
-ebk search "author:Knuth format:pdf" ~/my-library       # Multiple criteria
-ebk search "tag:programming NOT java" ~/my-library      # Boolean operators
-ebk search '"deep learning" language:en' ~/my-library   # Phrase search with filter
+book-memex search "machine learning" ~/my-library              # Plain full-text search
+book-memex search "title:Python rating:>=4" ~/my-library       # Field-specific with filters
+book-memex search "author:Knuth format:pdf" ~/my-library       # Multiple criteria
+book-memex search "tag:programming NOT java" ~/my-library      # Boolean operators
+book-memex search '"deep learning" language:en' ~/my-library   # Phrase search with filter
 
 # List and filter
-ebk list ~/my-library
-ebk list ~/my-library --author "Knuth" --language en --limit 20
-ebk list ~/my-library --format pdf --rating 4
+book-memex list ~/my-library
+book-memex list ~/my-library --author "Knuth" --language en --limit 20
+book-memex list ~/my-library --format pdf --rating 4
 
 # Statistics
-ebk stats ~/my-library
-ebk stats ~/my-library --format json
+book-memex stats ~/my-library
+book-memex stats ~/my-library --format json
 
 # Manage reading status
-ebk rate ~/my-library <book-id> 5
-ebk favorite ~/my-library <book-id>
-ebk tag ~/my-library <book-id> --add "must-read" "technical"
+book-memex rate ~/my-library <book-id> 5
+book-memex favorite ~/my-library <book-id>
+book-memex tag ~/my-library <book-id> --add "must-read" "technical"
 
 # Remove books
-ebk purge ~/my-library --rating 1 --confirm
+book-memex purge ~/my-library --rating 1 --confirm
 ```
 
 ### Web Server
@@ -333,17 +336,17 @@ Launch FastAPI-based web interface:
 
 ```bash
 # Start server (uses config defaults)
-ebk serve ~/my-library
+book-memex serve ~/my-library
 
 # Custom host and port
-ebk serve ~/my-library --host 127.0.0.1 --port 8080
+book-memex serve ~/my-library --host 127.0.0.1 --port 8080
 
 # Auto-open browser
-ebk serve ~/my-library --auto-open
+book-memex serve ~/my-library --auto-open
 
 # Configure defaults in config
-ebk config set server.port 8080
-ebk config set server.auto_open_browser true
+book-memex config set server.port 8080
+book-memex config set server.auto_open_browser true
 ```
 
 ### AI-Powered Features
@@ -352,23 +355,23 @@ Enrich metadata using LLMs:
 
 ```bash
 # Basic enrichment (uses config settings)
-ebk enrich ~/my-library
+book-memex enrich ~/my-library
 
 # Full enrichment
-ebk enrich ~/my-library \
+book-memex enrich ~/my-library \
   --generate-tags \
   --categorize \
   --enhance-descriptions \
   --assess-difficulty
 
 # Enrich specific book
-ebk enrich ~/my-library --book-id 42
+book-memex enrich ~/my-library --book-id 42
 
 # Use remote GPU server
-ebk enrich ~/my-library --host 192.168.1.100 --model mistral
+book-memex enrich ~/my-library --host 192.168.1.100 --model mistral
 
 # Dry run (preview changes without saving)
-ebk enrich ~/my-library --dry-run
+book-memex enrich ~/my-library --dry-run
 ```
 
 ### Configuration Management
@@ -377,40 +380,40 @@ Manage global configuration:
 
 ```bash
 # Initialize configuration
-ebk config init
+book-memex config init
 
 # View configuration
-ebk config show
-ebk config show --section llm
+book-memex config show
+book-memex config show --section llm
 
 # Edit in default editor
-ebk config edit
+book-memex config edit
 
 # Set values
-ebk config set llm.model llama3.2
-ebk config set server.port 8080
-ebk config set library.default_path ~/books
+book-memex config set llm.model llama3.2
+book-memex config set server.port 8080
+book-memex config set library.default_path ~/books
 
 # Get values
-ebk config get llm.model
+book-memex config get llm.model
 ```
 
 ### Export and Advanced Features
 
 ```bash
 # Export library
-ebk export html ~/my-library ~/library.html                    # Self-contained HTML with pagination
-ebk export html ~/my-library ~/site/lib.html --copy --base-url /library  # Copy files + covers
-ebk export zip ~/my-library ~/backup.zip
-ebk export json ~/my-library ~/metadata.json
+book-memex export html ~/my-library ~/library.html                    # Self-contained HTML with pagination
+book-memex export html ~/my-library ~/site/lib.html --copy --base-url /library  # Copy files + covers
+book-memex export zip ~/my-library ~/backup.zip
+book-memex export json ~/my-library ~/metadata.json
 
 # Virtual libraries (filtered views)
-ebk vlib create ~/my-library "python-books" --subject Python
-ebk vlib list ~/my-library
+book-memex vlib create ~/my-library "python-books" --subject Python
+book-memex vlib list ~/my-library
 
 # Notes and annotations
-ebk note add ~/my-library <book-id> "Great chapter on algorithms"
-ebk note list ~/my-library <book-id>
+book-memex note add ~/my-library <book-id> "Great chapter on algorithms"
+book-memex note list ~/my-library <book-id>
 ```
 
 ---
@@ -450,11 +453,11 @@ Comprehensive documentation is available at: **[https://queelius.github.io/ebk/]
 
 ## Python API
 
-ebk provides a comprehensive SQLAlchemy-based API for programmatic library management:
+book-memex provides a comprehensive SQLAlchemy-based API for programmatic library management:
 
 ```python
 from pathlib import Path
-from ebk.library_db import Library
+from book_memex.library_db import Library
 
 # Open or create a library
 lib = Library.open(Path("~/my-library"))
@@ -496,7 +499,7 @@ print(f"Total authors: {stats['total_authors']}")
 print(f"Languages: {', '.join(stats['languages'])}")
 
 # Query with filters
-from ebk.db.models import Book, Author
+from book_memex.db.models import Book, Author
 from sqlalchemy import and_
 
 books = lib.session.query(Book).join(Book.authors).filter(
@@ -519,8 +522,8 @@ with Library.open(Path("~/my-library")) as lib:
 ### AI-Powered Metadata Enrichment
 
 ```python
-from ebk.ai.llm_providers.ollama import OllamaProvider
-from ebk.ai.metadata_enrichment import MetadataEnrichmentService
+from book_memex.ai.llm_providers.ollama import OllamaProvider
+from book_memex.ai.metadata_enrichment import MetadataEnrichmentService
 
 # Initialize provider (local or remote)
 provider = OllamaProvider.remote(
@@ -557,9 +560,9 @@ See the [CLAUDE.md](CLAUDE.md) file for architectural details and [API documenta
 
 ## Contributing
 
-Contributions are welcome! Here’s how to get involved:
+Contributions are welcome! Here's how to get involved:
 
-1. **Fork the Repo**  
+1. **Fork the Repo**
 2. **Create a Branch** for your feature or fix
 3. **Commit & Push** your changes
 4. **Open a Pull Request** describing the changes
@@ -576,23 +579,23 @@ Distributed under the [MIT License](https://github.com/queelius/ebk/blob/main/LI
 
 ## Integrations
 
-ebk follows a modular architecture where the core library remains lightweight, with optional integrations available:
+book-memex follows a modular architecture where the core library remains lightweight, with optional integrations available:
 
 ### Streamlit Dashboard
 ```bash
-pip install ebk[streamlit]
-streamlit run ebk/integrations/streamlit/app.py
+pip install book-memex[streamlit]
+streamlit run book_memex/integrations/streamlit/app.py
 ```
 
 ### MCP Server (AI Assistants)
 ```bash
-pip install ebk[mcp]
+pip install book-memex[mcp]
 # Configure your AI assistant to use the MCP server
 ```
 
 ### Visualizations
 ```bash
-pip install ebk[viz]
+pip install book-memex[viz]
 # Visualization tools will be available as a separate script
 # Documentation coming soon in integrations/viz/
 ```
@@ -603,11 +606,11 @@ See the [Integrations Guide](integrations/README.md) for detailed setup instruct
 
 ## Architecture
 
-ebk is designed with a clean, layered architecture:
+book-memex is designed with a clean, layered architecture:
 
-1. **Core Library** (`ebk.library`): Fluent API for all operations
-2. **CLI** (`ebk.cli`): Typer-based commands using the fluent API
-3. **Import/Export** (`ebk.imports`, `ebk.exports`): Modular format support
+1. **Core Library** (`book_memex.library_db`): Fluent API for all operations
+2. **CLI** (`book_memex.cli`): Typer-based commands using the fluent API
+3. **Import/Export** (`book_memex.services`, `book_memex.exports`): Modular format support
 4. **Integrations** (`integrations/`): Optional add-ons (web UI, AI, viz)
 
 This design ensures the core remains lightweight while supporting powerful extensions.
@@ -650,4 +653,4 @@ make coverage
 
 ---
 
-Happy eBook managing! 📚✨
+Happy eBook managing!

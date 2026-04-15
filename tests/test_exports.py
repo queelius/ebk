@@ -16,8 +16,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 import xml.etree.ElementTree as ET
 
-from ebk.library_db import Library
-from ebk.exports.opds_export import (
+from book_memex.library_db import Library
+from book_memex.exports.opds_export import (
     export_to_opds,
     build_feed,
     build_entry,

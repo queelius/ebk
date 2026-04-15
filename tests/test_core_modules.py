@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Module under test
-from ebk import ident
-from ebk import config
+from book_memex import ident
+from book_memex import config
 
 
 # ============================================================================

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ebk is a Python-based eBook metadata management tool with:
+book-memex (renamed from `ebk`; the directory is still `ebk/` and the GitHub repo is still `ebk`, but the Python package is now `book_memex` with CLI entrypoint `book-memex`) is a Python-based eBook metadata management tool with:
 - **SQLAlchemy + SQLite backend** with FTS5 full-text search
 - **Fluent Query API** for programmatic library management
 - **Typer CLI** with Rich colorized output
@@ -23,7 +23,7 @@ make install-dev        # Install with dev dependencies only
 pytest tests/ -v                                    # All tests
 pytest tests/test_search_parser.py -v               # Single file
 pytest tests/test_search_parser.py::TestClass::test_method -v  # Single test
-pytest --cov=ebk --cov-report=html                  # With coverage
+pytest --cov=book_memex --cov-report=html           # With coverage
 
 # Code quality
 make lint               # Run flake8, mypy, pylint
@@ -40,16 +40,18 @@ twine upload dist/*         # Publish to PyPI
 Commands use config default library path (`~/.config/ebk/config.json`) when path not specified:
 
 ```bash
-ebk config --library-path ~/my-library   # Set default library
+book-memex config --library-path ~/my-library   # Set default library
 
 # These now work without specifying path
-ebk list
-ebk search "python programming"
-ebk stats
+book-memex list
+book-memex search "python programming"
+book-memex stats
 
 # With pagination
-ebk list -n 20 --offset 40               # Page 3 of 20 results
-ebk search "python" --offset 20          # Next page of results
+book-memex list -n 20 --offset 40               # Page 3 of 20 results
+book-memex search "python" --offset 20          # Next page of results
+
+# Legacy `ebk` CLI remains as a deprecation shim; removed after v1.
 ```
 
 ## Architecture
@@ -102,7 +104,7 @@ Fixtures in `conftest.py`: `temp_library`, `populated_library`
 
 ## Entry Points
 
-- **CLI**: `ebk` command → `ebk.cli:app`
-- **Python API**: `from ebk.library_db import Library`
-- **Web Server**: `ebk serve` → FastAPI on port 8000
-- **MCP Server**: `ebk mcp-serve` → MCP over stdio for AI assistants
+- **CLI**: `book-memex` command → `book_memex.cli:app` (legacy `ebk` alias via deprecation shim)
+- **Python API**: `from book_memex.library_db import Library`
+- **Web Server**: `book-memex serve` → FastAPI on port 8000
+- **MCP Server**: `book-memex-mcp-serve` (or `book-memex mcp-serve`) → MCP over stdio for AI assistants

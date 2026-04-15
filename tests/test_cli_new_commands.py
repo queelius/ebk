@@ -7,8 +7,8 @@ import tempfile
 import shutil
 from pathlib import Path
 from typer.testing import CliRunner
-from ebk.cli import app
-from ebk.library_db import Library
+from book_memex.cli import app
+from book_memex.library_db import Library
 
 
 runner = CliRunner()
@@ -306,7 +306,7 @@ class TestBookMerge:
 
     def test_book_merge_dry_run(self, tmp_path):
         """Test merge dry run shows preview without making changes."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         # Create library with two books
         lib_path = tmp_path / "library"
@@ -338,7 +338,7 @@ class TestBookMerge:
 
     def test_book_merge_basic(self, tmp_path):
         """Test basic merge of two books."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         # Create library with two books
         lib_path = tmp_path / "library"
@@ -373,7 +373,7 @@ class TestBookMerge:
 
     def test_book_merge_multiple(self, tmp_path):
         """Test merging multiple books into one."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
         import uuid
 
         # Create library with three books (unique content to avoid duplicate hash)
@@ -426,7 +426,7 @@ class TestBulkEdit:
 
     def test_bulk_edit_by_ids(self, tmp_path):
         """Test bulk edit using --ids."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         # Create library with books (import service sets default language='en')
         lib_path = tmp_path / "library"
@@ -458,7 +458,7 @@ class TestBulkEdit:
 
     def test_bulk_edit_dry_run(self, tmp_path):
         """Test bulk edit dry run."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)
@@ -504,7 +504,7 @@ class TestBulkEdit:
 
     def test_bulk_edit_add_tag(self, tmp_path):
         """Test bulk edit adding a tag."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)
@@ -533,7 +533,7 @@ class TestBulkEdit:
 
     def test_bulk_edit_set_rating(self, tmp_path):
         """Test bulk edit setting rating."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)
@@ -853,7 +853,7 @@ class TestImportFolderImprovements:
     def test_import_folder_dry_run(self, tmp_path):
         """Test import folder with dry run."""
         # Create a library
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)
         lib.close()
@@ -876,7 +876,7 @@ class TestImportFolderImprovements:
     def test_import_folder_resume(self, tmp_path):
         """Test import folder resume capability."""
         # Create a library
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)
         lib.close()
@@ -947,7 +947,7 @@ class TestGoodreadsExport:
 
     def test_export_goodreads_includes_rating(self, tmp_path):
         """Test that Goodreads export includes ratings."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)
@@ -957,7 +957,7 @@ class TestGoodreadsExport:
         lib.add_book(file, {"title": "Rated Book", "creators": ["Test Author"]}, extract_text=False)
 
         # Set rating
-        from ebk.services import PersonalMetadataService
+        from book_memex.services import PersonalMetadataService
         pm_svc = PersonalMetadataService(lib.session)
         pm_svc.set_rating(1, 4.5)
 
@@ -1017,7 +1017,7 @@ class TestCalibreExport:
 
     def test_export_calibre_includes_series(self, tmp_path):
         """Test that Calibre export includes series info."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)
@@ -1045,7 +1045,7 @@ class TestCalibreExport:
 
     def test_export_calibre_author_sort(self, tmp_path):
         """Test that Calibre export generates proper author sort."""
-        from ebk.library_db import Library
+        from book_memex.library_db import Library
 
         lib_path = tmp_path / "library"
         lib = Library.open(lib_path)

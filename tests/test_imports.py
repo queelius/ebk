@@ -18,8 +18,8 @@ import xml.etree.ElementTree as ET
 
 from fastapi.testclient import TestClient
 
-from ebk.library_db import Library
-from ebk.server import app, set_library, URLImportRequest, OPDSImportRequest, ISBNImportRequest
+from book_memex.library_db import Library
+from book_memex.server import app, set_library, URLImportRequest, OPDSImportRequest, ISBNImportRequest
 
 
 # ============================================================================
@@ -65,33 +65,33 @@ class TestOPDSExportHelpers:
 
     def test_get_mime_type_returns_pdf(self):
         """Test MIME type lookup for PDF."""
-        from ebk.exports.opds_export import get_mime_type
+        from book_memex.exports.opds_export import get_mime_type
         assert get_mime_type("pdf") == "application/pdf"
 
     def test_get_mime_type_returns_epub(self):
         """Test MIME type lookup for EPUB."""
-        from ebk.exports.opds_export import get_mime_type
+        from book_memex.exports.opds_export import get_mime_type
         assert get_mime_type("epub") == "application/epub+zip"
 
     def test_get_mime_type_returns_mobi(self):
         """Test MIME type lookup for MOBI."""
-        from ebk.exports.opds_export import get_mime_type
+        from book_memex.exports.opds_export import get_mime_type
         assert get_mime_type("mobi") == "application/x-mobipocket-ebook"
 
     def test_get_mime_type_case_insensitive(self):
         """Test MIME type lookup is case insensitive."""
-        from ebk.exports.opds_export import get_mime_type
+        from book_memex.exports.opds_export import get_mime_type
         assert get_mime_type("PDF") == "application/pdf"
         assert get_mime_type("Epub") == "application/epub+zip"
 
     def test_get_mime_type_unknown_format(self):
         """Test MIME type lookup for unknown format returns default."""
-        from ebk.exports.opds_export import get_mime_type
+        from book_memex.exports.opds_export import get_mime_type
         assert get_mime_type("xyz") == "application/octet-stream"
 
     def test_escape_xml_special_characters(self):
         """Test XML escaping handles all special characters."""
-        from ebk.exports.opds_export import escape_xml
+        from book_memex.exports.opds_export import escape_xml
         text = '<test> & "quotes" \'apostrophes\''
         escaped = escape_xml(text)
 
@@ -103,18 +103,18 @@ class TestOPDSExportHelpers:
 
     def test_escape_xml_empty_string(self):
         """Test XML escaping handles empty string."""
-        from ebk.exports.opds_export import escape_xml
+        from book_memex.exports.opds_export import escape_xml
         assert escape_xml("") == ""
 
     def test_escape_xml_none(self):
         """Test XML escaping handles None."""
-        from ebk.exports.opds_export import escape_xml
+        from book_memex.exports.opds_export import escape_xml
         assert escape_xml(None) == ""
 
     def test_format_datetime_with_value(self):
         """Test datetime formatting with specific value."""
         from datetime import datetime
-        from ebk.exports.opds_export import format_datetime
+        from book_memex.exports.opds_export import format_datetime
 
         dt = datetime(2023, 12, 25, 10, 30, 45)
         formatted = format_datetime(dt)
@@ -123,7 +123,7 @@ class TestOPDSExportHelpers:
 
     def test_format_datetime_with_none(self):
         """Test datetime formatting with None uses current time."""
-        from ebk.exports.opds_export import format_datetime
+        from book_memex.exports.opds_export import format_datetime
 
         formatted = format_datetime(None)
 
@@ -182,7 +182,7 @@ class TestURLImportFromValidURL:
         mock_client_class.return_value = mock_client
 
         # When: We import from URL
-        with patch('ebk.server.extract_metadata', return_value={'title': 'Test PDF'}):
+        with patch('book_memex.server.extract_metadata', return_value={'title': 'Test PDF'}):
             response = client.post("/api/books/import/url", json={
                 "url": "https://example.com/test_book.pdf"
             })
@@ -209,7 +209,7 @@ class TestURLImportFromValidURL:
         mock_client_class.return_value = mock_client
 
         # When: We import from URL
-        with patch('ebk.server.extract_metadata', return_value={'title': 'Test EPUB'}):
+        with patch('book_memex.server.extract_metadata', return_value={'title': 'Test EPUB'}):
             response = client.post("/api/books/import/url", json={
                 "url": "https://example.com/book.epub"
             })
@@ -246,7 +246,7 @@ class TestURLImportFilenameExtraction:
         mock_client_class.return_value = mock_client
 
         # When: We import from URL
-        with patch('ebk.server.extract_metadata', return_value={'title': 'My Book'}):
+        with patch('book_memex.server.extract_metadata', return_value={'title': 'My Book'}):
             response = client.post("/api/books/import/url", json={
                 "url": "https://example.com/download?id=123"
             })
@@ -394,7 +394,7 @@ class TestOPDSImportWithMockedHTTP:
         mock_client_class.return_value = mock_client
 
         # When: We import from OPDS
-        with patch('ebk.server.extract_metadata', return_value={'title': 'Test Book'}):
+        with patch('book_memex.server.extract_metadata', return_value={'title': 'Test Book'}):
             response = client.post("/api/books/import/opds", json={
                 "opds_url": "https://example.com/opds/catalog.xml"
             })
@@ -626,7 +626,7 @@ class TestCalibreImport:
 
     def test_import_calibre_library_no_books(self, temp_library):
         """Test importing from directory with no Calibre books."""
-        from ebk.calibre_import import import_calibre_library
+        from book_memex.calibre_import import import_calibre_library
 
         # Given: An empty directory (no metadata.opf files)
         empty_dir = temp_library.library_path / "empty_calibre"
@@ -643,7 +643,7 @@ class TestCalibreImport:
 
     def test_import_calibre_library_with_limit(self, temp_library):
         """Test that limit parameter restricts number of imports."""
-        from ebk.calibre_import import import_calibre_library
+        from book_memex.calibre_import import import_calibre_library
 
         # Given: A directory with multiple OPF files
         calibre_dir = temp_library.library_path / "calibre"
@@ -787,7 +787,7 @@ class TestURLImportContentTypeDetection:
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with patch('httpx.AsyncClient', mock_client_class):
-            with patch('ebk.server.extract_metadata', return_value={'title': 'Test'}):
+            with patch('book_memex.server.extract_metadata', return_value={'title': 'Test'}):
                 response = client.post("/api/books/import/url", json={
                     "url": "https://example.com/download?id=123"
                 })
@@ -810,7 +810,7 @@ class TestURLImportContentTypeDetection:
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with patch('httpx.AsyncClient', mock_client_class):
-            with patch('ebk.server.extract_metadata', return_value={'title': 'Test'}):
+            with patch('book_memex.server.extract_metadata', return_value={'title': 'Test'}):
                 response = client.post("/api/books/import/url", json={
                     "url": "https://example.com/book"  # No extension
                 })
@@ -836,7 +836,7 @@ class TestURLImportOptions:
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with patch('httpx.AsyncClient', mock_client_class):
-            with patch('ebk.server.extract_metadata', return_value={'title': 'Test'}):
+            with patch('book_memex.server.extract_metadata', return_value={'title': 'Test'}):
                 response = client.post("/api/books/import/url", json={
                     "url": "https://example.com/book.pdf",
                     "extract_text": False,
@@ -884,7 +884,7 @@ class TestOPDSImportEdgeCases:
         mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with patch('httpx.AsyncClient', mock_client_class):
-            with patch('ebk.server.extract_metadata', return_value={'title': 'Test Book'}):
+            with patch('book_memex.server.extract_metadata', return_value={'title': 'Test Book'}):
                 response = client.post("/api/books/import/opds", json={
                     "opds_url": "https://example.com/opds/catalog.xml"
                 })

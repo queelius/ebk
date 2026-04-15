@@ -1,7 +1,7 @@
 """Tests for read-only SQL executor."""
 import pytest
-from ebk.library_db import Library
-from ebk.mcp.sql_executor import ReadOnlySQLExecutor
+from book_memex.library_db import Library
+from book_memex.mcp.sql_executor import ReadOnlySQLExecutor
 
 
 @pytest.fixture
