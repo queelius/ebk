@@ -104,5 +104,5 @@ Welcome to the library. This collection contains **{{ stats.total_books }} books
 ---
 
 <div class="library-footer">
-  <p>This library is powered by <a href="https://github.com/queelius/ebk">ebk</a></p>
+  <p>This library is powered by <a href="https://github.com/queelius/ebk">book-memex</a></p>
 </div>

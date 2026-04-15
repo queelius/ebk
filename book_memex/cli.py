@@ -4504,7 +4504,7 @@ def config(
     set_color: Optional[bool] = typer.Option(None, "--cli-color/--no-cli-color", help="Enable colored output by default"),
 ):
     """
-    View or edit EBK configuration.
+    View or edit book-memex configuration.
 
     Configuration is stored at ~/.config/ebk/config.json (or ~/.ebk/config.json).
 
@@ -4547,7 +4547,7 @@ def config(
         config = load_config()
         config_path = get_config_path()
 
-        console.print(f"\n[bold]EBK Configuration[/bold]")
+        console.print(f"\n[bold]book-memex Configuration[/bold]")
         console.print(f"[dim]Location: {config_path}[/dim]\n")
 
         console.print("[bold cyan]Library Settings:[/bold cyan]")
