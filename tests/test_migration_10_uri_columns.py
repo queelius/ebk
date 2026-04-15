@@ -65,29 +65,61 @@ def test_existing_marginalia_rows_get_uuid_backfill():
     """Simulate: a pre-migration library with marginalia rows. After migration, each has a UUID."""
     temp_dir = Path(tempfile.mkdtemp())
     try:
-        # Stage 1: create a library and a Marginalia row via the ORM
-        lib = Library.open(temp_dir)
-        # Create via raw SQL to simulate a pre-migration-10 row (no uuid).
-        # But since migrations run at open(), the row we insert now will have uuid.
-        # Instead, null-out the uuid to simulate legacy state, then re-run migration.
-        with lib.session.begin():
-            lib.session.execute(text(
-                "INSERT INTO marginalia (content, created_at, updated_at) VALUES ('x', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        # Stage 1: build a pre-migration-10 marginalia table by hand. We
+        # bypass the ORM (which now declares uuid NOT NULL on fresh tables)
+        # and create a legacy schema directly with raw SQL, mirroring what
+        # an older library on disk would look like.
+        db_path = temp_dir / "library.db"
+        engine = create_engine(f"sqlite:///{db_path}")
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE marginalia (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    content TEXT,
+                    highlighted_text TEXT,
+                    page_number INTEGER,
+                    position JSON,
+                    category VARCHAR(100),
+                    pinned BOOLEAN DEFAULT 0,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE reading_sessions (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    book_id INTEGER NOT NULL,
+                    start_time DATETIME NOT NULL,
+                    end_time DATETIME,
+                    pages_read INTEGER DEFAULT 0,
+                    comprehension_score FLOAT
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE personal_metadata (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    book_id INTEGER NOT NULL,
+                    rating FLOAT
+                )
+            """))
+            conn.execute(text(
+                "INSERT INTO marginalia (content, created_at, updated_at) "
+                "VALUES ('x', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ))
-            mid = lib.session.execute(text("SELECT last_insert_rowid()")).scalar()
-            lib.session.execute(text("UPDATE marginalia SET uuid = NULL WHERE id = :i"), {"i": mid})
-        lib.close()
+            mid = conn.execute(text("SELECT last_insert_rowid()")).scalar()
+        engine.dispose()
 
-        # Stage 2: re-run migration (should backfill)
+        # Stage 2: run the migration (should add uuid column and backfill it)
         from book_memex.db.migrations import migrate_add_uri_columns
         migrate_add_uri_columns(temp_dir)
 
-        # Stage 3: verify
-        lib = Library.open(temp_dir)
-        row = lib.session.execute(text(
-            f"SELECT uuid FROM marginalia WHERE id = {mid}"
-        )).scalar()
-        lib.close()
+        # Stage 3: verify the legacy row got a backfilled uuid
+        engine = create_engine(f"sqlite:///{db_path}")
+        with engine.connect() as conn:
+            row = conn.execute(text(
+                f"SELECT uuid FROM marginalia WHERE id = {mid}"
+            )).scalar()
+        engine.dispose()
         assert row is not None
         assert UUID_HEX_RE.match(row), f"expected 32-hex UUID, got {row!r}"
     finally:

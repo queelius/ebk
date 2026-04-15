@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from pathlib import Path
 import hashlib
+import uuid as _uuid
 
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, Float,
@@ -16,6 +17,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
+
+from book_memex.core import uri as _uri
 
 Base = declarative_base()
 
@@ -96,6 +99,7 @@ class Book(Base):
     # Timestamps
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+    archived_at = Column(DateTime, nullable=True)
 
     # Relationships
     authors = relationship('Author', secondary=book_authors, back_populates='books', lazy='selectin')
@@ -137,6 +141,10 @@ class Book(Base):
                 return cover
         return self.covers[0] if self.covers else None
 
+    @hybrid_property
+    def uri(self) -> str:
+        return _uri.build_book_uri(self.unique_id)
+
     def __repr__(self):
         return f"<Book(id={self.id}, title='{self.title[:50]}')>"
 
@@ -151,6 +159,8 @@ class Author(Base):
     bio = Column(Text)
     birth_year = Column(Integer)
     death_year = Column(Integer)
+
+    archived_at = Column(DateTime, nullable=True)
 
     # Relationships
     books = relationship('Book', secondary=book_authors, back_populates='authors')
@@ -171,6 +181,8 @@ class Subject(Base):
     name = Column(String(200), nullable=False, unique=True, index=True)
     parent_id = Column(Integer, ForeignKey('subjects.id', ondelete='SET NULL'))
     type = Column(String(50), default='topic')  # genre, topic, keyword, personal_tag
+
+    archived_at = Column(DateTime, nullable=True)
 
     # Self-referential relationship for hierarchy
     parent = relationship('Subject', remote_side=[id], backref='children')
@@ -203,6 +215,7 @@ class Tag(Base):
     description = Column(Text)  # Optional description of the tag
     color = Column(String(7))  # Hex color code for UI display (e.g., "#FF5733")
     created_at = Column(DateTime, default=utc_now, nullable=False)
+    archived_at = Column(DateTime, nullable=True)
 
     # Self-referential relationship for hierarchy
     parent = relationship('Tag', remote_side=[id], backref='children')
@@ -305,6 +318,8 @@ class File(Base):
     text_extracted = Column(Boolean, default=False)
     extraction_date = Column(DateTime)
 
+    archived_at = Column(DateTime, nullable=True)
+
     book = relationship('Book', back_populates='files')
     extracted_text = relationship('ExtractedText', back_populates='file', uselist=False, cascade='all, delete-orphan')
     chunks = relationship('TextChunk', back_populates='file', cascade='all, delete-orphan')
@@ -379,6 +394,8 @@ class Cover(Base):
     height = Column(Integer)
     is_primary = Column(Boolean, default=True)
     source = Column(String(50), default='extracted')  # extracted, user_provided, downloaded
+
+    archived_at = Column(DateTime, nullable=True)
 
     book = relationship('Book', back_populates='covers')
 
@@ -455,12 +472,19 @@ class ReadingSession(Base):
     __tablename__ = 'reading_sessions'
 
     id = Column(Integer, primary_key=True)
+    uuid = Column(String(36), unique=True, nullable=False,
+                  default=lambda: _uuid.uuid4().hex)
     book_id = Column(Integer, ForeignKey('books.id', ondelete='CASCADE'), nullable=False)
 
     start_time = Column(DateTime, default=utc_now, nullable=False)
     end_time = Column(DateTime)
+    start_anchor = Column(JSON, nullable=True)
+    end_anchor = Column(JSON, nullable=True)
+
     pages_read = Column(Integer, default=0)
     comprehension_score = Column(Float)  # From quiz results
+
+    archived_at = Column(DateTime, nullable=True)
 
     book = relationship('Book', back_populates='sessions')
 
@@ -469,6 +493,10 @@ class ReadingSession(Base):
         if self.end_time and self.start_time:
             return (self.end_time - self.start_time).total_seconds() / 60
         return None
+
+    @hybrid_property
+    def uri(self) -> str:
+        return _uri.build_reading_uri(self.uuid)
 
 
 class Marginalia(Base):
@@ -488,6 +516,8 @@ class Marginalia(Base):
     __tablename__ = 'marginalia'
 
     id = Column(Integer, primary_key=True)
+    uuid = Column(String(36), unique=True, nullable=False,
+                  default=lambda: _uuid.uuid4().hex)
 
     # The reader's note (markdown)
     content = Column(Text)
@@ -500,10 +530,12 @@ class Marginalia(Base):
 
     # Organization
     category = Column(String(100), index=True)
+    color = Column(String(7))
     pinned = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+    archived_at = Column(DateTime, nullable=True)
 
     # Relationships
     books = relationship('Book', secondary=marginalia_books, back_populates='marginalia', lazy='selectin')
@@ -512,7 +544,23 @@ class Marginalia(Base):
         Index('idx_marginalia_pinned', 'pinned'),
         Index('idx_marginalia_category', 'category'),
         Index('idx_marginalia_created', 'created_at'),
+        Index('idx_marginalia_archived', 'archived_at'),
     )
+
+    @hybrid_property
+    def uri(self) -> str:
+        return _uri.build_marginalia_uri(self.uuid)
+
+    @property
+    def scope(self) -> str:
+        """Derive marginalia scope from the row's state."""
+        n = len(self.books) if self.books is not None else 0
+        has_location = self.page_number is not None or self.position is not None
+        if n == 0:
+            return "collection_note"
+        if n == 1:
+            return "highlight" if has_location else "book_note"
+        return "cross_book_note"
 
 
 class PersonalMetadata(Base):
@@ -541,6 +589,9 @@ class PersonalMetadata(Base):
 
     # Quick access tags (denormalized for performance)
     personal_tags = Column(JSON)  # Array of tag strings
+
+    progress_anchor = Column(JSON, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
 
     book = relationship('Book', back_populates='personal')
 
