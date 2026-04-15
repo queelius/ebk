@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 from book_memex.core.uri import parse_uri, InvalidUriError
 from book_memex.db.models import (
     Base, Book, Author, Subject, Tag, PersonalMetadata, Marginalia,
+    ReadingSession,
 )
 from book_memex.mcp.sql_executor import ReadOnlySQLExecutor
 from book_memex.services.marginalia_service import MarginaliaService
+from book_memex.services.reading_session_service import ReadingSessionService
 
 
 def get_schema_impl(session: Session) -> Dict[str, Any]:
@@ -418,3 +420,148 @@ def restore_marginalia_impl(session: Session, *, uuid: str) -> Dict[str, Any]:
         raise LookupError(f"Marginalia {uuid} not found")
     svc.restore(m)
     return _marginalia_to_dict(m)
+
+
+# ---------------------------------------------------------------------------
+# Reading session + progress tools
+# ---------------------------------------------------------------------------
+
+
+def _reading_session_to_dict(rs: ReadingSession) -> Dict[str, Any]:
+    """Serialize a ReadingSession ORM row to a plain JSON-friendly dict."""
+    return {
+        "uuid": rs.uuid,
+        "uri": rs.uri,
+        "book_id": rs.book_id,
+        "start_time": rs.start_time.isoformat(),
+        "end_time": rs.end_time.isoformat() if rs.end_time else None,
+        "start_anchor": rs.start_anchor,
+        "end_anchor": rs.end_anchor,
+        "pages_read": rs.pages_read,
+        "archived_at": rs.archived_at.isoformat() if rs.archived_at else None,
+    }
+
+
+def start_reading_session_impl(
+    session: Session,
+    *,
+    book_id: int,
+    start_anchor: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Start a new reading session for a book."""
+    svc = ReadingSessionService(session)
+    rs = svc.start(book_id=book_id, start_anchor=start_anchor)
+    return _reading_session_to_dict(rs)
+
+
+def end_reading_session_impl(
+    session: Session,
+    *,
+    uuid: str,
+    end_anchor: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """End a reading session by uuid. Idempotent: ending a session that is
+    already ended returns it unchanged (except for an updated end_anchor if
+    provided).
+    """
+    svc = ReadingSessionService(session)
+    rs = svc.end(uuid, end_anchor=end_anchor)
+    return _reading_session_to_dict(rs)
+
+
+def list_reading_sessions_impl(
+    session: Session,
+    *,
+    book_id: int,
+    include_archived: bool = False,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List reading sessions for a book (archived excluded by default)."""
+    svc = ReadingSessionService(session)
+    rows = svc.list_for_book(
+        book_id, include_archived=include_archived, limit=limit
+    )
+    return [_reading_session_to_dict(r) for r in rows]
+
+
+def delete_reading_session_impl(
+    session: Session, *, uuid: str, hard: bool = False,
+) -> Dict[str, Any]:
+    """Soft-delete (archive) a reading session, or hard-delete when hard=True."""
+    svc = ReadingSessionService(session)
+    rs = svc.get_by_uuid(uuid)
+    if rs is None:
+        raise LookupError(f"ReadingSession {uuid} not found")
+    if hard:
+        svc.hard_delete(rs)
+    else:
+        svc.archive(rs)
+    return {"status": "ok", "uuid": uuid, "hard": hard}
+
+
+def restore_reading_session_impl(
+    session: Session, *, uuid: str,
+) -> Dict[str, Any]:
+    """Restore a soft-deleted reading session."""
+    svc = ReadingSessionService(session)
+    rs = svc.get_by_uuid(uuid)
+    if rs is None:
+        raise LookupError(f"ReadingSession {uuid} not found")
+    svc.restore(rs)
+    return _reading_session_to_dict(rs)
+
+
+def get_reading_progress_impl(
+    session: Session, *, book_id: int,
+) -> Dict[str, Any]:
+    """Get a book's current reading progress (anchor + percentage).
+
+    Returns nulls when no PersonalMetadata row exists yet.
+    """
+    pm = session.query(PersonalMetadata).filter_by(book_id=book_id).first()
+    if pm is None:
+        return {"book_id": book_id, "anchor": None, "percentage": None}
+    return {
+        "book_id": book_id,
+        "anchor": pm.progress_anchor,
+        "percentage": (
+            float(pm.reading_progress) if pm.reading_progress is not None else None
+        ),
+    }
+
+
+def set_reading_progress_impl(
+    session: Session,
+    *,
+    book_id: int,
+    anchor: Dict[str, Any],
+    percentage: Optional[float] = None,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """Set a book's reading progress.
+
+    Rejects backward progress (new percentage < current) with a ValueError
+    unless force=True. Mirrors the POST/PATCH split in the REST API.
+    """
+    pm = session.query(PersonalMetadata).filter_by(book_id=book_id).first()
+    if pm is None:
+        pm = PersonalMetadata(book_id=book_id)
+        session.add(pm)
+        session.flush()
+    current_pct = pm.reading_progress or 0
+    if (not force) and percentage is not None and percentage < current_pct:
+        raise ValueError(
+            f"Progress would go backwards: current={current_pct}, new={percentage}. "
+            f"Pass force=True to override."
+        )
+    pm.progress_anchor = anchor
+    if percentage is not None:
+        pm.reading_progress = int(round(percentage))
+    session.commit()
+    return {
+        "book_id": book_id,
+        "anchor": pm.progress_anchor,
+        "percentage": (
+            float(pm.reading_progress) if pm.reading_progress is not None else None
+        ),
+    }

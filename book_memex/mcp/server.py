@@ -131,6 +131,77 @@ def create_mcp_server(library: Library) -> FastMCP:
     def restore_marginalia(uuid: str) -> dict:
         return restore_marginalia_impl(library.session, uuid=uuid)
 
+    from book_memex.mcp.tools import (
+        start_reading_session_impl, end_reading_session_impl,
+        list_reading_sessions_impl, delete_reading_session_impl,
+        restore_reading_session_impl,
+        get_reading_progress_impl, set_reading_progress_impl,
+    )
+
+    @mcp.tool(
+        name="start_reading_session",
+        description="Start a reading session for a book. Optional start_anchor (CFI or page).",
+    )
+    def start_reading_session(book_id: int, start_anchor: dict | None = None) -> dict:
+        return start_reading_session_impl(
+            library.session, book_id=book_id, start_anchor=start_anchor,
+        )
+
+    @mcp.tool(
+        name="end_reading_session",
+        description="End a reading session by uuid. Idempotent: ending an already-ended session returns it unchanged.",
+    )
+    def end_reading_session(uuid: str, end_anchor: dict | None = None) -> dict:
+        return end_reading_session_impl(
+            library.session, uuid=uuid, end_anchor=end_anchor,
+        )
+
+    @mcp.tool(
+        name="list_reading_sessions",
+        description="List reading sessions for a book.",
+    )
+    def list_reading_sessions(
+        book_id: int, include_archived: bool = False, limit: int = 50,
+    ) -> list:
+        return list_reading_sessions_impl(
+            library.session, book_id=book_id,
+            include_archived=include_archived, limit=limit,
+        )
+
+    @mcp.tool(
+        name="delete_reading_session",
+        description="Soft-delete (archive) or hard-delete a reading session.",
+    )
+    def delete_reading_session(uuid: str, hard: bool = False) -> dict:
+        return delete_reading_session_impl(library.session, uuid=uuid, hard=hard)
+
+    @mcp.tool(
+        name="restore_reading_session",
+        description="Restore a soft-deleted reading session.",
+    )
+    def restore_reading_session(uuid: str) -> dict:
+        return restore_reading_session_impl(library.session, uuid=uuid)
+
+    @mcp.tool(
+        name="get_reading_progress",
+        description="Get the current reading progress (anchor + percentage) for a book.",
+    )
+    def get_reading_progress(book_id: int) -> dict:
+        return get_reading_progress_impl(library.session, book_id=book_id)
+
+    @mcp.tool(
+        name="set_reading_progress",
+        description="Set reading progress for a book. Rejects backward progress unless force=True.",
+    )
+    def set_reading_progress(
+        book_id: int, anchor: dict,
+        percentage: float | None = None, force: bool = False,
+    ) -> dict:
+        return set_reading_progress_impl(
+            library.session, book_id=book_id, anchor=anchor,
+            percentage=percentage, force=force,
+        )
+
     return mcp
 
 
