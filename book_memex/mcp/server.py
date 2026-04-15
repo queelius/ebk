@@ -42,6 +42,86 @@ def create_mcp_server(library: Library) -> FastMCP:
     def update_books(updates: dict) -> dict:
         return update_books_impl(library.session, updates)
 
+    from book_memex.mcp.tools import (
+        list_marginalia_impl, get_marginalia_impl, add_marginalia_impl,
+        update_marginalia_impl, delete_marginalia_impl, restore_marginalia_impl,
+    )
+
+    @mcp.tool(
+        name="list_marginalia",
+        description="List marginalia for a book. Optional scope filter: "
+        "highlight, book_note, collection_note, cross_book_note.",
+    )
+    def list_marginalia(
+        book_id: int, scope: str | None = None,
+        include_archived: bool = False, limit: int = 50,
+    ) -> list:
+        return list_marginalia_impl(
+            library.session, book_id=book_id, scope=scope,
+            include_archived=include_archived, limit=limit,
+        )
+
+    @mcp.tool(
+        name="get_marginalia",
+        description="Get a marginalia record by uuid (or by URI - both accepted).",
+    )
+    def get_marginalia(uuid: str) -> dict:
+        return get_marginalia_impl(library.session, uuid=uuid)
+
+    @mcp.tool(
+        name="add_marginalia",
+        description="Create marginalia linked to 0 or more books by URI. "
+        "A single book + location = highlight; single book no location = book_note; "
+        "no books = collection_note; multiple books = cross_book_note.",
+    )
+    def add_marginalia(
+        book_uris: list[str],
+        content: str | None = None,
+        highlighted_text: str | None = None,
+        page_number: int | None = None,
+        position: dict | None = None,
+        category: str | None = None,
+        color: str | None = None,
+        pinned: bool = False,
+    ) -> dict:
+        return add_marginalia_impl(
+            library.session, book_uris=book_uris, content=content,
+            highlighted_text=highlighted_text, page_number=page_number,
+            position=position, category=category, color=color, pinned=pinned,
+        )
+
+    @mcp.tool(
+        name="update_marginalia",
+        description="Update editable fields of a marginalia by uuid.",
+    )
+    def update_marginalia(
+        uuid: str,
+        content: str | None = None,
+        highlighted_text: str | None = None,
+        category: str | None = None,
+        color: str | None = None,
+        pinned: bool | None = None,
+    ) -> dict:
+        return update_marginalia_impl(
+            library.session, uuid=uuid, content=content,
+            highlighted_text=highlighted_text, category=category,
+            color=color, pinned=pinned,
+        )
+
+    @mcp.tool(
+        name="delete_marginalia",
+        description="Soft-delete a marginalia (archive it). Pass hard=True to irreversibly delete.",
+    )
+    def delete_marginalia(uuid: str, hard: bool = False) -> dict:
+        return delete_marginalia_impl(library.session, uuid=uuid, hard=hard)
+
+    @mcp.tool(
+        name="restore_marginalia",
+        description="Restore a soft-deleted marginalia (clear archived_at).",
+    )
+    def restore_marginalia(uuid: str) -> dict:
+        return restore_marginalia_impl(library.session, uuid=uuid)
+
     return mcp
 
 

@@ -5,8 +5,12 @@ from typing import Any, Dict, List, Optional, Set
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
-from book_memex.db.models import Base, Book, Author, Subject, Tag, PersonalMetadata
+from book_memex.core.uri import parse_uri, InvalidUriError
+from book_memex.db.models import (
+    Base, Book, Author, Subject, Tag, PersonalMetadata, Marginalia,
+)
 from book_memex.mcp.sql_executor import ReadOnlySQLExecutor
+from book_memex.services.marginalia_service import MarginaliaService
 
 
 def get_schema_impl(session: Session) -> Dict[str, Any]:
@@ -244,3 +248,163 @@ def _ensure_tag(session: Session, book: Book, tag_path: str):
         tag = parent
     if tag and tag not in book.tags:
         book.tags.append(tag)
+
+
+# ---------------------------------------------------------------------------
+# Marginalia tools (URI-addressable CRUD + soft-delete/restore)
+# ---------------------------------------------------------------------------
+
+
+def _marginalia_to_dict(m: Marginalia) -> Dict[str, Any]:
+    """Serialize a Marginalia ORM row to a plain JSON-friendly dict."""
+    return {
+        "uuid": m.uuid,
+        "uri": m.uri,
+        "content": m.content,
+        "highlighted_text": m.highlighted_text,
+        "page_number": m.page_number,
+        "position": m.position,
+        "category": m.category,
+        "color": m.color,
+        "pinned": bool(m.pinned),
+        "scope": m.scope,
+        "archived_at": m.archived_at.isoformat() if m.archived_at else None,
+        "created_at": m.created_at.isoformat(),
+        "updated_at": (
+            m.updated_at.isoformat()
+            if m.updated_at
+            else m.created_at.isoformat()
+        ),
+        "book_ids": [b.id for b in m.books],
+        "book_uris": [b.uri for b in m.books],
+    }
+
+
+def _resolve_book_uris(session: Session, book_uris: List[str]) -> List[int]:
+    """Parse book URIs and return their Integer IDs.
+
+    Raises ValueError on an invalid/non-book URI and LookupError if a
+    URI does not resolve to an existing Book row.
+    """
+    ids: List[int] = []
+    for u in book_uris:
+        try:
+            parsed = parse_uri(u)
+        except InvalidUriError as e:
+            raise ValueError(f"invalid URI {u!r}: {e}") from e
+        if parsed.kind != "book":
+            raise ValueError(f"expected a book URI, got {parsed.kind!r}: {u}")
+        book = session.query(Book).filter_by(unique_id=parsed.id).first()
+        if book is None:
+            raise LookupError(f"Book not found: {u}")
+        ids.append(book.id)
+    return ids
+
+
+def add_marginalia_impl(
+    session: Session,
+    *,
+    book_uris: List[str],
+    content: Optional[str] = None,
+    highlighted_text: Optional[str] = None,
+    page_number: Optional[int] = None,
+    position: Optional[Dict[str, Any]] = None,
+    category: Optional[str] = None,
+    color: Optional[str] = None,
+    pinned: bool = False,
+) -> Dict[str, Any]:
+    """Create marginalia linked to 0+ books by URI."""
+    book_ids = _resolve_book_uris(session, book_uris) if book_uris else []
+    svc = MarginaliaService(session)
+    m = svc.create(
+        content=content,
+        highlighted_text=highlighted_text,
+        book_ids=book_ids,
+        page_number=page_number,
+        position=position,
+        category=category,
+        color=color,
+        pinned=pinned,
+    )
+    return _marginalia_to_dict(m)
+
+
+def list_marginalia_impl(
+    session: Session,
+    *,
+    book_id: Optional[int] = None,
+    scope: Optional[str] = None,
+    include_archived: bool = False,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List marginalia for a book (scope-filtered, paging-friendly)."""
+    svc = MarginaliaService(session)
+    if book_id is None:
+        raise ValueError("book_id is required for now")
+    rows = svc.list_for_book(
+        book_id, scope=scope, include_archived=include_archived, limit=limit
+    )
+    return [_marginalia_to_dict(m) for m in rows]
+
+
+def get_marginalia_impl(session: Session, *, uuid: str) -> Dict[str, Any]:
+    """Get a marginalia record by uuid."""
+    svc = MarginaliaService(session)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise LookupError(f"Marginalia {uuid} not found")
+    return _marginalia_to_dict(m)
+
+
+def update_marginalia_impl(
+    session: Session,
+    *,
+    uuid: str,
+    content: Optional[str] = None,
+    highlighted_text: Optional[str] = None,
+    category: Optional[str] = None,
+    color: Optional[str] = None,
+    pinned: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Update editable fields of a marginalia by uuid."""
+    svc = MarginaliaService(session)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise LookupError(f"Marginalia {uuid} not found")
+    if content is not None:
+        m.content = content
+    if highlighted_text is not None:
+        m.highlighted_text = highlighted_text
+    if category is not None:
+        m.category = category
+    if color is not None:
+        m.color = color
+    if pinned is not None:
+        m.pinned = pinned
+    session.commit()
+    return _marginalia_to_dict(m)
+
+
+def delete_marginalia_impl(
+    session: Session, *, uuid: str, hard: bool = False
+) -> Dict[str, Any]:
+    """Archive (soft-delete) or permanently delete a marginalia by uuid."""
+    svc = MarginaliaService(session)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise LookupError(f"Marginalia {uuid} not found")
+    if hard:
+        svc.hard_delete(m)
+    else:
+        svc.archive(m)
+    return {"status": "ok", "uuid": uuid, "hard": hard}
+
+
+def restore_marginalia_impl(session: Session, *, uuid: str) -> Dict[str, Any]:
+    """Restore a soft-deleted marginalia (clear archived_at)."""
+    svc = MarginaliaService(session)
+    m = svc.get_by_uuid(uuid)
+    if m is None:
+        raise LookupError(f"Marginalia {uuid} not found")
+    svc.restore(m)
+    return _marginalia_to_dict(m)
