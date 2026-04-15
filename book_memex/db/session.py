@@ -71,6 +71,17 @@ def init_db(library_path: Path, echo: bool = False) -> Engine:
     # Create session factory
     _SessionFactory = sessionmaker(bind=_engine)
 
+    # Run pending schema migrations. This both upgrades existing libraries
+    # to the current schema and retroactively records baseline migrations
+    # for freshly-created libraries (where create_all() already produced
+    # the up-to-date tables).
+    #
+    # Imported lazily to avoid a circular import at module load time
+    # (migrations.py does not import session, but keeping this local is
+    # defensive against future changes and keeps import order obvious).
+    from .migrations import run_all_migrations
+    run_all_migrations(library_path)
+
     return _engine
 
 

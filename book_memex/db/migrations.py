@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Current schema version - increment when adding new migrations
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 
 def get_engine(library_path: Path) -> Engine:
@@ -591,6 +591,72 @@ def migrate_annotations_to_marginalia(library_path: Path, dry_run: bool = False)
     return True
 
 
+def migrate_add_archived_at(library_path: Path, dry_run: bool = False) -> bool:
+    """Migration 9: add archived_at TIMESTAMP NULL to soft-deletable tables.
+
+    Tables: books, authors, subjects, tags, files, covers, personal_metadata,
+    marginalia, reading_sessions. New column defaults to NULL (= not archived).
+
+    The runner (``run_all_migrations``) is responsible for recording the
+    migration in ``schema_versions``; we only mutate schema here. This matches
+    the pattern of the earlier ``migrate_*`` helpers in this module.
+    """
+    name = "add_archived_at"
+    engine = get_engine(library_path)
+    ensure_schema_versions_table(engine)
+
+    if is_migration_applied(engine, name):
+        logger.debug(f"Migration {name} already applied")
+        return False
+
+    tables = [
+        "books", "authors", "subjects", "tags",
+        "files", "covers", "personal_metadata",
+        "marginalia", "reading_sessions",
+    ]
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    # Per-table check: if every target table already has archived_at, the
+    # migration is effectively a no-op even if it was not recorded. This
+    # lets callers invoke the function directly and get idempotent behaviour
+    # without touching the schema_versions table.
+    all_columns_present = True
+    for table in tables:
+        if table not in existing_tables:
+            continue
+        cols = {c["name"] for c in inspector.get_columns(table)}
+        if "archived_at" not in cols:
+            all_columns_present = False
+            break
+
+    if all_columns_present:
+        logger.debug(f"{name}: archived_at already present on all target tables")
+        return False
+
+    if dry_run:
+        logger.info(f"DRY RUN: would add archived_at to: {tables}")
+        return True
+
+    logger.debug(f"Applying migration: {name}")
+    with engine.begin() as conn:
+        for table in tables:
+            if table not in existing_tables:
+                logger.debug(f"  skipping {table}: table does not exist")
+                continue
+            # SQLite is happy to add a nullable column with no default.
+            # Check that the column is not already there (defensive).
+            cols = {c["name"] for c in inspector.get_columns(table)}
+            if "archived_at" in cols:
+                logger.debug(f"  skipping {table}: archived_at already present")
+                continue
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN archived_at TIMESTAMP NULL"))
+            logger.debug(f"  added archived_at to {table}")
+
+    return True
+
+
 # Migration registry: (version, name, function)
 # Add new migrations here with incrementing version numbers
 MIGRATIONS = [
@@ -602,6 +668,7 @@ MIGRATIONS = [
     (6, 'enhance_annotations', migrate_enhance_annotations),
     (7, 'add_views_tables', migrate_add_views_tables),
     (8, 'annotations_to_marginalia', migrate_annotations_to_marginalia),
+    (9, 'add_archived_at', migrate_add_archived_at),
 ]
 
 
