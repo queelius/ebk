@@ -49,8 +49,14 @@ def create_mcp_server(library: Library) -> FastMCP:
 
     @mcp.tool(
         name="list_marginalia",
-        description="List marginalia for a book. Optional scope filter: "
-        "highlight, book_note, collection_note, cross_book_note.",
+        description=(
+            "List marginalia for a book. Archived entries are excluded by "
+            "default (set include_archived=True to include them). Default "
+            "limit is 50; pass a smaller or larger value as needed. Optional "
+            "scope filter selects one of: highlight (passage-anchored), "
+            "book_note (whole-book note), collection_note (not attached to "
+            "any book), cross_book_note (spans 2+ books)."
+        ),
     )
     def list_marginalia(
         book_id: int, scope: str | None = None,
@@ -63,7 +69,10 @@ def create_mcp_server(library: Library) -> FastMCP:
 
     @mcp.tool(
         name="get_marginalia",
-        description="Get a marginalia record by uuid (or by URI - both accepted).",
+        description=(
+            "Get a marginalia record by its uuid, or by its full "
+            "book-memex://marginalia/<uuid> URI. Both are accepted."
+        ),
     )
     def get_marginalia(uuid: str) -> dict:
         return get_marginalia_impl(library.session, uuid=uuid)

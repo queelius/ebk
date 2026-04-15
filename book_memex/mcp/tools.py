@@ -348,9 +348,19 @@ def list_marginalia_impl(
 
 
 def get_marginalia_impl(session: Session, *, uuid: str) -> Dict[str, Any]:
-    """Get a marginalia record by uuid."""
+    """Get a marginalia record by uuid or by full book-memex marginalia URI."""
     svc = MarginaliaService(session)
-    m = svc.get_by_uuid(uuid)
+    # Accept a full URI like "book-memex://marginalia/<uuid>" or just the uuid.
+    lookup = uuid
+    if isinstance(lookup, str) and lookup.startswith("book-memex://"):
+        try:
+            parsed = parse_uri(lookup)
+        except InvalidUriError as exc:
+            raise ValueError(f"invalid URI {lookup!r}: {exc}") from exc
+        if parsed.kind != "marginalia":
+            raise ValueError(f"expected a marginalia URI, got {parsed.kind!r}: {lookup}")
+        lookup = parsed.id
+    m = svc.get_by_uuid(lookup)
     if m is None:
         raise LookupError(f"Marginalia {uuid} not found")
     return _marginalia_to_dict(m)
