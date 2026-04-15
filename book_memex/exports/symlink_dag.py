@@ -418,7 +418,7 @@ class SymlinkDAGExporter:
     
     def _create_readme(self, output_path: Path, num_entries: int, num_tags: int):
         """Create a README file explaining the structure."""
-        readme_content = f"""# EBK Library - Symlink Navigation Structure
+        readme_content = f"""# book-memex Library - Symlink Navigation Structure
 
 This directory contains a navigable view of your ebook library organized by tags.
 

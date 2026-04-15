@@ -146,7 +146,7 @@ class MultiFacetExporter(BaseExporter):
         
         # Render template with sanitized data
         html_content = template.render(
-            title=sanitize_for_html("EBK Library"),
+            title=sanitize_for_html("book-memex Library"),
             entries=entries,
             entries_json=entries_json,  # Already sanitized
             facets=facet_data,
