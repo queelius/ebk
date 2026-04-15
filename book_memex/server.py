@@ -254,7 +254,7 @@ class ReadingSessionOut(BaseModel):
 class ProgressIn(BaseModel):
     book_id: int
     anchor: dict
-    percentage: Optional[float] = None
+    percentage: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 class ProgressOut(BaseModel):
@@ -1553,7 +1553,7 @@ def get_reading_progress(book_id: int):
         book_id=book_id,
         anchor=pm.progress_anchor,
         percentage=float(pm.reading_progress) if pm.reading_progress is not None else None,
-        updated_at=pm.date_added.isoformat() if pm.date_added else None,
+        updated_at=None,  # progress has no dedicated timestamp column yet; don't misreport date_added
     )
 
 
