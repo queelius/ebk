@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Current schema version - increment when adding new migrations
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 
 
 def get_engine(library_path: Path) -> Engine:
@@ -657,6 +657,96 @@ def migrate_add_archived_at(library_path: Path, dry_run: bool = False) -> bool:
     return True
 
 
+def _backfill_uuids(conn, uuid_mod) -> None:
+    """Populate NULL uuid columns with uuid4().hex values.
+
+    Idempotent: only touches rows where uuid IS NULL. Safe to call twice.
+    """
+    for table in ("marginalia", "reading_sessions"):
+        rows = list(conn.execute(text(
+            f"SELECT id FROM {table} WHERE uuid IS NULL"
+        )))
+        for (rid,) in rows:
+            conn.execute(
+                text(f"UPDATE {table} SET uuid = :u WHERE id = :i"),
+                {"u": uuid_mod.uuid4().hex, "i": rid},
+            )
+
+
+def migrate_add_uri_columns(library_path: Path, dry_run: bool = False) -> bool:
+    """Migration 10: add uuid + color + anchors + progress_anchor.
+
+    - Marginalia: uuid (UNIQUE), color
+    - ReadingSession: uuid (UNIQUE), start_anchor (JSON), end_anchor (JSON)
+    - PersonalMetadata: progress_anchor (JSON)
+
+    Existing rows get their uuid backfilled with uuid4().hex. Partial unique
+    indexes are created on the new uuid columns (WHERE uuid IS NOT NULL) so
+    that the backfill window stays legal and future inserts stay unique.
+
+    The runner (``run_all_migrations``) records the migration in
+    ``schema_versions``; we only mutate schema here, matching the pattern
+    of the earlier ``migrate_*`` helpers in this module.
+    """
+    import uuid as _uuid
+
+    name = "add_uri_columns"
+    engine = get_engine(library_path)
+    ensure_schema_versions_table(engine)
+
+    if is_migration_applied(engine, name):
+        # Even if the migration record is present, backfill any NULL uuids
+        # (defensive; this handles partial or hand-edited prior states).
+        with engine.begin() as conn:
+            _backfill_uuids(conn, _uuid)
+        logger.debug(f"Migration {name} already applied (ran defensive backfill)")
+        return False
+
+    if dry_run:
+        logger.info("DRY RUN: would add uuid, color, anchors, progress_anchor")
+        return True
+
+    logger.debug(f"Applying migration: {name}")
+    with engine.begin() as conn:
+        inspector = inspect(engine)
+
+        # Marginalia: uuid, color
+        mcols = {c["name"] for c in inspector.get_columns("marginalia")}
+        if "uuid" not in mcols:
+            conn.execute(text("ALTER TABLE marginalia ADD COLUMN uuid VARCHAR(36)"))
+        if "color" not in mcols:
+            conn.execute(text("ALTER TABLE marginalia ADD COLUMN color VARCHAR(7)"))
+
+        # ReadingSession: uuid, start_anchor, end_anchor
+        rcols = {c["name"] for c in inspector.get_columns("reading_sessions")}
+        if "uuid" not in rcols:
+            conn.execute(text("ALTER TABLE reading_sessions ADD COLUMN uuid VARCHAR(36)"))
+        if "start_anchor" not in rcols:
+            conn.execute(text("ALTER TABLE reading_sessions ADD COLUMN start_anchor JSON"))
+        if "end_anchor" not in rcols:
+            conn.execute(text("ALTER TABLE reading_sessions ADD COLUMN end_anchor JSON"))
+
+        # PersonalMetadata: progress_anchor
+        pcols = {c["name"] for c in inspector.get_columns("personal_metadata")}
+        if "progress_anchor" not in pcols:
+            conn.execute(text("ALTER TABLE personal_metadata ADD COLUMN progress_anchor JSON"))
+
+        # Backfill UUIDs for existing rows
+        _backfill_uuids(conn, _uuid)
+
+        # Unique indexes on uuid (partial to allow NULL during backfill window)
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uix_marginalia_uuid "
+            "ON marginalia (uuid) WHERE uuid IS NOT NULL"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uix_reading_sessions_uuid "
+            "ON reading_sessions (uuid) WHERE uuid IS NOT NULL"
+        ))
+
+    return True
+
+
 # Migration registry: (version, name, function)
 # Add new migrations here with incrementing version numbers
 MIGRATIONS = [
@@ -669,6 +759,7 @@ MIGRATIONS = [
     (7, 'add_views_tables', migrate_add_views_tables),
     (8, 'annotations_to_marginalia', migrate_annotations_to_marginalia),
     (9, 'add_archived_at', migrate_add_archived_at),
+    (10, 'add_uri_columns', migrate_add_uri_columns),
 ]
 
 
