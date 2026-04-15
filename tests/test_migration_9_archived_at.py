@@ -58,8 +58,8 @@ def test_archived_at_is_nullable(fresh_library):
 
 
 def test_migration_is_idempotent(fresh_library):
-    """Running the migration twice is a no-op, not an error."""
-    lib, temp_dir = fresh_library
-    # Second application should be a no-op (already applied).
+    """Running the migration twice returns False (already applied)."""
+    _, temp_dir = fresh_library
+    # Library.open() already ran migrations; second invocation must be a no-op.
     applied = migrate_add_archived_at(temp_dir)
-    assert applied in (True, False)  # either is acceptable for a re-run
+    assert applied is False
