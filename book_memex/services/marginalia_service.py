@@ -13,6 +13,12 @@ import logging
 from sqlalchemy.orm import Session
 
 from ..db.models import Book, Marginalia, marginalia_books
+from ..core.soft_delete import (
+    filter_active,
+    archive as _archive,
+    restore as _restore,
+    hard_delete as _hard_delete,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +38,7 @@ class MarginaliaService:
         page_number: Optional[int] = None,
         position: Optional[Dict[str, Any]] = None,
         category: Optional[str] = None,
+        color: Optional[str] = None,
         pinned: bool = False,
     ) -> Marginalia:
         """Create a new marginalia entry.
@@ -43,6 +50,7 @@ class MarginaliaService:
             page_number: Page number (for location-scoped entries).
             position: Position info (char_offset, cfi, x/y coordinates).
             category: User-defined category.
+            color: Hex color string (e.g. "#ff0000") for highlights.
             pinned: Pin to top.
 
         Returns:
@@ -57,6 +65,7 @@ class MarginaliaService:
             page_number=page_number,
             position=position,
             category=category,
+            color=color,
             pinned=pinned,
         )
         self.session.add(entry)
@@ -75,21 +84,37 @@ class MarginaliaService:
         """Get a marginalia entry by ID."""
         return self.session.get(Marginalia, marginalia_id)
 
+    def get_by_uuid(self, uuid: str) -> Optional[Marginalia]:
+        """Fetch a marginalia row by its uuid. Returns None if not found."""
+        return (
+            self.session.query(Marginalia)
+            .filter_by(uuid=uuid)
+            .first()
+        )
+
     def list_for_book(
         self,
         book_id: int,
         category: Optional[str] = None,
         location_only: bool = False,
+        scope: Optional[str] = None,
+        include_archived: bool = False,
+        limit: Optional[int] = None,
     ) -> List[Marginalia]:
-        """List all marginalia for a specific book.
+        """List marginalia associated with a book.
 
         Args:
             book_id: Book ID.
-            category: Filter by category.
+            category: Optional filter by category.
             location_only: If True, only return location-scoped entries.
+            scope: Optional filter ("highlight", "book_note", "collection_note",
+                "cross_book_note"). Applied in Python after the DB filter
+                because scope is a derived property.
+            include_archived: If True, include archived entries. Default False.
+            limit: Maximum number of rows to return.
 
         Returns:
-            List of Marginalia entries, ordered by page then date.
+            List of Marginalia entries, ordered by pinned, page then date.
         """
         query = (
             self.session.query(Marginalia)
@@ -103,11 +128,21 @@ class MarginaliaService:
         if location_only:
             query = query.filter(Marginalia.page_number.isnot(None))
 
-        return query.order_by(
+        query = filter_active(query, Marginalia, include_archived=include_archived)
+
+        query = query.order_by(
             Marginalia.pinned.desc(),
             Marginalia.page_number.asc().nulls_last(),
             Marginalia.created_at.desc(),
-        ).all()
+        )
+
+        if limit:
+            query = query.limit(limit)
+
+        rows = query.all()
+        if scope:
+            rows = [r for r in rows if r.scope == scope]
+        return rows
 
     def list_unattached(self, category: Optional[str] = None) -> List[Marginalia]:
         """List marginalia not attached to any book (collection-level)."""
@@ -177,6 +212,21 @@ class MarginaliaService:
                 count += 1
         self.session.commit()
         return count
+
+    def archive(self, entry: Marginalia) -> None:
+        """Soft-delete a marginalia entry (set archived_at)."""
+        _archive(self.session, entry)
+        self.session.commit()
+
+    def restore(self, entry: Marginalia) -> None:
+        """Clear the archived_at flag on a marginalia entry."""
+        _restore(self.session, entry)
+        self.session.commit()
+
+    def hard_delete(self, entry: Marginalia) -> None:
+        """Permanently delete a marginalia entry from the database."""
+        _hard_delete(self.session, entry)
+        self.session.commit()
 
     def count(self, book_id: Optional[int] = None) -> int:
         """Count marginalia entries, optionally filtered by book."""
