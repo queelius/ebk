@@ -24,8 +24,12 @@ def filter_active(query: Query, model: Type, *, include_archived: bool = False) 
 
 
 def archive(session: Session, instance) -> None:
-    """Mark a single row as archived. Caller must commit."""
-    instance.archived_at = _utc_now()
+    """Mark a single row as archived. Idempotent: re-archiving preserves the original timestamp.
+
+    Caller must commit.
+    """
+    if getattr(instance, "archived_at", None) is None:
+        instance.archived_at = _utc_now()
     session.add(instance)
 
 

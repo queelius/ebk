@@ -136,12 +136,17 @@ class MarginaliaService:
             Marginalia.created_at.desc(),
         )
 
-        if limit:
+        # If no post-query scope filter, we can limit at the SQL layer.
+        # If scope is requested, we must fetch all and limit after filtering
+        # (otherwise the limit cuts off rows before they've been scope-filtered).
+        if limit is not None and not scope:
             query = query.limit(limit)
 
         rows = query.all()
         if scope:
             rows = [r for r in rows if r.scope == scope]
+            if limit is not None:
+                rows = rows[:limit]
         return rows
 
     def list_unattached(self, category: Optional[str] = None) -> List[Marginalia]:
