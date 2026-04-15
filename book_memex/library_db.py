@@ -70,6 +70,24 @@ class Library:
         close_db()
         logger.debug("Closed library")
 
+    def export_arkiv(self, out_path: Path) -> Dict[str, Any]:
+        """
+        Export the library as an arkiv bundle (records.jsonl + schema.yaml).
+
+        The arkiv format emits one JSONL record per non-archived Book,
+        Marginalia, and ReadingSession. Each record has a ``kind`` and
+        a book-memex URI. See :mod:`book_memex.exports.arkiv` for the
+        record schema.
+
+        Args:
+            out_path: Output directory (created if missing).
+
+        Returns:
+            Summary dict with file paths and per-kind counts.
+        """
+        from .exports.arkiv import export_arkiv as _do_export
+        return _do_export(self, Path(out_path))
+
     def add_book(self, file_path: Path, metadata: Dict[str, Any],
                  extract_text: bool = True, extract_cover: bool = True) -> Optional[Book]:
         """

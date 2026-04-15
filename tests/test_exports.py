@@ -847,3 +847,134 @@ class TestOPDSExportConstants:
         assert "epub" in FORMAT_MIMES
         assert "mobi" in FORMAT_MIMES
         assert "txt" in FORMAT_MIMES
+
+
+# ============================================================================
+# Arkiv Export Tests
+# ============================================================================
+
+class TestArkivExport:
+    """Tests for the arkiv export format (records.jsonl + schema.yaml)."""
+
+    @pytest.fixture
+    def lib_with_data(self):
+        """Library populated with one book, one marginalia, and one reading session."""
+        import json as _json
+        from book_memex.services.marginalia_service import MarginaliaService
+        from book_memex.services.reading_session_service import ReadingSessionService
+
+        temp_dir = Path(tempfile.mkdtemp())
+        lib = Library.open(temp_dir)
+
+        p = lib.library_path / "b.txt"
+        p.write_text("h")
+        book = lib.add_book(
+            p,
+            metadata={"title": "B", "creators": ["X"]},
+            extract_text=False,
+            extract_cover=False,
+        )
+
+        m_svc = MarginaliaService(lib.session)
+        r_svc = ReadingSessionService(lib.session)
+        m = m_svc.create(
+            content="note",
+            highlighted_text="p",
+            book_ids=[book.id],
+            page_number=3,
+            color="#ffff00",
+        )
+        rs = r_svc.start(book_id=book.id, start_anchor={"cfi": "X"})
+        r_svc.end(rs.uuid, end_anchor={"cfi": "Y"})
+
+        yield lib, book, m, rs
+
+        lib.close()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_arkiv_export_includes_marginalia_and_reading(self, lib_with_data):
+        """Exported records.jsonl includes book, marginalia, and reading kinds."""
+        import json as _json
+        import yaml as _yaml
+
+        lib, book, m, rs = lib_with_data
+        out = Path(tempfile.mkdtemp())
+        try:
+            result = lib.export_arkiv(out)
+
+            records_path = out / "records.jsonl"
+            schema_path = out / "schema.yaml"
+            assert records_path.exists()
+            assert schema_path.exists()
+
+            with open(records_path) as f:
+                records = [_json.loads(line) for line in f if line.strip()]
+
+            kinds = {r.get("kind") for r in records}
+            assert "book" in kinds
+            assert "marginalia" in kinds
+            assert "reading" in kinds
+
+            # Marginalia record has correct URI and color
+            marginalia_records = [r for r in records if r.get("kind") == "marginalia"]
+            assert any(r["uri"] == m.uri for r in marginalia_records)
+            assert any(r.get("color") == "#ffff00" for r in marginalia_records)
+
+            # Marginalia points to the book by URI
+            marg = marginalia_records[0]
+            assert book.uri in marg["book_uris"]
+            assert marg["page_number"] == 3
+            assert marg["content"] == "note"
+            assert marg["highlighted_text"] == "p"
+
+            # Reading record has correct URI and book URI
+            reading_records = [r for r in records if r.get("kind") == "reading"]
+            assert any(r["uri"] == rs.uri for r in reading_records)
+            reading = reading_records[0]
+            assert reading["book_uri"] == book.uri
+            assert reading["start_anchor"] == {"cfi": "X"}
+            assert reading["end_anchor"] == {"cfi": "Y"}
+            assert reading["end_time"] is not None
+
+            # Book record has its URI
+            book_records = [r for r in records if r.get("kind") == "book"]
+            assert any(r["uri"] == book.uri for r in book_records)
+
+            # schema.yaml describes the new kinds
+            with open(schema_path) as f:
+                schema = _yaml.safe_load(f)
+            assert "marginalia" in schema.get("kinds", {})
+            assert "reading" in schema.get("kinds", {})
+            assert "book" in schema.get("kinds", {})
+
+            # Counts returned from exporter
+            assert result["counts"]["book"] == 1
+            assert result["counts"]["marginalia"] == 1
+            assert result["counts"]["reading"] == 1
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+    def test_arkiv_export_excludes_archived_records(self, lib_with_data):
+        """Archived marginalia and reading sessions are not exported."""
+        import json as _json
+        from book_memex.services.marginalia_service import MarginaliaService
+        from book_memex.services.reading_session_service import ReadingSessionService
+
+        lib, book, m, rs = lib_with_data
+
+        # Archive the marginalia + reading session
+        MarginaliaService(lib.session).archive(m)
+        ReadingSessionService(lib.session).archive(rs)
+
+        out = Path(tempfile.mkdtemp())
+        try:
+            lib.export_arkiv(out)
+            records_path = out / "records.jsonl"
+            with open(records_path) as f:
+                records = [_json.loads(line) for line in f if line.strip()]
+            kinds = {r.get("kind") for r in records}
+            assert "book" in kinds
+            assert "marginalia" not in kinds
+            assert "reading" not in kinds
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
