@@ -14,7 +14,7 @@ import fitz  # PyMuPDF
 from ebooklib import epub
 from bs4 import BeautifulSoup
 
-from ..db.models import File, ExtractedText, BookContent, TextChunk
+from ..db.models import File, ExtractedText, BookContent
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -113,6 +113,7 @@ class TextExtractionService:
                 file_id=file.id,
                 segment_index=len(chunks),
                 content=chunk_text,
+                segment_type='chunk-legacy',
             )
             chunks.append(chunk)
 
