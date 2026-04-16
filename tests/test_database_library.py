@@ -224,8 +224,8 @@ class TestTextExtraction:
         # Check that at least one file has extracted text
         has_extracted_text = any(f.extracted_text is not None for f in book.files)
         assert has_extracted_text
-        # Check that at least one file has text chunks
-        total_chunks = sum(len(f.chunks) for f in book.files)
+        # Check that at least one file has content segments
+        total_chunks = sum(len(f.contents) for f in book.files)
         assert total_chunks > 0
 
 

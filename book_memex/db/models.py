@@ -323,7 +323,7 @@ class File(Base):
 
     book = relationship('Book', back_populates='files')
     extracted_text = relationship('ExtractedText', back_populates='file', uselist=False, cascade='all, delete-orphan')
-    chunks = relationship('TextChunk', back_populates='file', cascade='all, delete-orphan')
+    contents = relationship('BookContent', back_populates='file', cascade='all, delete-orphan')
 
     @staticmethod
     def compute_hash(file_path: Path) -> str:
@@ -355,35 +355,54 @@ class ExtractedText(Base):
         return f"<ExtractedText(file_id={self.file_id}, length={len(self.content)})>"
 
 
-class TextChunk(Base):
-    """Content segments for search (renamed from text_chunks in migration 11).
+class BookContent(Base):
+    """Extracted content segments (chapter / page / whole-file) for search and RAG.
 
-    Full class rename to BookContent happens in P2-T2. This minimal update
-    keeps the ORM aligned with the renamed table and dropped column.
+    Renamed from TextChunk in migration 11. Each row is one addressable
+    segment of a book file, produced by a format-specific extractor.
+    Keyed by (file_id, segment_type, segment_index). Not URI-addressable
+    directly; positions within a book are cited as Book URI fragments.
     """
     __tablename__ = 'book_content'
 
     id = Column(Integer, primary_key=True)
     file_id = Column(Integer, ForeignKey('files.id', ondelete='CASCADE'), nullable=False)
 
-    segment_index = Column(Integer, nullable=False)  # renamed from chunk_index in migration 11
+    # Legacy column preserved.
     content = Column(Text, nullable=False)
-
-    # Page range (if available)
     start_page = Column(Integer)
     end_page = Column(Integer)
 
-    # has_embedding dropped in migration 11 (per workspace "no embeddings in archives" convention)
+    # Refined segmentation (migration 11).
+    segment_type = Column(String(20), nullable=False)   # 'chapter' | 'page' | 'text' | 'chunk-legacy'
+    segment_index = Column(Integer, nullable=False)
+    title = Column(String(500), nullable=True)
+    anchor = Column(JSON, nullable=False, default=dict)
 
-    file = relationship('File', back_populates='chunks')
+    # Extractor provenance.
+    extractor_version = Column(String(50), nullable=False, default='legacy')
+    extraction_status = Column(String(20), nullable=False, default='ok')
+
+    archived_at = Column(DateTime, nullable=True)
+
+    file = relationship('File', back_populates='contents')
 
     __table_args__ = (
-        UniqueConstraint('file_id', 'segment_index', name='uix_book_content_file_seg'),
-        Index('idx_book_content_file', 'file_id', 'segment_index'),
+        UniqueConstraint('file_id', 'segment_type', 'segment_index',
+                         name='uix_book_content_file_seg'),
+        Index('idx_book_content_file', 'file_id'),
+        Index('idx_book_content_archived', 'archived_at'),
     )
 
     def __repr__(self):
-        return f"<TextChunk(id={self.id}, file_id={self.file_id}, index={self.segment_index})>"
+        return (
+            f"<BookContent(id={self.id}, file_id={self.file_id}, "
+            f"type={self.segment_type}, index={self.segment_index})>"
+        )
+
+
+# Backward-compat alias for any pre-Phase-2 code still importing TextChunk.
+TextChunk = BookContent
 
 
 class Cover(Base):
