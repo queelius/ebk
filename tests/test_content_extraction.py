@@ -133,3 +133,24 @@ def test_pdf_extractor_flags_no_text_layer(tmp_path):
     assert len(segments) == 2
     assert all(s.extraction_status == "no_text_layer" for s in segments)
     assert all(s.text == "" for s in segments)
+
+
+# --- TXT extractor tests (Task 8) ---
+
+
+def test_txt_extractor_single_segment(tmp_path):
+    from book_memex.services.content_extraction import get_extractor
+
+    p = tmp_path / "sample.txt"
+    body = "Plain text content, one segment.\n"
+    p.write_text(body, encoding="utf-8")
+
+    ex = get_extractor("txt")
+    segments = list(ex.extract(p))
+    assert len(segments) == 1
+    s = segments[0]
+    assert s.segment_type == "text"
+    assert s.segment_index == 0
+    assert s.text.strip() == body.strip()
+    assert s.anchor == {"offset": 0, "length": len(body.encode("utf-8"))}
+    assert s.extraction_status == "ok"
