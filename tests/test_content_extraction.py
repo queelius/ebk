@@ -45,3 +45,39 @@ def test_get_extractor_returns_matching_extractor():
     assert ex.version.startswith("epub-")
     assert ex.supports("epub") is True
     assert ex.supports("pdf") is False
+
+
+# --- EPUB extractor tests (Task 6) ---
+
+
+def test_epub_extractor_yields_one_segment_per_chapter(sample_epub):
+    from book_memex.services.content_extraction import get_extractor
+
+    ex = get_extractor("epub")
+    segments = list(ex.extract(sample_epub))
+    # spine has "nav" + 3 chapters; extractor skips the nav.
+    assert len(segments) == 3
+    assert [s.segment_index for s in segments] == [0, 1, 2]
+    assert [s.segment_type for s in segments] == ["chapter"] * 3
+    assert "Intro" in segments[0].title
+    assert "Bayesian" in segments[1].title
+    assert "quick brown fox" in segments[0].text
+    assert "Bayesian" in segments[1].text or "Priors" in segments[1].text
+
+
+def test_epub_extractor_produces_cfi_anchor(sample_epub):
+    from book_memex.services.content_extraction import get_extractor
+
+    ex = get_extractor("epub")
+    segments = list(ex.extract(sample_epub))
+    for s in segments:
+        assert "cfi" in s.anchor
+        assert s.anchor["cfi"].startswith("epubcfi(")
+
+
+def test_epub_extractor_status_ok(sample_epub):
+    from book_memex.services.content_extraction import get_extractor
+
+    ex = get_extractor("epub")
+    for s in ex.extract(sample_epub):
+        assert s.extraction_status == "ok"
