@@ -111,9 +111,8 @@ class TextExtractionService:
 
             chunk = TextChunk(
                 file_id=file.id,
-                chunk_index=len(chunks),
+                segment_index=len(chunks),
                 content=chunk_text,
-                has_embedding=False
             )
             chunks.append(chunk)
 

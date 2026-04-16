@@ -326,7 +326,8 @@ class TestTextExtractionService:
 
         assert len(chunks) > 1
         assert all(chunk.file_id == file.id for chunk in chunks)
-        assert all(chunk.has_embedding == False for chunk in chunks)
+        # has_embedding dropped in migration 11 per workspace convention
+        assert all(chunk.file_id == file.id for chunk in chunks)
 
     def test_create_chunks_small_text(self, temp_library):
         """Test chunking with small text."""

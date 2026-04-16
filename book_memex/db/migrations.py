@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Current schema version - increment when adding new migrations
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 
 
 def get_engine(library_path: Path) -> Engine:
@@ -747,6 +747,99 @@ def migrate_add_uri_columns(library_path: Path, dry_run: bool = False) -> bool:
     return True
 
 
+def migrate_rename_text_chunks_to_book_content(library_path: Path, dry_run: bool = False) -> bool:
+    """Migration 11: rename text_chunks -> book_content with refined schema.
+
+    - RENAME TABLE text_chunks -> book_content.
+    - RENAME COLUMN chunk_index -> segment_index.
+    - ADD COLUMN segment_type (default 'chunk-legacy' for existing rows).
+    - ADD COLUMN title (nullable).
+    - ADD COLUMN anchor (JSON, default '{}' for existing rows).
+    - ADD COLUMN extractor_version (default 'legacy' for existing rows).
+    - ADD COLUMN extraction_status (default 'ok').
+    - ADD COLUMN archived_at (nullable).
+    - DROP COLUMN has_embedding (per workspace 'no embeddings in archives').
+
+    Existing rows are left in place with placeholder values marking them as
+    legacy. The reindex-content CLI rewrites them from extracted files.
+    """
+    name = "rename_text_chunks_to_book_content"
+    engine = get_engine(library_path)
+    ensure_schema_versions_table(engine)
+
+    if is_migration_applied(engine, name):
+        logger.debug(f"Migration {name} already applied")
+        return False
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+
+    if dry_run:
+        logger.info("DRY RUN: would rename text_chunks -> book_content and refine schema")
+        return True
+
+    logger.debug(f"Applying migration: {name}")
+    with engine.begin() as conn:
+        # RENAME table if present and target not yet present.
+        if "text_chunks" in tables and "book_content" not in tables:
+            conn.execute(text("ALTER TABLE text_chunks RENAME TO book_content"))
+        elif "book_content" not in tables:
+            # Fresh install without text_chunks and without book_content.
+            # Create a minimal book_content table; Base.metadata.create_all
+            # may have already added it via the updated ORM; verify after.
+            pass
+
+        # Refresh inspector after rename.
+        inspector = inspect(engine)
+        if "book_content" not in set(inspector.get_table_names()):
+            # ORM hasn't created it yet and no legacy table existed. Nothing to do.
+            return True
+
+        cols = {c["name"] for c in inspector.get_columns("book_content")}
+
+        # RENAME chunk_index -> segment_index.
+        if "chunk_index" in cols and "segment_index" not in cols:
+            conn.execute(text("ALTER TABLE book_content RENAME COLUMN chunk_index TO segment_index"))
+
+        # ADD COLUMNs (idempotent per-column).
+        add_columns = [
+            ("segment_type", "VARCHAR(20) NOT NULL DEFAULT 'chunk-legacy'"),
+            ("title", "VARCHAR(500)"),
+            ("anchor", "JSON NOT NULL DEFAULT '{}'"),
+            ("extractor_version", "VARCHAR(50) NOT NULL DEFAULT 'legacy'"),
+            ("extraction_status", "VARCHAR(20) NOT NULL DEFAULT 'ok'"),
+            ("archived_at", "TIMESTAMP NULL"),
+        ]
+        cols = {c["name"] for c in inspect(engine).get_columns("book_content")}
+        for col_name, col_ddl in add_columns:
+            if col_name not in cols:
+                conn.execute(text(f"ALTER TABLE book_content ADD COLUMN {col_name} {col_ddl}"))
+
+        # DROP has_embedding if present.
+        cols = {c["name"] for c in inspect(engine).get_columns("book_content")}
+        if "has_embedding" in cols:
+            conn.execute(text("ALTER TABLE book_content DROP COLUMN has_embedding"))
+
+        # Rebuild unique index on (file_id, segment_type, segment_index).
+        # Old unique was (file_id, chunk_index); drop it if present.
+        # Also drop the legacy non-unique idx_chunk_file index so that the
+        # ORM's untouched-in-this-task TextChunk class can still call
+        # create_all() on subsequent opens without colliding on the index
+        # name (the index moved with the renamed table).
+        existing_indexes = {ix["name"] for ix in inspect(engine).get_indexes("book_content")}
+        if "uix_chunk" in existing_indexes:
+            conn.execute(text("DROP INDEX uix_chunk"))
+        if "idx_chunk_file" in existing_indexes:
+            conn.execute(text("DROP INDEX idx_chunk_file"))
+        if "uix_book_content_file_seg" not in existing_indexes:
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uix_book_content_file_seg "
+                "ON book_content (file_id, segment_type, segment_index)"
+            ))
+
+    return True
+
+
 # Migration registry: (version, name, function)
 # Add new migrations here with incrementing version numbers
 MIGRATIONS = [
@@ -760,6 +853,7 @@ MIGRATIONS = [
     (8, 'annotations_to_marginalia', migrate_annotations_to_marginalia),
     (9, 'add_archived_at', migrate_add_archived_at),
     (10, 'add_uri_columns', migrate_add_uri_columns),
+    (11, 'rename_text_chunks_to_book_content', migrate_rename_text_chunks_to_book_content),
 ]
 
 

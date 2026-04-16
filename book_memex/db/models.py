@@ -356,31 +356,34 @@ class ExtractedText(Base):
 
 
 class TextChunk(Base):
-    """Chunks for semantic search with embeddings."""
-    __tablename__ = 'text_chunks'
+    """Content segments for search (renamed from text_chunks in migration 11).
+
+    Full class rename to BookContent happens in P2-T2. This minimal update
+    keeps the ORM aligned with the renamed table and dropped column.
+    """
+    __tablename__ = 'book_content'
 
     id = Column(Integer, primary_key=True)
     file_id = Column(Integer, ForeignKey('files.id', ondelete='CASCADE'), nullable=False)
 
-    chunk_index = Column(Integer, nullable=False)  # Order within file
-    content = Column(Text, nullable=False)  # 500-1000 words
+    segment_index = Column(Integer, nullable=False)  # renamed from chunk_index in migration 11
+    content = Column(Text, nullable=False)
 
     # Page range (if available)
     start_page = Column(Integer)
     end_page = Column(Integer)
 
-    # Embedding stored separately (pickle file or vector extension)
-    has_embedding = Column(Boolean, default=False)
+    # has_embedding dropped in migration 11 (per workspace "no embeddings in archives" convention)
 
     file = relationship('File', back_populates='chunks')
 
     __table_args__ = (
-        UniqueConstraint('file_id', 'chunk_index', name='uix_chunk'),
-        Index('idx_chunk_file', 'file_id', 'chunk_index'),
+        UniqueConstraint('file_id', 'segment_index', name='uix_book_content_file_seg'),
+        Index('idx_book_content_file', 'file_id', 'segment_index'),
     )
 
     def __repr__(self):
-        return f"<TextChunk(id={self.id}, file_id={self.file_id}, index={self.chunk_index})>"
+        return f"<TextChunk(id={self.id}, file_id={self.file_id}, index={self.segment_index})>"
 
 
 class Cover(Base):
