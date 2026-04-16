@@ -43,3 +43,24 @@ def sample_epub(tmp_path):
     out = tmp_path / "sample.epub"
     epub.write_epub(str(out), book)
     return out
+
+
+@pytest.fixture
+def sample_pdf(tmp_path):
+    """A 3-page PDF constructed with reportlab for extractor tests."""
+    try:
+        from reportlab.pdfgen import canvas
+    except ImportError:
+        pytest.skip("reportlab not installed; PDF fixture unavailable")
+
+    out = tmp_path / "sample.pdf"
+    c = canvas.Canvas(str(out))
+    for body in [
+        "Page one quick brown fox.",
+        "Page two Bayesian inference.",
+        "Page three the conclusion.",
+    ]:
+        c.drawString(72, 720, body)
+        c.showPage()
+    c.save()
+    return out
