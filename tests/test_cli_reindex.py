@@ -32,3 +32,40 @@ def test_extract_single_book(tmp_lib_with_book):
     assert result.exit_code == 0
     assert "segments_written" in result.output
     assert "3" in result.output  # 3 chapters in the sample EPUB
+
+
+def test_reindex_all(tmp_lib_with_book):
+    from book_memex.cli import app
+
+    temp_dir, _ = tmp_lib_with_book
+    runner = CliRunner()
+    result = runner.invoke(
+        app, ["reindex-content", "--all", "--library-path", str(temp_dir)]
+    )
+    assert result.exit_code == 0
+    assert "books_processed=1" in result.output
+    assert "segments_written=3" in result.output
+
+
+def test_reindex_single_book(tmp_lib_with_book):
+    from book_memex.cli import app
+
+    temp_dir, book_id = tmp_lib_with_book
+    runner = CliRunner()
+    result = runner.invoke(
+        app, ["reindex-content", "--book", str(book_id), "--library-path", str(temp_dir)]
+    )
+    assert result.exit_code == 0
+    assert "books_processed=1" in result.output
+
+
+def test_reindex_requires_book_or_all(tmp_lib_with_book):
+    from book_memex.cli import app
+
+    temp_dir, _ = tmp_lib_with_book
+    runner = CliRunner()
+    result = runner.invoke(
+        app, ["reindex-content", "--library-path", str(temp_dir)]
+    )
+    assert result.exit_code != 0
+    assert "--book" in result.output or "--all" in result.output

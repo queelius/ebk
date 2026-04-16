@@ -5919,6 +5919,53 @@ def extract_cmd(
         lib.close()
 
 
+@app.command("reindex-content")
+def reindex_content_cmd(
+    book_id: Optional[int] = typer.Option(None, "--book", help="Specific book ID"),
+    all_books: bool = typer.Option(False, "--all", help="Reindex every book"),
+    library_path: Optional[Path] = typer.Option(
+        None, "--library-path", "-L", help="Library directory"
+    ),
+):
+    """Re-extract segment content for one book or the whole library."""
+    if not book_id and not all_books:
+        typer.echo("error: specify --book <id> or --all", err=True)
+        raise typer.Exit(code=2)
+
+    from .library_db import Library
+    from book_memex.db.models import Book
+
+    lib = Library.open(resolve_library_path(library_path))
+    try:
+        from book_memex.services.content_indexer import ContentIndexer
+        indexer = ContentIndexer(lib.session, library_path=lib.library_path)
+
+        if all_books:
+            books_iter = lib.session.query(Book).all()
+        else:
+            b = lib.session.get(Book, book_id)
+            if b is None:
+                typer.echo(f"Book {book_id} not found", err=True)
+                raise typer.Exit(code=1)
+            books_iter = [b]
+
+        books_processed = 0
+        segments_written = 0
+        for book in books_iter:
+            pf = book.primary_file
+            if pf is None:
+                continue
+            result = indexer.index_file(pf)
+            books_processed += 1
+            segments_written += result.segments_written
+
+        typer.echo(
+            f"books_processed={books_processed} segments_written={segments_written}"
+        )
+    finally:
+        lib.close()
+
+
 @app.command("mcp-serve")
 def mcp_serve(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library directory"),
