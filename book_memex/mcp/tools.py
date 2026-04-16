@@ -1,14 +1,16 @@
 """MCP tool implementations for book-memex."""
+import json as _json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import inspect as sa_inspect, text
 from sqlalchemy.orm import Session
 
+from book_memex.core.fts import safe_fts_query
 from book_memex.core.uri import parse_uri, InvalidUriError
 from book_memex.db.models import (
     Base, Book, Author, Subject, Tag, PersonalMetadata, Marginalia,
-    ReadingSession,
+    ReadingSession, BookContent,
 )
 from book_memex.mcp.sql_executor import ReadOnlySQLExecutor
 from book_memex.services.marginalia_service import MarginaliaService
@@ -529,6 +531,247 @@ def restore_reading_session_impl(
         raise LookupError(f"ReadingSession {uuid} not found")
     svc.restore(rs)
     return _reading_session_to_dict(rs)
+
+
+
+
+# ---------------------------------------------------------------------------
+# Content search + segment tools
+# ---------------------------------------------------------------------------
+
+
+def _content_row_to_dict(row, *, include_text: bool = False) -> Dict[str, Any]:
+    """Shape a BookContent ORM row as a dict for MCP consumption."""
+    book_uri = None
+    book_id = None
+    if row.file and row.file.book:
+        book = row.file.book
+        book_uri = book.uri
+        book_id = book.id
+    d: Dict[str, Any] = {
+        "content_id": row.id,
+        "book_id": book_id,
+        "book_uri": book_uri,
+        "segment_type": row.segment_type,
+        "segment_index": row.segment_index,
+        "title": row.title,
+        "anchor": row.anchor,
+        "start_page": row.start_page,
+        "end_page": row.end_page,
+        "extractor_version": row.extractor_version,
+        "extraction_status": row.extraction_status,
+    }
+    if include_text:
+        d["text"] = row.content
+    return d
+
+
+def _content_fragment(anchor: Any, segment_type: str) -> str:
+    """Build a URI fragment from an anchor dict and segment type."""
+    if not isinstance(anchor, dict):
+        return ""
+    if segment_type == "chapter" and "cfi" in anchor:
+        return anchor["cfi"]
+    if segment_type == "page" and "page" in anchor:
+        return f"page={anchor['page']}"
+    if segment_type == "text" and "offset" in anchor:
+        return f"offset={anchor['offset']},length={anchor.get('length', 0)}"
+    return ""
+
+
+def _make_snippet_mcp(content_text: str, query_tokens: str, max_words: int = 32) -> str:
+    """Build a keyword-in-context snippet from content text.
+
+    Same approach as the REST _make_snippet: locate the first query token
+    and return surrounding context with <mark> highlighting.
+    """
+    import re
+
+    if not content_text:
+        return ""
+    text_lower = content_text.lower()
+    tokens = [t.strip('"').lower() for t in query_tokens.split() if t.strip('"')]
+    if not tokens:
+        return content_text[:200] + ("..." if len(content_text) > 200 else "")
+
+    best_pos = len(content_text)
+    for tok in tokens:
+        pos = text_lower.find(tok)
+        if 0 <= pos < best_pos:
+            best_pos = pos
+
+    if best_pos >= len(content_text):
+        return content_text[:200] + ("..." if len(content_text) > 200 else "")
+
+    words = content_text.split()
+    char_count = 0
+    start_word = 0
+    for i, w in enumerate(words):
+        if char_count + len(w) >= best_pos:
+            start_word = max(0, i - max_words // 4)
+            break
+        char_count += len(w) + 1
+
+    window = words[start_word:start_word + max_words]
+    snippet = " ".join(window)
+    if start_word > 0:
+        snippet = "..." + snippet
+    if start_word + max_words < len(words):
+        snippet = snippet + "..."
+
+    for tok in tokens:
+        snippet = re.sub(
+            re.escape(tok),
+            lambda m: f"<mark>{m.group(0)}</mark>",
+            snippet,
+            flags=re.IGNORECASE,
+        )
+    return snippet
+
+
+def _run_fts_search(
+    session: Session,
+    fts_query: str,
+    book_id: Optional[int],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Shared FTS5 search used by both search_book_content_impl and search_library_content_impl."""
+    if book_id is not None:
+        sql = text(
+            """
+            SELECT
+                bc.id,
+                f.book_id,
+                bk.unique_id AS book_unique_id,
+                bc.segment_type,
+                bc.segment_index,
+                bc.title,
+                bc.anchor,
+                bc.content AS text_content,
+                bm25(book_content_fts) AS rank
+            FROM book_content_fts
+            JOIN book_content bc ON bc.id = book_content_fts.rowid
+            JOIN files f ON f.id = bc.file_id
+            JOIN books bk ON bk.id = f.book_id
+            WHERE book_content_fts MATCH :q
+              AND f.book_id = :book_id
+              AND bc.archived_at IS NULL
+            ORDER BY rank
+            LIMIT :limit
+            """
+        )
+        rows = session.execute(sql, {"q": fts_query, "book_id": book_id, "limit": limit}).fetchall()
+    else:
+        sql = text(
+            """
+            SELECT
+                bc.id,
+                f.book_id,
+                bk.unique_id AS book_unique_id,
+                bc.segment_type,
+                bc.segment_index,
+                bc.title,
+                bc.anchor,
+                bc.content AS text_content,
+                bm25(book_content_fts) AS rank
+            FROM book_content_fts
+            JOIN book_content bc ON bc.id = book_content_fts.rowid
+            JOIN files f ON f.id = bc.file_id
+            JOIN books bk ON bk.id = f.book_id
+            WHERE book_content_fts MATCH :q
+              AND bc.archived_at IS NULL
+            ORDER BY rank
+            LIMIT :limit
+            """
+        )
+        rows = session.execute(sql, {"q": fts_query, "limit": limit}).fetchall()
+
+    hits: List[Dict[str, Any]] = []
+    for r in rows:
+        anchor = r.anchor
+        if isinstance(anchor, str):
+            try:
+                anchor = _json.loads(anchor)
+            except (TypeError, ValueError):
+                anchor = {}
+        hits.append({
+            "content_id": r.id,
+            "book_id": r.book_id,
+            "book_uri": f"book-memex://book/{r.book_unique_id}",
+            "segment_type": r.segment_type,
+            "segment_index": r.segment_index,
+            "title": r.title,
+            "anchor": anchor,
+            "fragment": _content_fragment(anchor, r.segment_type),
+            "snippet": _make_snippet_mcp(r.text_content or "", fts_query),
+            "rank": float(r.rank),
+        })
+    return hits
+
+
+def search_book_content_impl(
+    session: Session, *, book_id: int, query: str,
+    limit: int = 20, advanced: bool = False,
+) -> List[Dict[str, Any]]:
+    """FTS5 search within a single book. Returns ranked snippets with anchors."""
+    if not query or not query.strip():
+        raise ValueError("query is required")
+    fts_query = safe_fts_query(query, advanced=advanced)
+    if not fts_query:
+        raise ValueError("query resolves to empty FTS5 expression")
+    return _run_fts_search(session, fts_query, book_id=book_id, limit=limit)
+
+
+def search_library_content_impl(
+    session: Session, *, query: str, limit: int = 20, advanced: bool = False,
+) -> List[Dict[str, Any]]:
+    """FTS5 search across every book. Same shape as search_book_content_impl."""
+    if not query or not query.strip():
+        raise ValueError("query is required")
+    fts_query = safe_fts_query(query, advanced=advanced)
+    if not fts_query:
+        raise ValueError("query resolves to empty FTS5 expression")
+    return _run_fts_search(session, fts_query, book_id=None, limit=limit)
+
+
+def get_segment_impl(
+    session: Session, *, book_id: int, segment_type: str, segment_index: int,
+) -> Dict[str, Any]:
+    """Fetch one BookContent row by (book, type, index). Raises LookupError."""
+    from book_memex.db.models import File
+    row = (
+        session.query(BookContent)
+        .join(BookContent.file)
+        .filter(
+            BookContent.segment_type == segment_type,
+            BookContent.segment_index == segment_index,
+            File.book_id == book_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise LookupError(
+            f"segment not found: book_id={book_id} type={segment_type} index={segment_index}"
+        )
+    return _content_row_to_dict(row, include_text=True)
+
+
+def get_segments_impl(
+    session: Session, *, book_id: int, limit: int = 50, offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """Paginated RAG-ready surface: ordered segments for a book with full text."""
+    from book_memex.db.models import File
+    rows = (
+        session.query(BookContent)
+        .join(BookContent.file)
+        .filter(File.book_id == book_id)
+        .filter(BookContent.archived_at.is_(None))
+        .order_by(BookContent.segment_index)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return [_content_row_to_dict(r, include_text=True) for r in rows]
 
 
 def get_reading_progress_impl(
