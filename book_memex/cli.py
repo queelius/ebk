@@ -5886,6 +5886,39 @@ def view_edit(
         raise typer.Exit(code=1)
 
 
+@app.command("extract")
+def extract_cmd(
+    book_id: int = typer.Argument(..., help="Book ID to extract content for"),
+    library_path: Optional[Path] = typer.Option(
+        None, "--library-path", "-L", help="Library directory"
+    ),
+):
+    """Run the segment extractor on a single book's primary file."""
+    from .library_db import Library
+    from book_memex.db.models import Book
+
+    lib = Library.open(resolve_library_path(library_path))
+    try:
+        book = lib.session.get(Book, book_id)
+        if book is None:
+            typer.echo(f"Book {book_id} not found", err=True)
+            raise typer.Exit(code=1)
+        pf = book.primary_file
+        if pf is None:
+            typer.echo(f"Book {book_id} has no files", err=True)
+            raise typer.Exit(code=1)
+        from book_memex.services.content_indexer import ContentIndexer
+        indexer = ContentIndexer(lib.session, library_path=lib.library_path)
+        result = indexer.index_file(pf)
+        typer.echo(
+            f"status={result.status} "
+            f"segments_written={result.segments_written} "
+            f"extractor_version={result.extractor_version}"
+        )
+    finally:
+        lib.close()
+
+
 @app.command("mcp-serve")
 def mcp_serve(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library directory"),
