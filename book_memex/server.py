@@ -14,11 +14,16 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+import json as _json
+
+from sqlalchemy import text as _sqltext
+
 from .library_db import Library
 from .extract_metadata import extract_metadata
 from .services.marginalia_service import MarginaliaService
 from .services.reading_session_service import ReadingSessionService
 from .db.models import PersonalMetadata
+from .core.fts import safe_fts_query
 from . import opds
 
 
@@ -262,6 +267,21 @@ class ProgressOut(BaseModel):
     anchor: Optional[dict]
     percentage: Optional[float]
     updated_at: Optional[str]
+
+
+# Content search response model -------------------------------------------
+
+class ContentSearchHit(BaseModel):
+    content_id: int
+    book_id: int
+    book_uri: str
+    segment_type: str
+    segment_index: int
+    title: Optional[str]
+    anchor: dict
+    fragment: str
+    snippet: str
+    rank: float
 
 
 # Global library instance
@@ -1028,6 +1048,196 @@ async def search_books(q: str, limit: int = Query(50, ge=1, le=1000)):
     lib = get_library()
     results = lib.search(q, limit=limit)
     return [_book_to_response(book) for book in results]
+
+
+# ---------------------------------------------------------------------------
+# Content search helpers + endpoints
+# ---------------------------------------------------------------------------
+
+def _fragment_for(anchor: dict, segment_type: str) -> str:
+    """Build a Book URI fragment from an anchor dict."""
+    if segment_type == "chapter" and "cfi" in anchor:
+        return anchor["cfi"]
+    if segment_type == "page" and "page" in anchor:
+        return f"page={anchor['page']}"
+    if segment_type == "text" and "offset" in anchor:
+        return f"offset={anchor['offset']},length={anchor.get('length', 0)}"
+    return ""
+
+
+def _make_snippet(text: str, query_tokens: str, max_words: int = 32) -> str:
+    """Build a simple keyword-in-context snippet from ``text``.
+
+    Because the FTS5 virtual table uses external content with column names
+    that differ from the backing table (fts ``text`` vs book_content
+    ``content``), the built-in ``snippet()`` auxiliary function is not
+    available. This helper produces a comparable result by locating the
+    first query token in the content and returning surrounding context
+    with ``<mark>`` highlighting.
+    """
+    if not text:
+        return ""
+    text_lower = text.lower()
+    # Extract bare tokens from the safe_fts_query output (strip quotes).
+    tokens = [t.strip('"').lower() for t in query_tokens.split() if t.strip('"')]
+    if not tokens:
+        return text[:200] + ("..." if len(text) > 200 else "")
+
+    # Find earliest occurrence of any token.
+    best_pos = len(text)
+    best_token = tokens[0]
+    for tok in tokens:
+        pos = text_lower.find(tok)
+        if 0 <= pos < best_pos:
+            best_pos = pos
+            best_token = tok
+
+    if best_pos >= len(text):
+        return text[:200] + ("..." if len(text) > 200 else "")
+
+    # Build a window around the match.
+    words = text.split()
+    char_count = 0
+    start_word = 0
+    for i, w in enumerate(words):
+        if char_count + len(w) >= best_pos:
+            start_word = max(0, i - max_words // 4)
+            break
+        char_count += len(w) + 1
+
+    window = words[start_word:start_word + max_words]
+    snippet = " ".join(window)
+    if start_word > 0:
+        snippet = "..." + snippet
+    if start_word + max_words < len(words):
+        snippet = snippet + "..."
+
+    # Highlight matched tokens (case-insensitive).
+    import re
+    for tok in tokens:
+        snippet = re.sub(
+            re.escape(tok),
+            lambda m: f"<mark>{m.group(0)}</mark>",
+            snippet,
+            flags=re.IGNORECASE,
+        )
+    return snippet
+
+
+def _run_content_search(
+    session, fts_query: str, book_id: Optional[int], limit: int,
+):
+    """Execute an FTS5 MATCH and shape results for API consumption.
+
+    NOTE: snippet() is unavailable because the FTS5 external content
+    table uses column name ``text`` while the backing ``book_content``
+    table stores text in ``content``. We select ``bc.content`` directly
+    and build snippets in Python via ``_make_snippet()``.
+    """
+    if book_id is not None:
+        sql = _sqltext(
+            """
+            SELECT
+                bc.id,
+                f.book_id,
+                bk.unique_id AS book_unique_id,
+                bc.segment_type,
+                bc.segment_index,
+                bc.title,
+                bc.anchor,
+                bc.content AS text_content,
+                bm25(book_content_fts) AS rank
+            FROM book_content_fts
+            JOIN book_content bc ON bc.id = book_content_fts.rowid
+            JOIN files f ON f.id = bc.file_id
+            JOIN books bk ON bk.id = f.book_id
+            WHERE book_content_fts MATCH :q
+              AND f.book_id = :book_id
+              AND bc.archived_at IS NULL
+            ORDER BY rank
+            LIMIT :limit
+            """
+        )
+        rows = session.execute(sql, {"q": fts_query, "book_id": book_id, "limit": limit}).fetchall()
+    else:
+        sql = _sqltext(
+            """
+            SELECT
+                bc.id,
+                f.book_id,
+                bk.unique_id AS book_unique_id,
+                bc.segment_type,
+                bc.segment_index,
+                bc.title,
+                bc.anchor,
+                bc.content AS text_content,
+                bm25(book_content_fts) AS rank
+            FROM book_content_fts
+            JOIN book_content bc ON bc.id = book_content_fts.rowid
+            JOIN files f ON f.id = bc.file_id
+            JOIN books bk ON bk.id = f.book_id
+            WHERE book_content_fts MATCH :q
+              AND bc.archived_at IS NULL
+            ORDER BY rank
+            LIMIT :limit
+            """
+        )
+        rows = session.execute(sql, {"q": fts_query, "limit": limit}).fetchall()
+
+    hits = []
+    for r in rows:
+        anchor = r.anchor
+        if isinstance(anchor, str):
+            try:
+                anchor = _json.loads(anchor)
+            except (TypeError, ValueError):
+                anchor = {}
+        hits.append({
+            "content_id": r.id,
+            "book_id": r.book_id,
+            "book_uri": f"book-memex://book/{r.book_unique_id}",
+            "segment_type": r.segment_type,
+            "segment_index": r.segment_index,
+            "title": r.title,
+            "anchor": anchor,
+            "fragment": _fragment_for(anchor, r.segment_type),
+            "snippet": _make_snippet(r.text_content or "", fts_query),
+            "rank": float(r.rank),
+        })
+    return hits
+
+
+@app.get("/api/books/{book_id}/search", response_model=List[ContentSearchHit])
+def within_book_search(
+    book_id: int,
+    q: str,
+    limit: int = 50,
+    advanced: bool = False,
+):
+    """FTS5 content search within a single book."""
+    if not q or not q.strip():
+        raise HTTPException(400, "q is required")
+    lib = get_library()
+    fts_query = safe_fts_query(q, advanced=advanced)
+    if not fts_query:
+        raise HTTPException(400, "q is required")
+    return _run_content_search(lib.session, fts_query, book_id=book_id, limit=limit)
+
+
+@app.get("/api/search/content", response_model=List[ContentSearchHit])
+def cross_library_search(
+    q: str,
+    limit: int = 50,
+    advanced: bool = False,
+):
+    """FTS5 content search across all books."""
+    if not q or not q.strip():
+        raise HTTPException(400, "q is required")
+    lib = get_library()
+    fts_query = safe_fts_query(q, advanced=advanced)
+    if not fts_query:
+        raise HTTPException(400, "q is required")
+    return _run_content_search(lib.session, fts_query, book_id=None, limit=limit)
 
 
 def _book_to_response(book) -> dict:

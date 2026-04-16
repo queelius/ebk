@@ -202,6 +202,92 @@ def create_mcp_server(library: Library) -> FastMCP:
             percentage=percentage, force=force,
         )
 
+    # ------------------------------------------------------------------
+    # Content search + segment tools
+    # ------------------------------------------------------------------
+
+    from book_memex.mcp.tools import (
+        search_book_content_impl, search_library_content_impl,
+        get_segment_impl, get_segments_impl,
+    )
+
+    @mcp.tool(
+        name="search_book_content",
+        description=(
+            "FTS5 search within a single book. Returns ranked snippets with "
+            "an anchor and a pre-built URI fragment. Safe against FTS5 operator "
+            "injection by default (advanced=True opts into raw FTS5 syntax)."
+        ),
+    )
+    def search_book_content(
+        book_id: int, query: str, limit: int = 20, advanced: bool = False,
+    ) -> list:
+        return search_book_content_impl(
+            library.session, book_id=book_id, query=query,
+            limit=limit, advanced=advanced,
+        )
+
+    @mcp.tool(
+        name="search_library_content",
+        description=(
+            "FTS5 search across every book. Same response shape as "
+            "search_book_content; results include book_uri per hit."
+        ),
+    )
+    def search_library_content(
+        query: str, limit: int = 20, advanced: bool = False,
+    ) -> list:
+        return search_library_content_impl(
+            library.session, query=query, limit=limit, advanced=advanced,
+        )
+
+    @mcp.tool(
+        name="get_segment",
+        description=(
+            "Fetch one BookContent row by (book_id, segment_type, segment_index). "
+            "Returns the full segment text, anchor, and extractor version."
+        ),
+    )
+    def get_segment(book_id: int, segment_type: str, segment_index: int) -> dict:
+        return get_segment_impl(
+            library.session, book_id=book_id,
+            segment_type=segment_type, segment_index=segment_index,
+        )
+
+    @mcp.tool(
+        name="get_segments",
+        description=(
+            "Paginated RAG-ready access: return segments for a book with full "
+            "text, ordered by segment_index. Use limit + offset to paginate."
+        ),
+    )
+    def get_segments(book_id: int, limit: int = 50, offset: int = 0) -> list:
+        return get_segments_impl(
+            library.session, book_id=book_id, limit=limit, offset=offset,
+        )
+
+    # ------------------------------------------------------------------
+    # ask_book: FTS5 + LLM Q&A
+    # ------------------------------------------------------------------
+
+    from book_memex.mcp.tools import ask_book_impl
+
+    @mcp.tool(
+        name="ask_book",
+        description=(
+            "Ask a natural-language question about one book. Uses FTS5 to "
+            "retrieve the top-k relevant segments, then asks the configured "
+            "LLM to answer grounded in those segments. Response includes "
+            "`answer` text, structured `citations` parsed from the answer, "
+            "and `segments_used` with full URIs. Returns a `message` (not "
+            "an answer) if no LLM is configured or no segments match."
+        ),
+    )
+    def ask_book(book_id: int, question: str, k: int = 8, model: str | None = None) -> dict:
+        return ask_book_impl(
+            library.session, book_id=book_id, question=question, k=k, model=model,
+        )
+
     return mcp
 
 

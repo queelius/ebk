@@ -129,6 +129,20 @@ class ImportService:
             if extract_text:
                 self.text_service.extract_and_chunk_all(file, self.session)
 
+                # Run the segment-level content indexer for the newly imported file.
+                # Failures are logged but do not abort the import.
+                try:
+                    from book_memex.services.content_indexer import ContentIndexer
+                    indexer = ContentIndexer(self.session, library_path=self.library_root)
+                    primary = book.primary_file
+                    if primary is not None:
+                        indexer.index_file(primary)
+                except Exception:
+                    logger.exception(
+                        "content indexing failed for book_id=%s; continuing import",
+                        book.id,
+                    )
+
             self.session.commit()
             logger.info(f"Successfully imported: {metadata.get('title')}")
             return book

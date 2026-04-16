@@ -6,7 +6,7 @@ Provides SQLAlchemy session management and initialization.
 
 from .models import (
     Base, Book, Author, Subject, Identifier, File, ExtractedText,
-    TextChunk, Cover, Concept, BookConcept, ConceptRelation,
+    BookContent, TextChunk, Cover, Concept, BookConcept, ConceptRelation,
     ReadingSession, Marginalia, PersonalMetadata, Tag
 )
 from .session import get_session, init_db, close_db
@@ -20,6 +20,7 @@ __all__ = [
     'Identifier',
     'File',
     'ExtractedText',
+    'BookContent',
     'TextChunk',
     'Cover',
     'Concept',

@@ -14,7 +14,7 @@ import fitz  # PyMuPDF
 from ebooklib import epub
 from bs4 import BeautifulSoup
 
-from ..db.models import File, ExtractedText, TextChunk
+from ..db.models import File, ExtractedText, BookContent
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -84,7 +84,7 @@ class TextExtractionService:
 
     def create_chunks(self, extracted: ExtractedText, file: File,
                      session: Session, chunk_size: int = 500,
-                     overlap: int = 100) -> List[TextChunk]:
+                     overlap: int = 100) -> List[BookContent]:
         """
         Split extracted text into overlapping chunks for semantic search.
 
@@ -96,7 +96,7 @@ class TextExtractionService:
             overlap: Number of overlapping words between chunks
 
         Returns:
-            List of TextChunk instances
+            List of BookContent instances
         """
         text = extracted.content
         words = text.split()
@@ -109,11 +109,11 @@ class TextExtractionService:
             if len(chunk_text.strip()) < 50:  # Skip tiny chunks
                 continue
 
-            chunk = TextChunk(
+            chunk = BookContent(
                 file_id=file.id,
-                chunk_index=len(chunks),
+                segment_index=len(chunks),
                 content=chunk_text,
-                has_embedding=False
+                segment_type='chunk-legacy',
             )
             chunks.append(chunk)
 
@@ -295,7 +295,7 @@ class TextExtractionService:
         return len(text.split())
 
     def extract_and_chunk_all(self, file: File, session: Session,
-                              chunk_size: int = 500) -> Tuple[Optional[ExtractedText], List[TextChunk]]:
+                              chunk_size: int = 500) -> Tuple[Optional[ExtractedText], List[BookContent]]:
         """
         Extract full text and create chunks in one operation.
 
@@ -305,7 +305,7 @@ class TextExtractionService:
             chunk_size: Words per chunk
 
         Returns:
-            Tuple of (ExtractedText, List[TextChunk])
+            Tuple of (ExtractedText, List[BookContent])
         """
         extracted = self.extract_full_text(file, session)
 
