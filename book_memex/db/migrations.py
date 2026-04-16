@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Current schema version - increment when adding new migrations
-CURRENT_SCHEMA_VERSION = 11
+CURRENT_SCHEMA_VERSION = 12
 
 
 def get_engine(library_path: Path) -> Engine:
@@ -840,6 +840,87 @@ def migrate_rename_text_chunks_to_book_content(library_path: Path, dry_run: bool
     return True
 
 
+def migrate_add_book_content_fts(library_path: Path, dry_run: bool = False) -> bool:
+    """Migration 12: add book_content_fts virtual table plus sync triggers.
+
+    FTS5 mirrors book_content's `content` + `title` columns. Uses external
+    content addressing (content='book_content', content_rowid='id') so the
+    FTS index and the row table stay in sync via AFTER INSERT/UPDATE/DELETE
+    triggers. Matches the existing books_fts pattern.
+    """
+    name = "add_book_content_fts"
+    engine = get_engine(library_path)
+    ensure_schema_versions_table(engine)
+
+    if is_migration_applied(engine, name):
+        return False
+
+    if dry_run:
+        logger.info("DRY RUN: would create book_content_fts virtual table + triggers")
+        return True
+
+    inspector = inspect(engine)
+    if "book_content" not in set(inspector.get_table_names()):
+        # Nothing to index yet. The migration is still considered applied so
+        # it isn't retried; run_all_migrations records it.
+        return True
+
+    logger.debug(f"Applying migration: {name}")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS book_content_fts USING fts5(
+                text,
+                title,
+                book_id UNINDEXED,
+                content_id UNINDEXED,
+                content='book_content',
+                content_rowid='id',
+                tokenize='porter unicode61'
+            )
+        """))
+
+        # Populate from any existing rows.
+        conn.execute(text("""
+            INSERT INTO book_content_fts (rowid, text, title, book_id, content_id)
+            SELECT bc.id, bc.content, COALESCE(bc.title, ''),
+                   COALESCE(f.book_id, 0), bc.id
+            FROM book_content bc
+            LEFT JOIN files f ON f.id = bc.file_id
+        """))
+
+        # AFTER INSERT trigger.
+        conn.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS book_content_ai AFTER INSERT ON book_content BEGIN
+                INSERT INTO book_content_fts (rowid, text, title, book_id, content_id)
+                VALUES (new.id, new.content, COALESCE(new.title, ''),
+                        (SELECT book_id FROM files WHERE id = new.file_id), new.id);
+            END
+        """))
+
+        # AFTER UPDATE trigger (delete-then-reinsert for external content FTS5).
+        conn.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS book_content_au AFTER UPDATE ON book_content BEGIN
+                INSERT INTO book_content_fts (book_content_fts, rowid, text, title, book_id, content_id)
+                VALUES ('delete', old.id, old.content, COALESCE(old.title, ''),
+                        (SELECT book_id FROM files WHERE id = old.file_id), old.id);
+                INSERT INTO book_content_fts (rowid, text, title, book_id, content_id)
+                VALUES (new.id, new.content, COALESCE(new.title, ''),
+                        (SELECT book_id FROM files WHERE id = new.file_id), new.id);
+            END
+        """))
+
+        # AFTER DELETE trigger.
+        conn.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS book_content_ad AFTER DELETE ON book_content BEGIN
+                INSERT INTO book_content_fts (book_content_fts, rowid, text, title, book_id, content_id)
+                VALUES ('delete', old.id, old.content, COALESCE(old.title, ''),
+                        (SELECT book_id FROM files WHERE id = old.file_id), old.id);
+            END
+        """))
+
+    return True
+
+
 # Migration registry: (version, name, function)
 # Add new migrations here with incrementing version numbers
 MIGRATIONS = [
@@ -854,6 +935,7 @@ MIGRATIONS = [
     (9, 'add_archived_at', migrate_add_archived_at),
     (10, 'add_uri_columns', migrate_add_uri_columns),
     (11, 'rename_text_chunks_to_book_content', migrate_rename_text_chunks_to_book_content),
+    (12, 'add_book_content_fts', migrate_add_book_content_fts),
 ]
 
 
