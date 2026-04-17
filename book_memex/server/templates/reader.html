@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html data-reader-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - book-memex reader</title>
+  <link rel="stylesheet" href="/static/reader.css">
+  {% if format == "epub" %}
+  <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+  {% elif format == "pdf" %}
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs" type="module"></script>
+  {% endif %}
+  <script>
+    window.BOOK = {{ book_json | safe }};
+  </script>
+</head>
+<body>
+  <header id="reader-toolbar">
+    <a href="/" title="Back to library">&larr;</a>
+    <span id="book-title">{{ title }}</span>
+    <div id="toolbar-actions">
+      <button id="search-toggle" title="Search (Ctrl+F)">&#128269;</button>
+      <button id="theme-toggle" title="Cycle theme">&#9788;</button>
+    </div>
+  </header>
+
+  <div id="search-bar">
+    <input id="search-input" placeholder="Search in book..." />
+    <button id="search-close">&times;</button>
+    <div id="search-results"></div>
+  </div>
+
+  <main id="viewer"></main>
+
+  <aside id="side-panel">
+    <div id="panel-content"></div>
+  </aside>
+
+  <div id="highlight-toolbar">
+    <button id="btn-highlight" title="Highlight">&#9998;</button>
+    <button id="btn-note" title="Highlight + Note">&#128221;</button>
+  </div>
+
+  <script src="/static/reader.js" defer></script>
+</body>
+</html>
