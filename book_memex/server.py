@@ -356,6 +356,93 @@ _SERVER_DIR = Path(__file__).parent / "server"
 app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="reader-static")
 _templates = Jinja2Templates(directory=str(_SERVER_DIR / "templates"))
 
+# MIME types for reader file streaming
+_READER_MIME = {
+    "epub": "application/epub+zip",
+    "pdf": "application/pdf",
+    "txt": "text/plain",
+}
+
+
+@app.get("/read/{book_id}")
+async def read_book(request: Request, book_id: int):
+    """Serve the browser reader for a book."""
+    lib = get_library()
+    book = lib.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    pf = book.primary_file
+    if pf is None:
+        return _templates.TemplateResponse("reader_error.html", {
+            "request": request,
+            "error_title": "No readable file",
+            "error_message": "This book has no files attached. Import a file first.",
+        })
+
+    fmt = pf.format.lower()
+    if fmt not in ("epub", "pdf"):
+        return _templates.TemplateResponse("reader_error.html", {
+            "request": request,
+            "error_title": "Format not supported",
+            "error_message": f"Format \"{fmt}\" is not supported in the reader. "
+                             "Only EPUB and PDF files can be opened.",
+        })
+
+    author = ", ".join(a.name for a in book.authors) if book.authors else "Unknown"
+    book_json = _json.dumps({
+        "id": book.id,
+        "unique_id": book.unique_id,
+        "format": fmt,
+        "file_url": f"/books/{book.id}/file",
+        "title": book.title,
+        "author": author,
+    })
+    return _templates.TemplateResponse("reader.html", {
+        "request": request,
+        "title": book.title,
+        "format": fmt,
+        "book_json": book_json,
+    })
+
+
+@app.get("/books/{book_id}/file")
+async def reader_file(book_id: int):
+    """Stream the book's primary file for the reader."""
+    lib = get_library()
+    book = lib.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    pf = book.primary_file
+    if pf is None or _library_path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = _library_path / pf.path
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    mime = _READER_MIME.get(pf.format.lower(), "application/octet-stream")
+    return FileResponse(str(file_path), media_type=mime)
+
+
+@app.get("/books/{book_id}/metadata.json")
+async def reader_metadata(book_id: int):
+    """Return lightweight reader metadata for a book."""
+    lib = get_library()
+    book = lib.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    author = ", ".join(a.name for a in book.authors) if book.authors else "Unknown"
+    fmt = book.primary_file.format.lower() if book.primary_file else None
+    return JSONResponse({
+        "title": book.title,
+        "author": author,
+        "format": fmt,
+        "book_uri": book.uri,
+    })
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
