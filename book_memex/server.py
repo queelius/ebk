@@ -12,6 +12,9 @@ import shutil
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.templating import Jinja2Templates
+from starlette.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import json as _json
@@ -348,6 +351,10 @@ app.add_middleware(
 # Include OPDS router
 app.include_router(opds.router)
 
+# Static files and Jinja2 templates for the browser reader
+_SERVER_DIR = Path(__file__).parent / "server"
+app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="reader-static")
+_templates = Jinja2Templates(directory=str(_SERVER_DIR / "templates"))
 
 
 @app.get("/", response_class=HTMLResponse)
