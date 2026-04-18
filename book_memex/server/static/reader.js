@@ -23,6 +23,8 @@
   var $searchClose    = document.getElementById("search-close");
   var $searchToggle   = document.getElementById("search-toggle");
   var $themeToggle    = document.getElementById("theme-toggle");
+  var $navPrev        = document.getElementById("nav-prev");
+  var $navNext        = document.getElementById("nav-next");
   var $sidePanel      = document.getElementById("side-panel");
   var $panelContent   = document.getElementById("panel-content");
   var $hlToolbar      = document.getElementById("highlight-toolbar");
@@ -164,6 +166,17 @@
       async display(anchor) {
         if (anchor && anchor.cfi) return rendition.display(anchor.cfi);
         return rendition.display();
+      },
+
+      prev() { return rendition && rendition.prev && rendition.prev(); },
+      next() { return rendition && rendition.next && rendition.next(); },
+
+      /** Wire the given callback for keydown events inside the EPUB iframe. */
+      onKeyDown(callback) {
+        if (!rendition) return;
+        rendition.on("keydown", function (e) {
+          callback(e.key);
+        });
       },
 
       onRelocated(callback) {
@@ -383,6 +396,17 @@
 
       onRelocated(callback)  { relocatedCb = callback; },
       onSelected(callback)   { selectedCb  = callback; },
+
+      prev() {
+        if (currentPage > 1 && pageEls[currentPage - 2]) {
+          pageEls[currentPage - 2].scrollIntoView({ behavior: "smooth" });
+        }
+      },
+      next() {
+        if (currentPage < totalPages && pageEls[currentPage]) {
+          pageEls[currentPage].scrollIntoView({ behavior: "smooth" });
+        }
+      },
 
       /** Visual PDF highlight overlay deferred to post-v1. */
       addHighlight(/* position, color */) {
@@ -640,6 +664,18 @@
     // Theme toggle
     $themeToggle.addEventListener("click", cycleTheme);
 
+    // Page navigation buttons
+    if ($navPrev) {
+      $navPrev.addEventListener("click", function () {
+        if (adapter && adapter.prev) adapter.prev();
+      });
+    }
+    if ($navNext) {
+      $navNext.addEventListener("click", function () {
+        if (adapter && adapter.next) adapter.next();
+      });
+    }
+
     // Search toggle button
     $searchToggle.addEventListener("click", function () {
       if ($searchBar.classList.contains("visible")) closeSearch();
@@ -660,18 +696,38 @@
       }, 500);
     });
 
-    // Ctrl-F / Cmd-F override.
+    // Ctrl-F / Cmd-F override, Escape, and arrow-key page navigation.
     document.addEventListener("keydown", function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
         openSearch();
+        return;
       }
       if (e.key === "Escape") {
         if ($searchBar.classList.contains("visible")) closeSearch();
         if ($sidePanel.classList.contains("visible")) closeSidePanel();
         hideHighlightToolbar();
+        return;
+      }
+      // Page navigation. Skip when focus is in an input/textarea.
+      var tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        if (adapter && adapter.prev) { e.preventDefault(); adapter.prev(); }
+      } else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+        if (adapter && adapter.next) { e.preventDefault(); adapter.next(); }
       }
     });
+
+    // Also forward keydown from inside the EPUB iframe. EPUB.js installs
+    // its own "keyreleased" events but they fire after the iframe document
+    // has received the key; if the iframe has focus, outer listeners miss it.
+    if (adapter && typeof adapter.onKeyDown === "function") {
+      adapter.onKeyDown(function (key) {
+        if (key === "ArrowLeft" || key === "PageUp") { adapter.prev(); }
+        else if (key === "ArrowRight" || key === "PageDown" || key === " ") { adapter.next(); }
+      });
+    }
 
     // Highlight toolbar buttons.
     $btnHighlight.addEventListener("click", function () {
