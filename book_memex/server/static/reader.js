@@ -25,6 +25,10 @@
   var $themeToggle    = document.getElementById("theme-toggle");
   var $navPrev        = document.getElementById("nav-prev");
   var $navNext        = document.getElementById("nav-next");
+  var $tocToggle      = document.getElementById("toc-toggle");
+  var $tocPanel       = document.getElementById("toc-panel");
+  var $tocClose       = document.getElementById("toc-close");
+  var $tocList        = document.getElementById("toc-list");
   var $sidePanel      = document.getElementById("side-panel");
   var $panelContent   = document.getElementById("panel-content");
   var $hlToolbar      = document.getElementById("highlight-toolbar");
@@ -170,6 +174,32 @@
 
       prev() { return rendition && rendition.prev && rendition.prev(); },
       next() { return rendition && rendition.next && rendition.next(); },
+
+      /**
+       * Return the table of contents as a flat array of
+       * { label, href, level }. Levels 0..N for nested entries.
+       */
+      getToc() {
+        if (!book || !book.navigation) return [];
+        var out = [];
+        function walk(items, level) {
+          if (!items) return;
+          items.forEach(function (item) {
+            out.push({
+              label: (item.label || "").trim(),
+              href:  item.href,
+              level: level,
+            });
+            if (item.subitems && item.subitems.length) walk(item.subitems, level + 1);
+          });
+        }
+        walk(book.navigation.toc, 0);
+        return out;
+      },
+
+      jumpToHref(href) {
+        if (rendition && href) rendition.display(href);
+      },
 
       /** Wire the given callback for keydown events inside the EPUB iframe. */
       onKeyDown(callback) {
@@ -408,6 +438,29 @@
         }
       },
 
+      /** Simple page-based TOC for PDFs (no outline parsing in v1). */
+      getToc() {
+        var out = [];
+        for (var i = 1; i <= totalPages; i++) {
+          out.push({ label: "Page " + i, href: "page=" + i, level: 0 });
+        }
+        return out;
+      },
+
+      jumpToHref(href) {
+        if (!href) return;
+        var m = href.match(/page=(\d+)/);
+        if (!m) return;
+        var p = parseInt(m[1], 10);
+        if (pageEls[p - 1]) {
+          pageEls[p - 1].scrollIntoView({ behavior: "smooth" });
+          currentPage = p;
+        }
+      },
+
+      /** PDF iframe doesn't exist; no-op so the reader wiring still works. */
+      onKeyDown() {},
+
       /** Visual PDF highlight overlay deferred to post-v1. */
       addHighlight(/* position, color */) {
         // No-op in v1.  Highlights are stored server-side and painted
@@ -442,6 +495,45 @@
         percentage: percentage,
       });
     }, 2000);
+  }
+
+  /**
+   * URL fragment mirrors the current anchor so the reader URL is
+   * bookmarkable and shareable. Uses replaceState to avoid polluting
+   * history with every relocated event.
+   *
+   *   EPUB:  /read/1#epubcfi(/6/4[chap1]!/4/2/1:0)
+   *   PDF:   /read/1#page=47
+   *   TXT:   /read/1#offset=0
+   */
+  function anchorToFragment(anchor) {
+    if (!anchor) return "";
+    if (anchor.cfi) return anchor.cfi;
+    if (anchor.page) return "page=" + anchor.page;
+    if (anchor.offset !== undefined) return "offset=" + anchor.offset;
+    return "";
+  }
+
+  function fragmentToAnchor(frag) {
+    if (!frag) return null;
+    frag = decodeURIComponent(frag.replace(/^#/, ""));
+    if (!frag) return null;
+    if (frag.indexOf("epubcfi(") === 0) return { cfi: frag };
+    var m = frag.match(/^page=(\d+)$/);
+    if (m) return { page: parseInt(m[1], 10) };
+    m = frag.match(/^offset=(\d+)$/);
+    if (m) return { offset: parseInt(m[1], 10) };
+    return null;
+  }
+
+  function syncUrlFragment(anchor) {
+    var frag = anchorToFragment(anchor);
+    if (!frag) return;
+    var newHash = "#" + frag;
+    if (window.location.hash !== newHash) {
+      var newUrl = window.location.pathname + window.location.search + newHash;
+      try { history.replaceState(null, "", newUrl); } catch (_) {}
+    }
   }
 
   /* ── Reading sessions ──────────────────────────────────────── */
@@ -504,6 +596,44 @@
   function hideHighlightToolbar() {
     $hlToolbar.classList.remove("visible");
     pendingSelection = null;
+  }
+
+  /* ── TOC panel (table of contents) ────────────────────────── */
+
+  function renderToc() {
+    while ($tocList.firstChild) $tocList.removeChild($tocList.firstChild);
+    var entries = adapter && adapter.getToc ? adapter.getToc() : [];
+    if (!entries.length) {
+      var empty = document.createElement("div");
+      empty.style.padding = "8px 16px";
+      empty.style.color = "var(--text-muted)";
+      empty.style.fontSize = "0.85rem";
+      empty.textContent = "No table of contents available.";
+      $tocList.appendChild(empty);
+      return;
+    }
+    entries.forEach(function (entry) {
+      var a = document.createElement("a");
+      a.className = "toc-entry level-" + Math.min(entry.level || 0, 3);
+      a.textContent = entry.label || "(untitled)";
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (adapter && adapter.jumpToHref) adapter.jumpToHref(entry.href);
+        closeToc();
+      });
+      $tocList.appendChild(a);
+    });
+  }
+
+  function openToc() {
+    renderToc();
+    $tocPanel.classList.add("visible");
+    $viewer.classList.add("toc-open");
+  }
+
+  function closeToc() {
+    $tocPanel.classList.remove("visible");
+    $viewer.classList.remove("toc-open");
   }
 
   /* ── Side panel (notes) ────────────────────────────────────── */
@@ -676,6 +806,15 @@
       });
     }
 
+    // TOC panel toggle
+    if ($tocToggle) {
+      $tocToggle.addEventListener("click", function () {
+        if ($tocPanel.classList.contains("visible")) closeToc();
+        else openToc();
+      });
+    }
+    if ($tocClose) $tocClose.addEventListener("click", closeToc);
+
     // Search toggle button
     $searchToggle.addEventListener("click", function () {
       if ($searchBar.classList.contains("visible")) closeSearch();
@@ -706,6 +845,7 @@
       if (e.key === "Escape") {
         if ($searchBar.classList.contains("visible")) closeSearch();
         if ($sidePanel.classList.contains("visible")) closeSidePanel();
+        if ($tocPanel && $tocPanel.classList.contains("visible")) closeToc();
         hideHighlightToolbar();
         return;
       }
@@ -781,10 +921,15 @@
       adapter.applyContentTheme(themes[themeIndex]);
     }
 
-    // Restore progress.
-    var progress = await api("GET", "/api/reading/progress?book_id=" + BOOK.id);
-    if (progress && progress.anchor) {
-      try { await adapter.display(progress.anchor); } catch (_) {}
+    // Seek to initial position. The URL fragment wins over server-stored
+    // progress so shared links (#epubcfi(...) / #page=47) land there.
+    var initialAnchor = fragmentToAnchor(window.location.hash);
+    if (!initialAnchor) {
+      var progress = await api("GET", "/api/reading/progress?book_id=" + BOOK.id);
+      if (progress && progress.anchor) initialAnchor = progress.anchor;
+    }
+    if (initialAnchor) {
+      try { await adapter.display(initialAnchor); } catch (_) {}
     }
 
     // Load and paint existing highlights.
@@ -793,6 +938,13 @@
     // Wire adapter events.
     adapter.onRelocated(function (loc) {
       syncProgress(loc.anchor, loc.percentage);
+      syncUrlFragment(loc.anchor);
+    });
+
+    // React to manual hash edits (e.g. pasted share link, browser history).
+    window.addEventListener("hashchange", function () {
+      var anchor = fragmentToAnchor(window.location.hash);
+      if (anchor) { try { adapter.display(anchor); } catch (_) {} }
     });
 
     adapter.onSelected(function (sel) {

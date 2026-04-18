@@ -211,6 +211,71 @@ a:hover { text-decoration: underline; }
 #viewer.panel-open {
   right: 320px;
 }
+#viewer.toc-open {
+  left: 280px;
+}
+#viewer.toc-open.panel-open {
+  right: 320px;
+}
+
+/* ── TOC panel (slides in from left, 280 px) ─────────────── */
+#toc-panel {
+  position: fixed;
+  top: 48px;
+  left: -280px;
+  bottom: 0;
+  width: 280px;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border);
+  z-index: 98;
+  overflow-y: auto;
+  transition: left 0.3s ease;
+  padding: 12px 0;
+}
+#toc-panel.visible {
+  left: 0;
+}
+#toc-panel .toc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+#toc-panel #toc-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text);
+  line-height: 1;
+  padding: 0 4px;
+}
+#toc-panel #toc-close:hover {
+  color: var(--link);
+}
+#toc-list {
+  display: flex;
+  flex-direction: column;
+}
+.toc-entry {
+  display: block;
+  padding: 6px 16px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.toc-entry:hover {
+  background: var(--bg);
+  border-left-color: var(--link);
+}
+.toc-entry.level-1 { padding-left: 28px; font-size: 0.85rem; }
+.toc-entry.level-2 { padding-left: 40px; font-size: 0.82rem; color: var(--text-muted); }
+.toc-entry.level-3 { padding-left: 52px; font-size: 0.8rem;  color: var(--text-muted); }
 
 /* ── Side panel (slides in from right, 320 px) ───────────── */
 #side-panel {

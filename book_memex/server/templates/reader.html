@@ -21,6 +21,7 @@
     <a href="/" title="Back to library">&larr;</a>
     <span id="book-title">{{ title }}</span>
     <div id="toolbar-actions">
+      <button id="toc-toggle" title="Table of contents">&#9776;</button>
       <button id="nav-prev" title="Previous page (Left arrow)">&#9664;</button>
       <button id="nav-next" title="Next page (Right arrow)">&#9654;</button>
       <button id="search-toggle" title="Search (Ctrl+F)">&#128269;</button>
@@ -33,6 +34,14 @@
     <button id="search-close">&times;</button>
     <div id="search-results"></div>
   </div>
+
+  <aside id="toc-panel">
+    <div class="toc-header">
+      <strong>Contents</strong>
+      <button id="toc-close" title="Close">&times;</button>
+    </div>
+    <nav id="toc-list"></nav>
+  </aside>
 
   <main id="viewer"></main>
 
