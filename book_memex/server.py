@@ -3867,6 +3867,15 @@ def get_web_interface() -> str:
                 }
 
                 if (book.files && book.files.length > 0) {
+                    // If the primary file is a readable format (epub/pdf),
+                    // surface a prominent "Read in browser" link that opens
+                    // the Phase 3 reader at /read/{book_id}.
+                    const readable = book.files.find(f => ['epub', 'pdf'].includes(f.format.toLowerCase()));
+                    if (readable) {
+                        html += '<div class="detail-section"><div class="detail-label">Read</div><div class="detail-tags">' +
+                            '<a href="/read/' + book.id + '" class="file-btn" style="background:#6366f1;color:white;">' +
+                            '&#128214; Open in reader</a></div></div>';
+                    }
                     html += '<div class="detail-section"><div class="detail-label">Download</div><div class="detail-tags">' +
                         book.files.map(f =>
                             '<a href="/api/books/' + book.id + '/files/' + f.format.toLowerCase() + '" target="_blank" class="file-btn">' +
