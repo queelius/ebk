@@ -25,9 +25,11 @@ class EpubExtractor:
         book = epub.read_epub(str(file_path))
 
         # Walk the spine in order. `book.spine` is a list of (item_id, linear)
-        # tuples. The nav item is typically first and is not content; skip it.
-        document_items = []
-        for spine_entry in book.spine:
+        # tuples. The nav item is typically first and is not content; skip it
+        # for text extraction BUT use the real spine position for CFI so
+        # anchors resolve in EPUB.js (which indexes the full spine).
+        segments_yielded = 0
+        for spine_position, spine_entry in enumerate(book.spine):
             item_id = spine_entry[0] if isinstance(spine_entry, tuple) else spine_entry
             item = book.get_item_with_id(item_id)
             if item is None:
@@ -38,9 +40,7 @@ class EpubExtractor:
             href = (item.get_name() or "").lower()
             if "nav" in href or href.endswith(("toc.xhtml", "toc.html")):
                 continue
-            document_items.append(item)
 
-        for index, item in enumerate(document_items):
             raw = item.get_body_content() or item.get_content()
             soup = BeautifulSoup(raw, "html.parser")
 
@@ -58,19 +58,20 @@ class EpubExtractor:
 
             text = _clean_text(soup.get_text(separator=" ", strip=True))
 
-            # Simplified CFI: /6/<2*(index+1)>[<item_id>]!/4 points at the
-            # body of the chapter. Real CFI generation requires inspecting
-            # the OPF; this form resolves in EPUB.js's Rendition.display().
-            cfi = f"epubcfi(/6/{(index + 1) * 2}[{item.get_id()}]!/4)"
+            # CFI spine position uses /6/<2*(spine_position+1)>. We use the
+            # raw spine position (including nav), NOT the filtered segment
+            # index, because EPUB.js resolves CFIs against the full spine.
+            cfi = f"epubcfi(/6/{(spine_position + 1) * 2}[{item.get_id()}]!/4)"
 
             yield Segment(
                 segment_type="chapter",
-                segment_index=index,
+                segment_index=segments_yielded,
                 title=title,
                 anchor={"cfi": cfi},
                 text=text,
                 extraction_status="ok",
             )
+            segments_yielded += 1
 
 
 def _clean_text(text: str) -> str:

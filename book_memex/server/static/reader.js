@@ -96,9 +96,21 @@
 
   /* ── Theme system ──────────────────────────────────────────── */
 
+  // Per-theme palettes mirrored from reader.css, applied to the EPUB.js
+  // iframe so the book content also respects the reader's theme.
+  var READER_THEMES = {
+    light:  { body: { "background": "#ffffff", "color": "#1a1a1a" } },
+    dark:   { body: { "background": "#1a1a1a", "color": "#e0e0e0" } },
+    sepia:  { body: { "background": "#f4ecd8", "color": "#5b4636" } },
+  };
+
   function applyTheme(name) {
     document.documentElement.setAttribute("data-reader-theme", name);
     try { localStorage.setItem("bookMemexReaderTheme", name); } catch (_) {}
+    // Propagate to the EPUB.js rendition iframe if available.
+    if (adapter && typeof adapter.applyContentTheme === "function") {
+      adapter.applyContentTheme(name);
+    }
   }
 
   function initTheme() {
@@ -122,12 +134,31 @@
     var book, rendition;
     return {
       async init(url, containerEl) {
-        book = ePub(url);
+        // Fetch as ArrayBuffer so EPUB.js treats it as a zipped EPUB rather
+        // than resolving META-INF/container.xml relative to the URL path
+        // (our /books/{id}/file URL has no .epub extension).
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error("Could not fetch EPUB file: " + resp.status);
+        const buf = await resp.arrayBuffer();
+        book = ePub(buf);
         rendition = book.renderTo(containerEl, {
           width: "100%",
           height: "100%",
         });
+        // Register theme palettes so the EPUB iframe can switch colours
+        // in sync with the outer reader chrome.
+        for (var name in READER_THEMES) {
+          if (Object.prototype.hasOwnProperty.call(READER_THEMES, name)) {
+            rendition.themes.register(name, READER_THEMES[name]);
+          }
+        }
         await rendition.display();
+      },
+
+      applyContentTheme: function (name) {
+        if (rendition && rendition.themes) {
+          try { rendition.themes.select(name); } catch (_) {}
+        }
       },
 
       async display(anchor) {
@@ -686,6 +717,12 @@
       console.error("Adapter init failed:", err);
       $viewer.textContent = "Could not load book. " + (err.message || "");
       return;
+    }
+
+    // Propagate the current theme into the EPUB iframe now that the
+    // rendition exists (themes had to be registered during init above).
+    if (adapter && typeof adapter.applyContentTheme === "function") {
+      adapter.applyContentTheme(themes[themeIndex]);
     }
 
     // Restore progress.
