@@ -44,18 +44,7 @@ class EpubExtractor:
             raw = item.get_body_content() or item.get_content()
             soup = BeautifulSoup(raw, "html.parser")
 
-            # Title: first <h1>, else <title>, else the item's own attribute.
-            title = None
-            h1 = soup.find("h1")
-            if h1 is not None and h1.get_text(strip=True):
-                title = h1.get_text(strip=True)
-            else:
-                title_tag = soup.find("title")
-                if title_tag is not None and title_tag.get_text(strip=True):
-                    title = title_tag.get_text(strip=True)
-            if not title:
-                title = getattr(item, "title", None) or None
-
+            title = _extract_title(soup) or getattr(item, "title", None) or None
             text = _clean_text(soup.get_text(separator=" ", strip=True))
 
             # CFI spine position uses /6/<2*(spine_position+1)>. We use the
@@ -72,6 +61,16 @@ class EpubExtractor:
                 extraction_status="ok",
             )
             segments_yielded += 1
+
+
+def _extract_title(soup: BeautifulSoup) -> Optional[str]:
+    for tag_name in ("h1", "title"):
+        tag = soup.find(tag_name)
+        if tag is not None:
+            txt = tag.get_text(strip=True)
+            if txt:
+                return txt
+    return None
 
 
 def _clean_text(text: str) -> str:

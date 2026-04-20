@@ -142,7 +142,6 @@ a:hover { text-decoration: underline; }
   opacity: 1;
   pointer-events: auto;
 }
-.hidden { display: none !important; }
 
 #search-input {
   flex: 1;

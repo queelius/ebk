@@ -1,21 +1,19 @@
 /**
- * book-memex reader controller
+ * book-memex reader controller.
  *
- * Single IIFE, no framework, no build step.  Drives EPUB.js or PDF.js through
- * a thin adapter interface and wires up highlight capture, progress sync,
- * reading sessions, in-book search, notes panel, and three-theme cycling.
+ * Single IIFE, no framework, no build step. Drives EPUB.js or PDF.js through a
+ * thin adapter interface and wires up highlight capture, progress sync,
+ * reading sessions, in-book search, TOC, notes panel, and three-theme cycling.
  *
  * Security: all user-facing content built with createElement + textContent.
- * Server search snippets (containing <mark>) sanitized via DOMParser whitelist.
+ * Server search snippets (containing <mark>) sanitised via DOMParser whitelist.
  */
 (function () {
   "use strict";
 
-  /* ── Globals injected by the template ──────────────────────── */
   var BOOK = window.BOOK;
   if (!BOOK) return;
 
-  /* ── DOM handles ───────────────────────────────────────────── */
   var $viewer         = document.getElementById("viewer");
   var $searchBar      = document.getElementById("search-bar");
   var $searchInput    = document.getElementById("search-input");
@@ -35,19 +33,15 @@
   var $btnHighlight   = document.getElementById("btn-highlight");
   var $btnNote        = document.getElementById("btn-note");
 
-  /* ── State ─────────────────────────────────────────────────── */
   var adapter            = null;
   var sessionUuid        = null;
-  var highlights         = new Map();   // uuid -> marginalia object
+  var highlights         = new Map();
   var progressDebounce   = null;
   var searchDebounce     = null;
-  var pendingSelection   = null;        // {text, anchor, rect}
+  var pendingSelection   = null;
   var themes             = ["light", "dark", "sepia"];
   var themeIndex         = 0;
 
-  /* ── Helpers ───────────────────────────────────────────────── */
-
-  /** Escape a string for use in an HTML data-attribute value. */
   function escapeAttr(str) {
     if (!str) return "";
     return str.replace(/&/g, "&amp;")
@@ -57,10 +51,7 @@
               .replace(/'/g, "&#39;");
   }
 
-  /**
-   * Sanitise a server-rendered search snippet.  Only text nodes and <mark>
-   * elements survive; everything else is stripped.  Returns a DocumentFragment.
-   */
+  // Only text nodes and <mark> survive; everything else is stripped.
   function safeSnippet(html) {
     var frag = document.createDocumentFragment();
     var doc  = new DOMParser().parseFromString(html, "text/html");
@@ -74,12 +65,10 @@
         mark.textContent = node.textContent;
         frag.appendChild(mark);
       }
-      // Skip all other element types (sanitise).
     }
     return frag;
   }
 
-  /** JSON-speaking fetch wrapper.  Returns parsed body or null on error. */
   async function api(method, path, body) {
     try {
       var opts = {
@@ -100,10 +89,14 @@
     }
   }
 
+  function clearChildren(el) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+  }
+
   /* ── Theme system ──────────────────────────────────────────── */
 
   // Per-theme palettes mirrored from reader.css, applied to the EPUB.js
-  // iframe so the book content also respects the reader's theme.
+  // iframe so book content respects the reader's theme.
   var READER_THEMES = {
     light:  { body: { "background": "#ffffff", "color": "#1a1a1a" } },
     dark:   { body: { "background": "#1a1a1a", "color": "#e0e0e0" } },
@@ -113,10 +106,7 @@
   function applyTheme(name) {
     document.documentElement.setAttribute("data-reader-theme", name);
     try { localStorage.setItem("bookMemexReaderTheme", name); } catch (_) {}
-    // Propagate to the EPUB.js rendition iframe if available.
-    if (adapter && typeof adapter.applyContentTheme === "function") {
-      adapter.applyContentTheme(name);
-    }
+    if (adapter && adapter.applyContentTheme) adapter.applyContentTheme(name);
   }
 
   function initTheme() {
@@ -135,7 +125,6 @@
 
   /* ── Adapters ──────────────────────────────────────────────── */
 
-  /** EPUB adapter — wraps EPUB.js (the ePub global). */
   function createEpubAdapter() {
     var book, rendition;
     return {
@@ -143,42 +132,30 @@
         // Fetch as ArrayBuffer so EPUB.js treats it as a zipped EPUB rather
         // than resolving META-INF/container.xml relative to the URL path
         // (our /books/{id}/file URL has no .epub extension).
-        const resp = await fetch(url);
+        var resp = await fetch(url);
         if (!resp.ok) throw new Error("Could not fetch EPUB file: " + resp.status);
-        const buf = await resp.arrayBuffer();
+        var buf = await resp.arrayBuffer();
         book = ePub(buf);
-        rendition = book.renderTo(containerEl, {
-          width: "100%",
-          height: "100%",
+        rendition = book.renderTo(containerEl, { width: "100%", height: "100%" });
+        Object.keys(READER_THEMES).forEach(function (name) {
+          rendition.themes.register(name, READER_THEMES[name]);
         });
-        // Register theme palettes so the EPUB iframe can switch colours
-        // in sync with the outer reader chrome.
-        for (var name in READER_THEMES) {
-          if (Object.prototype.hasOwnProperty.call(READER_THEMES, name)) {
-            rendition.themes.register(name, READER_THEMES[name]);
-          }
-        }
         await rendition.display();
       },
 
-      applyContentTheme: function (name) {
+      applyContentTheme(name) {
         if (rendition && rendition.themes) {
           try { rendition.themes.select(name); } catch (_) {}
         }
       },
 
-      async display(anchor) {
-        if (anchor && anchor.cfi) return rendition.display(anchor.cfi);
-        return rendition.display();
+      display(anchor) {
+        return anchor && anchor.cfi ? rendition.display(anchor.cfi) : rendition.display();
       },
 
       prev() { return rendition && rendition.prev && rendition.prev(); },
       next() { return rendition && rendition.next && rendition.next(); },
 
-      /**
-       * Return the table of contents as a flat array of
-       * { label, href, level }. Levels 0..N for nested entries.
-       */
       getToc() {
         if (!book || !book.navigation) return [];
         var out = [];
@@ -201,12 +178,8 @@
         if (rendition && href) rendition.display(href);
       },
 
-      /** Wire the given callback for keydown events inside the EPUB iframe. */
       onKeyDown(callback) {
-        if (!rendition) return;
-        rendition.on("keydown", function (e) {
-          callback(e.key);
-        });
+        if (rendition) rendition.on("keydown", function (e) { callback(e.key); });
       },
 
       onRelocated(callback) {
@@ -223,15 +196,11 @@
           var sel  = contents.window.getSelection();
           var text = sel.toString();
           if (!text) return;
-          var range     = sel.getRangeAt(0);
-          var iframeRect = range.getBoundingClientRect();
+          var iframeRect = sel.getRangeAt(0).getBoundingClientRect();
 
           // Translate iframe-local coords to main document coords.
           var iframe = containerEl.querySelector("iframe");
-          var offset = iframe
-            ? iframe.getBoundingClientRect()
-            : { left: 0, top: 0 };
-
+          var offset = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
           var rect = {
             left:   iframeRect.left   + offset.left,
             top:    iframeRect.top    + offset.top,
@@ -240,7 +209,6 @@
             width:  iframeRect.width,
             height: iframeRect.height,
           };
-
           callback({ text: text, anchor: { cfi: cfiRange }, rect: rect });
         });
       },
@@ -256,24 +224,15 @@
 
       getCurrentAnchor() {
         var loc = rendition.currentLocation();
-        if (!loc || !loc.start) return null;
-        return { cfi: loc.start.cfi };
-      },
-
-      getPercentage() {
-        var loc = rendition.currentLocation();
-        return loc && loc.start ? loc.start.percentage * 100 : 0;
+        return loc && loc.start ? { cfi: loc.start.cfi } : null;
       },
 
       jumpToFragment(fragment) {
-        if (fragment && fragment.startsWith("epubcfi(")) {
-          rendition.display(fragment);
-        }
+        if (fragment && fragment.indexOf("epubcfi(") === 0) rendition.display(fragment);
       },
     };
   }
 
-  /** PDF adapter — renders all pages as canvases with text layers. */
   function createPdfAdapter() {
     var pdfDoc     = null;
     var container  = null;
@@ -281,15 +240,18 @@
     var currentPage = 1;
     var relocatedCb = null;
     var selectedCb  = null;
-    var pageEls     = [];  // one wrapper div per page
+    var pageEls     = [];
 
-    /** Detect which page is most visible and fire relocated. */
+    function scrollToPage(pageNum, behavior) {
+      var el = pageEls[pageNum - 1];
+      if (!el) return;
+      el.scrollIntoView({ behavior: behavior || "smooth" });
+      currentPage = pageNum;
+    }
+
     function onScroll() {
       if (!pageEls.length) return;
-      var scrollTop  = container.scrollTop;
-      var viewHeight = container.clientHeight;
-      var viewMid    = scrollTop + viewHeight / 2;
-
+      var viewMid = container.scrollTop + container.clientHeight / 2;
       var best = 1;
       for (var i = 0; i < pageEls.length; i++) {
         if (pageEls[i].offsetTop <= viewMid) best = i + 1;
@@ -305,7 +267,6 @@
       }
     }
 
-    /** Render a single page (canvas + text layer). */
     async function renderPage(page, pageNum) {
       var scale    = 1.5;
       var viewport = page.getViewport({ scale: scale });
@@ -315,19 +276,17 @@
       wrapper.style.marginBottom = "8px";
       wrapper.setAttribute("data-page", String(pageNum));
 
-      // Canvas
-      var canvas  = document.createElement("canvas");
-      var ctx     = canvas.getContext("2d");
+      var canvas = document.createElement("canvas");
+      var ctx    = canvas.getContext("2d");
       canvas.width  = viewport.width;
       canvas.height = viewport.height;
       canvas.style.display = "block";
-      canvas.style.width  = "100%";
-      canvas.style.height = "auto";
+      canvas.style.width   = "100%";
+      canvas.style.height  = "auto";
       wrapper.appendChild(canvas);
 
       await page.render({ canvasContext: ctx, viewport: viewport }).promise;
 
-      // Text layer
       var textContent = await page.getTextContent();
       var textDiv     = document.createElement("div");
       textDiv.style.position = "absolute";
@@ -337,19 +296,17 @@
       textDiv.style.height = "100%";
       textDiv.style.overflow = "hidden";
 
-      var scaleX = 1; // will be adjusted after layout
-
       textContent.items.forEach(function (item) {
+        // tx = [scaleX, skewY, skewX, scaleY, translateX, translateY]
+        // PDF origin is bottom-left, DOM is top-left.
         var tx = item.transform;
         var span = document.createElement("span");
         span.textContent = item.str;
-        span.style.position  = "absolute";
+        span.style.position   = "absolute";
         span.style.whiteSpace = "pre";
-        span.style.fontSize  = (tx[0] * scale) + "px";
+        span.style.fontSize   = (tx[0] * scale) + "px";
         span.style.fontFamily = "sans-serif";
-        span.style.color     = "transparent";
-        // tx = [scaleX, skewY, skewX, scaleY, translateX, translateY]
-        // PDF origin is bottom-left, DOM is top-left.
+        span.style.color      = "transparent";
         span.style.left = ((tx[4] * scale) / viewport.width * 100) + "%";
         span.style.top  = ((viewport.height - tx[5] * scale - tx[0] * scale) / viewport.height * 100) + "%";
         textDiv.appendChild(span);
@@ -385,16 +342,13 @@
 
         container.addEventListener("scroll", onScroll, { passive: true });
 
-        // Selection via mouseup on the text layers.
         container.addEventListener("mouseup", function () {
           var sel = window.getSelection();
-          if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
-          if (!selectedCb) return;
+          if (!sel || sel.isCollapsed || !sel.toString().trim() || !selectedCb) return;
 
           var range = sel.getRangeAt(0);
           var rect  = range.getBoundingClientRect();
 
-          // Determine page from selection anchor node.
           var node = range.startContainer;
           var pageNum = currentPage;
           while (node && node !== container) {
@@ -418,27 +372,15 @@
       },
 
       async display(anchor) {
-        if (anchor && anchor.page && pageEls[anchor.page - 1]) {
-          pageEls[anchor.page - 1].scrollIntoView({ behavior: "auto" });
-          currentPage = anchor.page;
-        }
+        if (anchor && anchor.page) scrollToPage(anchor.page, "auto");
       },
 
-      onRelocated(callback)  { relocatedCb = callback; },
-      onSelected(callback)   { selectedCb  = callback; },
+      onRelocated(cb) { relocatedCb = cb; },
+      onSelected(cb)  { selectedCb  = cb; },
 
-      prev() {
-        if (currentPage > 1 && pageEls[currentPage - 2]) {
-          pageEls[currentPage - 2].scrollIntoView({ behavior: "smooth" });
-        }
-      },
-      next() {
-        if (currentPage < totalPages && pageEls[currentPage]) {
-          pageEls[currentPage].scrollIntoView({ behavior: "smooth" });
-        }
-      },
+      prev() { if (currentPage > 1) scrollToPage(currentPage - 1); },
+      next() { if (currentPage < totalPages) scrollToPage(currentPage + 1); },
 
-      /** Simple page-based TOC for PDFs (no outline parsing in v1). */
       getToc() {
         var out = [];
         for (var i = 1; i <= totalPages; i++) {
@@ -448,38 +390,21 @@
       },
 
       jumpToHref(href) {
-        if (!href) return;
-        var m = href.match(/page=(\d+)/);
-        if (!m) return;
-        var p = parseInt(m[1], 10);
-        if (pageEls[p - 1]) {
-          pageEls[p - 1].scrollIntoView({ behavior: "smooth" });
-          currentPage = p;
-        }
+        var m = href && href.match(/page=(\d+)/);
+        if (m) scrollToPage(parseInt(m[1], 10));
       },
 
-      /** PDF iframe doesn't exist; no-op so the reader wiring still works. */
       onKeyDown() {},
 
-      /** Visual PDF highlight overlay deferred to post-v1. */
-      addHighlight(/* position, color */) {
-        // No-op in v1.  Highlights are stored server-side and painted
-        // on reload when the overlay layer is implemented.
-      },
+      // Visual PDF highlight overlay deferred to post-v1. Highlights are
+      // stored server-side and will be painted when the overlay lands.
+      addHighlight() {},
 
       getCurrentAnchor() { return { page: currentPage }; },
-      getPercentage()    { return totalPages ? (currentPage / totalPages) * 100 : 0; },
 
       jumpToFragment(fragment) {
-        if (!fragment) return;
-        var m = fragment.match(/page=(\d+)/);
-        if (m) {
-          var p = parseInt(m[1], 10);
-          if (pageEls[p - 1]) {
-            pageEls[p - 1].scrollIntoView({ behavior: "smooth" });
-            currentPage = p;
-          }
-        }
+        var m = fragment && fragment.match(/page=(\d+)/);
+        if (m) scrollToPage(parseInt(m[1], 10));
       },
     };
   }
@@ -497,15 +422,11 @@
     }, 2000);
   }
 
-  /**
-   * URL fragment mirrors the current anchor so the reader URL is
-   * bookmarkable and shareable. Uses replaceState to avoid polluting
-   * history with every relocated event.
-   *
-   *   EPUB:  /read/1#epubcfi(/6/4[chap1]!/4/2/1:0)
-   *   PDF:   /read/1#page=47
-   *   TXT:   /read/1#offset=0
-   */
+  // URL fragment mirrors the current anchor so the reader URL is
+  // bookmarkable and shareable. replaceState avoids polluting history.
+  //   EPUB:  /read/1#epubcfi(/6/4[chap1]!/4/2/1:0)
+  //   PDF:   /read/1#page=47
+  //   TXT:   /read/1#offset=0
   function anchorToFragment(anchor) {
     if (!anchor) return "";
     if (anchor.cfi) return anchor.cfi;
@@ -587,7 +508,6 @@
   function showHighlightToolbar(sel) {
     pendingSelection = sel;
     var r = sel.rect;
-    // Position above the selection, centred horizontally.
     $hlToolbar.style.left = (r.left + r.width / 2 - 40) + "px";
     $hlToolbar.style.top  = (r.top + window.scrollY - 44) + "px";
     $hlToolbar.classList.add("visible");
@@ -598,10 +518,10 @@
     pendingSelection = null;
   }
 
-  /* ── TOC panel (table of contents) ────────────────────────── */
+  /* ── TOC panel ─────────────────────────────────────────────── */
 
   function renderToc() {
-    while ($tocList.firstChild) $tocList.removeChild($tocList.firstChild);
+    clearChildren($tocList);
     var entries = adapter && adapter.getToc ? adapter.getToc() : [];
     if (!entries.length) {
       var empty = document.createElement("div");
@@ -646,22 +566,21 @@
   function closeSidePanel() {
     $sidePanel.classList.remove("visible");
     $viewer.classList.remove("panel-open");
-    // Clear content.
-    while ($panelContent.firstChild) $panelContent.removeChild($panelContent.firstChild);
+    clearChildren($panelContent);
   }
 
-  /** Build the "new note" editor for a just-created highlight. */
-  function showNotePanel(marginalia) {
-    openSidePanel();
-    while ($panelContent.firstChild) $panelContent.removeChild($panelContent.firstChild);
-
-    // Quoted highlight text.
+  function appendHighlightText(parent, marginalia) {
     var ht = document.createElement("div");
     ht.className = "highlight-text";
     ht.textContent = marginalia.highlighted_text || "";
-    $panelContent.appendChild(ht);
+    parent.appendChild(ht);
+  }
 
-    // Label
+  function showNotePanel(marginalia) {
+    openSidePanel();
+    clearChildren($panelContent);
+    appendHighlightText($panelContent, marginalia);
+
     var label = document.createElement("label");
     label.textContent = "Note";
     label.style.display = "block";
@@ -669,13 +588,11 @@
     label.style.margin = "8px 0 4px";
     $panelContent.appendChild(label);
 
-    // Textarea
     var ta = document.createElement("textarea");
     ta.placeholder = "Add a note...";
     ta.value = marginalia.content || "";
     $panelContent.appendChild(ta);
 
-    // Save button
     var btn = document.createElement("button");
     btn.className = "save-btn";
     btn.textContent = "Save";
@@ -691,18 +608,11 @@
     $panelContent.appendChild(btn);
   }
 
-  /** Show an existing highlight's detail (text + note + edit). */
   function showHighlightDetail(marginalia) {
     openSidePanel();
-    while ($panelContent.firstChild) $panelContent.removeChild($panelContent.firstChild);
+    clearChildren($panelContent);
+    appendHighlightText($panelContent, marginalia);
 
-    // Quoted highlight text.
-    var ht = document.createElement("div");
-    ht.className = "highlight-text";
-    ht.textContent = marginalia.highlighted_text || "";
-    $panelContent.appendChild(ht);
-
-    // Note display.
     if (marginalia.content) {
       var noteP = document.createElement("p");
       noteP.style.lineHeight = "1.5";
@@ -711,16 +621,12 @@
       $panelContent.appendChild(noteP);
     }
 
-    // Edit button — switches to editor view.
     var editBtn = document.createElement("button");
     editBtn.className = "save-btn";
     editBtn.textContent = "Edit note";
-    editBtn.addEventListener("click", function () {
-      showNotePanel(marginalia);
-    });
+    editBtn.addEventListener("click", function () { showNotePanel(marginalia); });
     $panelContent.appendChild(editBtn);
 
-    // Close button
     var closeBtn = document.createElement("button");
     closeBtn.className = "save-btn";
     closeBtn.style.marginLeft = "8px";
@@ -737,21 +643,17 @@
     $searchBar.classList.add("visible");
     $searchInput.value = "";
     $searchInput.focus();
-    clearSearchResults();
+    clearChildren($searchResults);
   }
 
   function closeSearch() {
     $searchBar.classList.remove("visible");
     $searchInput.value = "";
-    clearSearchResults();
-  }
-
-  function clearSearchResults() {
-    while ($searchResults.firstChild) $searchResults.removeChild($searchResults.firstChild);
+    clearChildren($searchResults);
   }
 
   async function runSearch(query) {
-    clearSearchResults();
+    clearChildren($searchResults);
     if (!query || !query.trim()) return;
 
     var data = await api("GET",
@@ -769,16 +671,13 @@
       row.className = "search-hit";
       row.setAttribute("data-fragment", escapeAttr(hit.fragment));
 
-      // Label: segment type + index
       var lbl = document.createElement("span");
       lbl.className = "hit-label";
       lbl.textContent = (hit.title || hit.segment_type) + ": ";
       row.appendChild(lbl);
 
-      // Snippet (sanitised).
       row.appendChild(safeSnippet(hit.snippet));
 
-      // Click to jump.
       row.addEventListener("click", function () {
         if (adapter && hit.fragment) adapter.jumpToFragment(hit.fragment);
         closeSearch();
@@ -791,10 +690,8 @@
   /* ── Event wiring ──────────────────────────────────────────── */
 
   function wireEvents() {
-    // Theme toggle
     $themeToggle.addEventListener("click", cycleTheme);
 
-    // Page navigation buttons
     if ($navPrev) {
       $navPrev.addEventListener("click", function () {
         if (adapter && adapter.prev) adapter.prev();
@@ -806,7 +703,6 @@
       });
     }
 
-    // TOC panel toggle
     if ($tocToggle) {
       $tocToggle.addEventListener("click", function () {
         if ($tocPanel.classList.contains("visible")) closeToc();
@@ -815,14 +711,12 @@
     }
     if ($tocClose) $tocClose.addEventListener("click", closeToc);
 
-    // Search toggle button
     $searchToggle.addEventListener("click", function () {
       if ($searchBar.classList.contains("visible")) closeSearch();
       else openSearch();
     });
     $searchClose.addEventListener("click", closeSearch);
 
-    // Search input — debounced on keyup, immediate on Enter.
     $searchInput.addEventListener("keyup", function (e) {
       if (e.key === "Enter") {
         clearTimeout(searchDebounce);
@@ -835,7 +729,6 @@
       }, 500);
     });
 
-    // Ctrl-F / Cmd-F override, Escape, and arrow-key page navigation.
     document.addEventListener("keydown", function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
@@ -849,7 +742,6 @@
         hideHighlightToolbar();
         return;
       }
-      // Page navigation. Skip when focus is in an input/textarea.
       var tag = (e.target && e.target.tagName) || "";
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "ArrowLeft" || e.key === "PageUp") {
@@ -859,17 +751,16 @@
       }
     });
 
-    // Also forward keydown from inside the EPUB iframe. EPUB.js installs
-    // its own "keyreleased" events but they fire after the iframe document
-    // has received the key; if the iframe has focus, outer listeners miss it.
-    if (adapter && typeof adapter.onKeyDown === "function") {
+    // Forward keydown from inside the EPUB iframe: EPUB.js's own key events
+    // fire after the iframe has swallowed the key, so outer listeners miss
+    // it when the iframe has focus.
+    if (adapter && adapter.onKeyDown) {
       adapter.onKeyDown(function (key) {
-        if (key === "ArrowLeft" || key === "PageUp") { adapter.prev(); }
-        else if (key === "ArrowRight" || key === "PageDown" || key === " ") { adapter.next(); }
+        if (key === "ArrowLeft" || key === "PageUp") adapter.prev();
+        else if (key === "ArrowRight" || key === "PageDown" || key === " ") adapter.next();
       });
     }
 
-    // Highlight toolbar buttons.
     $btnHighlight.addEventListener("click", function () {
       if (!pendingSelection) return;
       createHighlight(pendingSelection.text, pendingSelection.anchor, false);
@@ -881,13 +772,11 @@
       hideHighlightToolbar();
     });
 
-    // Dismiss highlight toolbar on click outside.
     document.addEventListener("mousedown", function (e) {
       if ($hlToolbar.contains(e.target)) return;
       hideHighlightToolbar();
     });
 
-    // End session on unload.
     window.addEventListener("beforeunload", endSession);
   }
 
@@ -896,7 +785,6 @@
   async function init() {
     initTheme();
 
-    // Create format adapter.
     if (BOOK.format === "epub") {
       adapter = createEpubAdapter();
     } else if (BOOK.format === "pdf") {
@@ -906,7 +794,6 @@
       return;
     }
 
-    // Initialise renderer.
     try {
       await adapter.init(BOOK.file_url, $viewer);
     } catch (err) {
@@ -917,12 +804,10 @@
 
     // Propagate the current theme into the EPUB iframe now that the
     // rendition exists (themes had to be registered during init above).
-    if (adapter && typeof adapter.applyContentTheme === "function") {
-      adapter.applyContentTheme(themes[themeIndex]);
-    }
+    if (adapter.applyContentTheme) adapter.applyContentTheme(themes[themeIndex]);
 
-    // Seek to initial position. The URL fragment wins over server-stored
-    // progress so shared links (#epubcfi(...) / #page=47) land there.
+    // Seek to initial position. URL fragment wins over server-stored
+    // progress so shared links land where pasted.
     var initialAnchor = fragmentToAnchor(window.location.hash);
     if (!initialAnchor) {
       var progress = await api("GET", "/api/reading/progress?book_id=" + BOOK.id);
@@ -932,16 +817,14 @@
       try { await adapter.display(initialAnchor); } catch (_) {}
     }
 
-    // Load and paint existing highlights.
     await loadHighlights();
 
-    // Wire adapter events.
     adapter.onRelocated(function (loc) {
       syncProgress(loc.anchor, loc.percentage);
       syncUrlFragment(loc.anchor);
     });
 
-    // React to manual hash edits (e.g. pasted share link, browser history).
+    // React to manual hash edits (pasted share link, browser history).
     window.addEventListener("hashchange", function () {
       var anchor = fragmentToAnchor(window.location.hash);
       if (anchor) { try { adapter.display(anchor); } catch (_) {} }
@@ -951,14 +834,9 @@
       if (sel.text.trim()) showHighlightToolbar(sel);
     });
 
-    // Wire DOM events.
     wireEvents();
-
-    // Start reading session.
     await startSession();
   }
-
-  /* ── Bootstrap ─────────────────────────────────────────────── */
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
