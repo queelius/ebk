@@ -1,0 +1,403 @@
+/* book-memex reader — three-theme CSS with custom properties */
+
+/* ── Light theme ─────────────────────────────────────────── */
+[data-reader-theme="light"] {
+  --bg: #ffffff;
+  --text: #1a1a1a;
+  --text-muted: #666666;
+  --highlight: rgba(255, 241, 118, 0.4);
+  --highlight-solid: #fff176;
+  --panel-bg: #f5f5f5;
+  --toolbar-bg: #ffffff;
+  --border: #e0e0e0;
+  --search-bg: #f5f5f5;
+  --input-bg: #ffffff;
+  --link: #1976d2;
+  --mark-bg: rgba(255, 241, 118, 0.6);
+}
+
+/* ── Dark theme ──────────────────────────────────────────── */
+[data-reader-theme="dark"] {
+  --bg: #1a1a1a;
+  --text: #e0e0e0;
+  --text-muted: #999999;
+  --highlight: rgba(102, 85, 0, 0.5);
+  --highlight-solid: #665500;
+  --panel-bg: #2a2a2a;
+  --toolbar-bg: #1a1a1a;
+  --border: #444444;
+  --search-bg: #2a2a2a;
+  --input-bg: #333333;
+  --link: #64b5f6;
+  --mark-bg: rgba(102, 85, 0, 0.7);
+}
+
+/* ── Sepia theme ─────────────────────────────────────────── */
+[data-reader-theme="sepia"] {
+  --bg: #f4ecd8;
+  --text: #5b4636;
+  --text-muted: #8b7355;
+  --highlight: rgba(230, 212, 160, 0.5);
+  --highlight-solid: #e6d4a0;
+  --panel-bg: #ede3ce;
+  --toolbar-bg: #f4ecd8;
+  --border: #d4c4a8;
+  --search-bg: #ede3ce;
+  --input-bg: #f4ecd8;
+  --link: #8b5e3c;
+  --mark-bg: rgba(230, 212, 160, 0.7);
+}
+
+/* ── Base reset & body ───────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans",
+               "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Toolbar (fixed top, 48 px) ──────────────────────────── */
+#reader-toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  transition: background 0.3s ease;
+}
+
+#reader-toolbar a {
+  font-size: 1.25rem;
+  margin-right: 12px;
+}
+
+#book-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+#toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#reader-toolbar button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 1.1rem;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+#reader-toolbar button:hover {
+  background: var(--panel-bg);
+}
+
+/* ── Search bar (slides down from toolbar) ───────────────── */
+#search-bar {
+  position: fixed;
+  top: 48px;
+  left: 0;
+  right: 0;
+  background: var(--search-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  z-index: 99;
+  transform: translateY(-100%);
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  pointer-events: none;
+}
+#search-bar.visible {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.hidden { display: none !important; }
+
+#search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+}
+#search-input:focus {
+  border-color: var(--link);
+}
+
+#search-close {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 1rem;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+#search-results {
+  width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* ── Search hit items ────────────────────────────────────── */
+.search-hit {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s ease;
+}
+.search-hit:hover {
+  background: var(--panel-bg);
+}
+.hit-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 6px;
+}
+.search-hit mark {
+  background: var(--mark-bg);
+  color: var(--text);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+/* ── Viewer (main content area) ──────────────────────────── */
+#viewer {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: auto;
+  transition: right 0.3s ease;
+}
+#viewer.panel-open {
+  right: 320px;
+}
+#viewer.toc-open {
+  left: 280px;
+}
+#viewer.toc-open.panel-open {
+  right: 320px;
+}
+
+/* ── TOC panel (slides in from left, 280 px) ─────────────── */
+#toc-panel {
+  position: fixed;
+  top: 48px;
+  left: -280px;
+  bottom: 0;
+  width: 280px;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border);
+  z-index: 98;
+  overflow-y: auto;
+  transition: left 0.3s ease;
+  padding: 12px 0;
+}
+#toc-panel.visible {
+  left: 0;
+}
+#toc-panel .toc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+#toc-panel #toc-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text);
+  line-height: 1;
+  padding: 0 4px;
+}
+#toc-panel #toc-close:hover {
+  color: var(--link);
+}
+#toc-list {
+  display: flex;
+  flex-direction: column;
+}
+.toc-entry {
+  display: block;
+  padding: 6px 16px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.toc-entry:hover {
+  background: var(--bg);
+  border-left-color: var(--link);
+}
+.toc-entry.level-1 { padding-left: 28px; font-size: 0.85rem; }
+.toc-entry.level-2 { padding-left: 40px; font-size: 0.82rem; color: var(--text-muted); }
+.toc-entry.level-3 { padding-left: 52px; font-size: 0.8rem;  color: var(--text-muted); }
+
+/* ── Side panel (slides in from right, 320 px) ───────────── */
+#side-panel {
+  position: fixed;
+  top: 48px;
+  right: -320px;
+  bottom: 0;
+  width: 320px;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--border);
+  z-index: 98;
+  overflow-y: auto;
+  transition: right 0.3s ease;
+  padding: 16px;
+}
+#side-panel.visible {
+  right: 0;
+}
+
+#panel-content {
+  font-size: 0.9rem;
+}
+
+.highlight-text {
+  background: var(--highlight);
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+#side-panel textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+  outline: none;
+}
+#side-panel textarea:focus {
+  border-color: var(--link);
+}
+
+.save-btn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 16px;
+  background: var(--link);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.save-btn:hover {
+  opacity: 0.85;
+}
+
+/* ── Highlight toolbar (floating, absolutely positioned) ─── */
+#highlight-toolbar {
+  position: absolute;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  background: var(--toolbar-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 200;
+}
+#highlight-toolbar.visible {
+  display: flex;
+}
+
+#highlight-toolbar button {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text);
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+#highlight-toolbar button:hover {
+  background: var(--panel-bg);
+}
+
+/* ── Error page ──────────────────────────────────────────── */
+.reader-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  text-align: center;
+  padding: 32px;
+}
+.reader-error h1 {
+  font-size: 1.5rem;
+  margin-bottom: 12px;
+}
+.reader-error p {
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  max-width: 480px;
+  line-height: 1.6;
+}
+.reader-error a {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+.reader-error a:hover {
+  background: var(--panel-bg);
+}

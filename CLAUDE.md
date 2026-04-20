@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-**book-memex** (the directory is still `ebk/` on disk and GitHub; the Python package was renamed to `book_memex` in Phase 1). An eBook library manager evolving into the book-domain archive of the `*-memex` family. See `~/github/memex/CLAUDE.md` for ecosystem conventions and `docs/superpowers/specs/2026-04-15-book-memex-v1-design.md` for the v1 design. Phase 1 (rename + URI-addressable marginalia + soft-delete + CRUD surfaces) is complete; Phase 2 (content extraction + search + `ask_book`) and Phase 3 (browser reader) are future work.
+**book-memex** (the directory is still `ebk/` on disk and GitHub; the Python package was renamed to `book_memex` in Phase 1). An eBook library manager evolving into the book-domain archive of the `*-memex` family. See `~/github/memex/CLAUDE.md` for ecosystem conventions and `docs/superpowers/specs/2026-04-15-book-memex-v1-design.md` for the v1 design. Phases 1 (rename + URI-addressable marginalia + soft-delete + CRUD surfaces), 2 (content extraction + FTS5 per-segment search + `ask_book`), and 3 (browser reader) are all complete.
 
-Key capabilities as of Phase 1:
-- SQLAlchemy + SQLite backend with FTS5 over metadata and extracted text.
+Key capabilities as of Phase 3:
+- SQLAlchemy + SQLite backend with FTS5 over metadata and per-segment `book_content`.
 - URI-addressable records: `book-memex://book/<unique_id>`, `book-memex://marginalia/<uuid>`, `book-memex://reading/<uuid>`.
 - Soft delete across marginalia, reading sessions, and (schema-ready) all other memex-family records.
-- REST (`/api/marginalia`, `/api/reading/sessions`, `/api/reading/progress`) and MCP tool surfaces over the same operations.
+- REST (`/api/marginalia`, `/api/reading/sessions`, `/api/reading/progress`, `/api/books/{id}/search`, `/api/search/content`) and MCP tool surfaces over the same operations.
+- `ask_book` MCP tool: FTS5-grounded LLM answers with URI citations (no embeddings).
+- Browser reader at `/read/{book_id}` for EPUB and PDF with highlight capture, progress sync, three themes.
 - arkiv export (`records.jsonl` + `schema.yaml`) including book, marginalia, reading kinds.
 - Legacy `ebk` CLI alias with deprecation shim (to be removed post-v1).
 
@@ -21,7 +23,7 @@ make setup              # Create venv and install all deps
 make install-dev        # Dev deps only
 
 # Testing
-pytest                                              # All tests (~1020+, 5 skipped)
+pytest                                              # All tests (~1087, 8 skipped)
 pytest tests/test_server_marginalia.py -v           # Single file
 pytest -k "marginalia or reading" -v                # Keyword filter
 pytest --cov=book_memex --cov-report=term-missing   # Coverage
@@ -139,7 +141,7 @@ Key test files:
 - `tests/test_phase1_e2e.py` (REST ↔ MCP round-trip)
 - `tests/test_exports.py::TestArkivExport`
 
-Total: ~1020 passing, 5 skipped. Phase 1 modules sit at 89-100% coverage.
+Total: 1087 passing, 8 skipped. Phase 1-3 modules sit at 89-100% coverage.
 
 ## Entry points
 
@@ -148,23 +150,30 @@ Total: ~1020 passing, 5 skipped. Phase 1 modules sit at 89-100% coverage.
 - **Web server**: `book-memex serve` → FastAPI on port 8000.
 - **MCP server**: `book-memex-mcp-serve` (or `book-memex mcp-serve`) → stdio MCP.
 
-## Phase 2 / 3 pending work
+## Reader (Phase 3)
 
-Phase 2 (content + search):
-- Rename `TextChunk` → `BookContent` with segment_type / title / anchor / extractor_version / extraction_status.
-- Drop `has_embedding` flag (per workspace "no embeddings in archives" convention).
-- New `book_content_fts` virtual table + triggers.
-- Content extractors for EPUB, PDF, TXT (per-chapter / per-page / whole-file).
-- `GET /api/books/{id}/search` and `GET /api/search/content`; matching MCP tools.
-- `ask_book(book_id, question)` MCP tool (FTS5 + LLM, no embeddings).
-- `safe_fts_query()` helper for escaping user input.
-- `book-memex reindex-content` CLI.
+Browser-based EPUB/PDF reader at `/read/{book_id}` served by `book_memex.server`:
 
-Phase 3 (browser reader):
-- `/read/{book_id}` HTML shell loading EPUB.js or PDF.js.
-- Highlight capture + paint-on-reload, progress sync, notes pane, in-book search UI, reading-session auto-tracking.
+- **Endpoints.** `GET /read/{book_id}` renders the reader shell; `GET /read/{book_id}/file` streams the raw EPUB/PDF; `GET /read/{book_id}/metadata` returns book metadata, existing highlights, and last-known progress anchor.
+- **Static assets** at `book_memex/server/static/` (`reader.js` ~750 LOC, `reader.css`).
+- **Templates** at `book_memex/server/templates/` (`reader.html`, `reader_error.html`).
+- **Adapter pattern.** `reader.js` defines a `ReaderAdapter` interface with two implementations: `EpubAdapter` wraps EPUB.js 0.3.93 + JSZip 3.10.1 (from CDN), `PdfAdapter` wraps PDF.js 4.0.379 (from CDN). The shell chooses per-book based on MIME type.
+- **Server-side state.** All reader state is persisted via the existing Phase 1/2 REST endpoints. Highlights go to `Marginalia` (`POST /api/marginalia`), progress to `PersonalMetadata.progress_anchor` + `reading_progress` (`PATCH /api/reading/progress`), sessions to `ReadingSession` (`POST /api/reading/sessions`). The reader does not introduce new state tables or endpoints.
+- **Themes.** Three themes (light, dark, sepia). Selection is stored client-side in `localStorage.bookMemexReaderTheme`. CSS custom properties drive the shell; EPUB.js `themes.register()` + `themes.select()` propagates into the rendered EPUB iframe.
+- **Limitations** (see "Known limitations" below).
 
-Phase-1 polish deferred (non-blocking, tracked):
+## Known limitations
+
+- **DRM-protected ebooks cannot be rendered.** EPUB.js and PDF.js do not decrypt Adobe DRM, Amazon KFX, or similar. Out of scope forever; use original vendor readers.
+- **Mobile touch UX is functional but not polished.** Selection and toolbar work on touch, but highlight handles and long-press behavior are not tuned for small screens.
+- **PDF highlights are not visually re-painted in v1.** PDF highlight captures are stored server-side (with CFI-like anchors) but PdfAdapter does not re-render them as overlays on PDF pages. EPUB highlights paint correctly on reload via EPUB.js annotations.
+- **No offline/PWA support.** No service worker; reading requires a live connection to the `book-memex serve` instance.
+
+## Deferred post-v1
+
 - Book-level soft-delete propagation (archived_at exists on books/authors/etc. but is not yet filtered in `/api/books`, `Library.search`, non-arkiv exporters).
 - Simplify `MarginaliaService` verb surface (legacy `delete` + new `archive`/`restore`/`hard_delete`).
 - Migrate Concept graph to the federation layer (`memex`) once it exists.
+- PDF highlight overlay rendering (see limitations above).
+- Mobile touch polish.
+- Offline reader (service worker / PWA).

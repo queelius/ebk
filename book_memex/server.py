@@ -12,6 +12,9 @@ import shutil
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.requests import Request
+from starlette.templating import Jinja2Templates
+from starlette.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import json as _json
@@ -348,6 +351,97 @@ app.add_middleware(
 # Include OPDS router
 app.include_router(opds.router)
 
+# Static files and Jinja2 templates for the browser reader
+_SERVER_DIR = Path(__file__).parent / "server"
+app.mount("/static", StaticFiles(directory=str(_SERVER_DIR / "static")), name="reader-static")
+_templates = Jinja2Templates(directory=str(_SERVER_DIR / "templates"))
+
+# MIME types for reader file streaming
+_READER_MIME = {
+    "epub": "application/epub+zip",
+    "pdf": "application/pdf",
+    "txt": "text/plain",
+}
+
+
+@app.get("/read/{book_id}")
+async def read_book(request: Request, book_id: int):
+    """Serve the browser reader for a book."""
+    lib = get_library()
+    book = lib.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    pf = book.primary_file
+    if pf is None:
+        return _templates.TemplateResponse("reader_error.html", {
+            "request": request,
+            "error_title": "No readable file",
+            "error_message": "This book has no files attached. Import a file first.",
+        })
+
+    fmt = pf.format.lower()
+    if fmt not in ("epub", "pdf"):
+        return _templates.TemplateResponse("reader_error.html", {
+            "request": request,
+            "error_title": "Format not supported",
+            "error_message": f"Format \"{fmt}\" is not supported in the reader. "
+                             "Only EPUB and PDF files can be opened.",
+        })
+
+    author = ", ".join(a.name for a in book.authors) if book.authors else "Unknown"
+    book_json = _json.dumps({
+        "id": book.id,
+        "unique_id": book.unique_id,
+        "format": fmt,
+        "file_url": f"/books/{book.id}/file",
+        "title": book.title,
+        "author": author,
+    })
+    return _templates.TemplateResponse("reader.html", {
+        "request": request,
+        "title": book.title,
+        "format": fmt,
+        "book_json": book_json,
+    })
+
+
+@app.get("/books/{book_id}/file")
+async def reader_file(book_id: int):
+    """Stream the book's primary file for the reader."""
+    lib = get_library()
+    book = lib.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    pf = book.primary_file
+    if pf is None or _library_path is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = _library_path / pf.path
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    mime = _READER_MIME.get(pf.format.lower(), "application/octet-stream")
+    return FileResponse(str(file_path), media_type=mime)
+
+
+@app.get("/books/{book_id}/metadata.json")
+async def reader_metadata(book_id: int):
+    """Return lightweight reader metadata for a book."""
+    lib = get_library()
+    book = lib.get_book(book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    author = ", ".join(a.name for a in book.authors) if book.authors else "Unknown"
+    fmt = book.primary_file.format.lower() if book.primary_file else None
+    return JSONResponse({
+        "title": book.title,
+        "author": author,
+        "format": fmt,
+        "book_uri": book.uri,
+    })
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -3773,6 +3867,15 @@ def get_web_interface() -> str:
                 }
 
                 if (book.files && book.files.length > 0) {
+                    // If the primary file is a readable format (epub/pdf),
+                    // surface a prominent "Read in browser" link that opens
+                    // the Phase 3 reader at /read/{book_id}.
+                    const readable = book.files.find(f => ['epub', 'pdf'].includes(f.format.toLowerCase()));
+                    if (readable) {
+                        html += '<div class="detail-section"><div class="detail-label">Read</div><div class="detail-tags">' +
+                            '<a href="/read/' + book.id + '" class="file-btn" style="background:#6366f1;color:white;">' +
+                            '&#128214; Open in reader</a></div></div>';
+                    }
                     html += '<div class="detail-section"><div class="detail-label">Download</div><div class="detail-tags">' +
                         book.files.map(f =>
                             '<a href="/api/books/' + book.id + '/files/' + f.format.toLowerCase() + '" target="_blank" class="file-btn">' +
