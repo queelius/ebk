@@ -364,6 +364,26 @@ _READER_MIME = {
 }
 
 
+def _safe_json_for_script(obj) -> str:
+    """JSON-encode for inline embedding inside an HTML <script> block.
+
+    json.dumps does not escape `<`, `>`, or `&`, so a user-controlled
+    string containing `</script>` would break out of the script element
+    into the HTML context. Book titles reach this endpoint via OPDS
+    feeds, URL imports, and imported EPUB/PDF metadata, so this is a
+    reachable XSS surface. U+2028 and U+2029 also terminate JS strings
+    and must be escaped to JSON escape sequences.
+    """
+    return (
+        _json.dumps(obj)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 @app.get("/read/{book_id}")
 async def read_book(request: Request, book_id: int):
     """Serve the browser reader for a book."""
@@ -390,11 +410,11 @@ async def read_book(request: Request, book_id: int):
         })
 
     author = ", ".join(a.name for a in book.authors) if book.authors else "Unknown"
-    book_json = _json.dumps({
+    book_json = _safe_json_for_script({
         "id": book.id,
         "unique_id": book.unique_id,
         "format": fmt,
-        "file_url": f"/books/{book.id}/file",
+        "file_url": f"/read/{book.id}/file",
         "title": book.title,
         "author": author,
     })
@@ -406,7 +426,7 @@ async def read_book(request: Request, book_id: int):
     })
 
 
-@app.get("/books/{book_id}/file")
+@app.get("/read/{book_id}/file")
 async def reader_file(book_id: int):
     """Stream the book's primary file for the reader."""
     lib = get_library()
@@ -424,24 +444,6 @@ async def reader_file(book_id: int):
 
     mime = _READER_MIME.get(pf.format.lower(), "application/octet-stream")
     return FileResponse(str(file_path), media_type=mime)
-
-
-@app.get("/books/{book_id}/metadata.json")
-async def reader_metadata(book_id: int):
-    """Return lightweight reader metadata for a book."""
-    lib = get_library()
-    book = lib.get_book(book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    author = ", ".join(a.name for a in book.authors) if book.authors else "Unknown"
-    fmt = book.primary_file.format.lower() if book.primary_file else None
-    return JSONResponse({
-        "title": book.title,
-        "author": author,
-        "format": fmt,
-        "book_uri": book.uri,
-    })
 
 
 @app.get("/", response_class=HTMLResponse)

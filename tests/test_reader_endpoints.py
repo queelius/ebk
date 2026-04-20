@@ -1,4 +1,4 @@
-"""Tests for browser-reader endpoints: /read, /books/{id}/file, /books/{id}/metadata.json."""
+"""Tests for browser-reader endpoints: /read/{id} and /read/{id}/file."""
 import tempfile
 import shutil
 from pathlib import Path
@@ -87,12 +87,12 @@ def test_read_unsupported_format_returns_error(client_with_txt):
     assert "not supported" in r.text.lower()
 
 
-# ── GET /books/{book_id}/file ────────────────────────────────
+# ── GET /read/{book_id}/file ─────────────────────────────────
 
 
 def test_file_endpoint_streams_epub(client_with_epub):
     client, book, _ = client_with_epub
-    r = client.get(f"/books/{book.id}/file")
+    r = client.get(f"/read/{book.id}/file")
     assert r.status_code == 200
     ct = r.headers["content-type"]
     assert "epub" in ct or "octet-stream" in ct
@@ -101,7 +101,7 @@ def test_file_endpoint_streams_epub(client_with_epub):
 
 def test_file_endpoint_supports_range(client_with_epub):
     client, book, _ = client_with_epub
-    r = client.get(f"/books/{book.id}/file", headers={"Range": "bytes=0-99"})
+    r = client.get(f"/read/{book.id}/file", headers={"Range": "bytes=0-99"})
     # FileResponse returns 200 or 206 depending on Starlette version
     assert r.status_code in (200, 206)
     assert len(r.content) > 0
@@ -109,24 +109,36 @@ def test_file_endpoint_supports_range(client_with_epub):
 
 def test_file_endpoint_404_for_missing_book(client_with_epub):
     client, _, _ = client_with_epub
-    r = client.get("/books/99999/file")
+    r = client.get("/read/99999/file")
     assert r.status_code == 404
 
 
-# ── GET /books/{book_id}/metadata.json ───────────────────────
+# ── XSS escaping in injected book JSON ───────────────────────
 
 
-def test_metadata_json(client_with_epub):
-    client, book, _ = client_with_epub
-    r = client.get(f"/books/{book.id}/metadata.json")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["title"] == book.title
-    assert "format" in data
-    assert "book_uri" in data
-
-
-def test_metadata_json_404(client_with_epub):
-    client, _, _ = client_with_epub
-    r = client.get("/books/99999/metadata.json")
-    assert r.status_code == 404
+def test_read_escapes_script_tag_in_title(sample_epub):
+    """A book title containing </script> must not break out of the
+    embedded script block in reader.html. Verified by ensuring the
+    literal closing script tag does not appear in the injected JSON."""
+    temp_dir = Path(tempfile.mkdtemp())
+    try:
+        lib = Library.open(temp_dir)
+        malicious_title = "Pwn</script><img src=x onerror=alert(1)>"
+        book = lib.add_book(
+            sample_epub,
+            metadata={"title": malicious_title, "creators": ["X"]},
+            extract_text=False,
+            extract_cover=False,
+        )
+        set_library(lib)
+        with TestClient(app) as client:
+            r = client.get(f"/read/{book.id}")
+        lib.close()
+        assert r.status_code == 200
+        # The <title> tag uses Jinja2 autoescape; the injected JSON uses
+        # our own escaping. Neither path should emit a literal </script>.
+        assert "</script><img" not in r.text
+        # The escaped form should be present inside window.BOOK.
+        assert "\\u003c/script\\u003e" in r.text
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)

@@ -154,7 +154,7 @@ Total: 1087 passing, 8 skipped. Phase 1-3 modules sit at 89-100% coverage.
 
 Browser-based EPUB/PDF reader at `/read/{book_id}` served by `book_memex.server`:
 
-- **Endpoints.** `GET /read/{book_id}` renders the reader shell; `GET /read/{book_id}/file` streams the raw EPUB/PDF; `GET /read/{book_id}/metadata` returns book metadata, existing highlights, and last-known progress anchor.
+- **Endpoints.** `GET /read/{book_id}` renders the reader shell and inline-embeds book metadata in `window.BOOK`; `GET /read/{book_id}/file` streams the raw EPUB/PDF. The client pulls existing highlights and last-known progress via the Phase 1 REST surface (`/api/marginalia?book_id=...`, `/api/reading/progress?book_id=...`).
 - **Static assets** at `book_memex/server/static/` (`reader.js` ~750 LOC, `reader.css`).
 - **Templates** at `book_memex/server/templates/` (`reader.html`, `reader_error.html`).
 - **Adapter pattern.** `reader.js` defines a `ReaderAdapter` interface with two implementations: `EpubAdapter` wraps EPUB.js 0.3.93 + JSZip 3.10.1 (from CDN), `PdfAdapter` wraps PDF.js 4.0.379 (from CDN). The shell chooses per-book based on MIME type.

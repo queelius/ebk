@@ -131,7 +131,7 @@
       async init(url, containerEl) {
         // Fetch as ArrayBuffer so EPUB.js treats it as a zipped EPUB rather
         // than resolving META-INF/container.xml relative to the URL path
-        // (our /books/{id}/file URL has no .epub extension).
+        // (our /read/{id}/file URL has no .epub extension).
         var resp = await fetch(url);
         if (!resp.ok) throw new Error("Could not fetch EPUB file: " + resp.status);
         var buf = await resp.arrayBuffer();
