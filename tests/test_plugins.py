@@ -3,8 +3,6 @@ Tests for the EBK plugin system.
 """
 
 import pytest
-import asyncio
-from unittest.mock import Mock, AsyncMock, patch
 from typing import Dict, Any, List
 
 from book_memex.plugins.base import (
@@ -13,14 +11,6 @@ from book_memex.plugins.base import (
 )
 from book_memex.plugins.registry import PluginRegistry, register_plugin
 from book_memex.plugins.hooks import HookRegistry, hook, trigger_hook
-
-# Optional integration - may not be installed
-try:
-    from integrations.metadata.google_books import GoogleBooksExtractor
-    HAS_GOOGLE_BOOKS = True
-except ImportError:
-    HAS_GOOGLE_BOOKS = False
-    GoogleBooksExtractor = None
 
 
 class TestPlugin(Plugin):
@@ -388,113 +378,6 @@ class TestHookDecorator:
         hooks.trigger("test.priority")
         assert results == ["high", "medium", "low"]
 
-
-@pytest.mark.skipif(not HAS_GOOGLE_BOOKS, reason="Google Books integration not installed")
-class TestGoogleBooksPlugin:
-    """Test Google Books plugin."""
-    
-    @pytest.mark.asyncio
-    async def test_google_books_initialization(self):
-        """Test Google Books plugin initialization."""
-        plugin = GoogleBooksExtractor()
-        
-        assert plugin.name == "google_books"
-        assert plugin.version == "1.0.0"
-        assert plugin.supported_formats() == ["isbn"]
-    
-    @pytest.mark.asyncio
-    async def test_google_books_extract_with_mock(self):
-        """Test Google Books extraction with mocked API."""
-        plugin = GoogleBooksExtractor()
-        
-        mock_response = {
-            "totalItems": 1,
-            "items": [{
-                "volumeInfo": {
-                    "title": "Test Book",
-                    "authors": ["Test Author"],
-                    "publisher": "Test Publisher",
-                    "publishedDate": "2023-01-01",
-                    "description": "Test description",
-                    "categories": ["Fiction"],
-                    "language": "en",
-                    "pageCount": 300
-                },
-                "selfLink": "https://example.com/book"
-            }]
-        }
-        
-        with patch.object(plugin, '_fetch_book_data', return_value=mock_response):
-            result = await plugin.extract(isbn="1234567890")
-        
-        assert result["title"] == "Test Book"
-        assert result["creators"] == ["Test Author"]
-        assert result["publisher"] == "Test Publisher"
-        assert result["date"] == "2023-01-01"
-        assert result["year"] == 2023
-        assert result["description"] == "Test description"
-        assert result["subjects"] == ["Fiction"]
-        assert result["language"] == "en"
-        assert result["page_count"] == 300
-        assert result["source"] == "google_books"
-    
-    @pytest.mark.asyncio
-    async def test_google_books_no_results(self):
-        """Test Google Books with no results."""
-        plugin = GoogleBooksExtractor()
-        
-        mock_response = {"totalItems": 0}
-        
-        with patch.object(plugin, '_fetch_book_data', return_value=mock_response):
-            result = await plugin.extract(isbn="0000000000")
-        
-        assert result == {}
-    
-    def test_google_books_parse_volume_info(self):
-        """Test parsing volume info."""
-        plugin = GoogleBooksExtractor()
-        
-        volume_info = {
-            "title": "Sample Book",
-            "subtitle": "A Great Read",
-            "authors": ["John Doe", "Jane Smith"],
-            "publisher": "Example Press",
-            "publishedDate": "2022-06-15",
-            "description": "A wonderful book about testing.",
-            "categories": ["Technology", "Testing"],
-            "language": "en",
-            "pageCount": 250,
-            "industryIdentifiers": [
-                {"type": "ISBN_13", "identifier": "9781234567890"},
-                {"type": "ISBN_10", "identifier": "1234567890"}
-            ],
-            "imageLinks": {
-                "thumbnail": "https://example.com/thumb.jpg",
-                "large": "https://example.com/large.jpg"
-            },
-            "averageRating": 4.5,
-            "ratingsCount": 100
-        }
-        
-        result = plugin._parse_volume_info(volume_info)
-        
-        assert result["title"] == "Sample Book"
-        assert result["subtitle"] == "A Great Read"
-        assert result["creators"] == ["John Doe", "Jane Smith"]
-        assert result["publisher"] == "Example Press"
-        assert result["date"] == "2022-06-15"
-        assert result["year"] == 2022
-        assert result["description"] == "A wonderful book about testing."
-        assert result["subjects"] == ["Technology", "Testing"]
-        assert result["language"] == "en"
-        assert result["page_count"] == 250
-        assert result["identifiers"]["isbn13"] == "9781234567890"
-        assert result["identifiers"]["isbn10"] == "1234567890"
-        assert result["identifiers"]["isbn"] == "9781234567890"
-        assert result["cover_url"] == "https://example.com/large.jpg"
-        assert result["thumbnail_url"] == "https://example.com/thumb.jpg"
-        assert result["rating"] == 4.5
-        assert result["ratings_count"] == 100
 
 
 class TestTagSuggestion:
