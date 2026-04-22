@@ -1716,7 +1716,7 @@ def _generate_html_template(
             }}
 
             if (book.description) {{
-                html += `<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${{book.description}}</div></div>`;
+                html += `<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${{escapeHtml(book.description)}}</div></div>`;
             }}
 
             if (book.marginalia && book.marginalia.length) {{

@@ -131,6 +131,40 @@ def test_table_rows_are_row_level_clickable(tmp_path, lib_with_annotated_book):
     )
 
 
+def test_book_description_is_html_escaped_in_modal(tmp_path):
+    """book.description must flow through escapeHtml in the modal template.
+
+    Publisher-supplied descriptions cannot be trusted. Escaping matches the
+    policy applied to marginalia content and protects deployments that host
+    the exported HTML on the web (e.g. via the Hugo deployment path the
+    README documents).
+    """
+    temp_dir = Path(tempfile.mkdtemp())
+    try:
+        lib = Library.open(temp_dir)
+        p = lib.library_path / "b.txt"
+        p.write_text("hello")
+        book = lib.add_book(
+            p,
+            metadata={"title": "XSS Test", "creators": ["X"]},
+            extract_text=False,
+        )
+        book.description = "<script>window.__xss = true;</script>Plain tail."
+        lib.session.commit()
+
+        output = tmp_path / "library.html"
+        export_to_html([book], output)
+        html = output.read_text()
+
+        assert "escapeHtml(book.description)" in html, (
+            "book.description must be passed through escapeHtml in "
+            "showDetails() to prevent XSS"
+        )
+    finally:
+        lib.close()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def test_exported_html_without_marginalia_renders(tmp_path):
     """Books without any marginalia must still export cleanly (no marginalia section)."""
     temp_dir = Path(tempfile.mkdtemp())
