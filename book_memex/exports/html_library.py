@@ -118,6 +118,23 @@ def export_to_html(
                 'queue_position': queue_position,
                 'tags': book.personal.personal_tags or [] if book.personal else [],
             },
+            'marginalia': [
+                {
+                    'uuid': m.uuid,
+                    'content': m.content,
+                    'highlighted_text': m.highlighted_text,
+                    'page_number': m.page_number,
+                    'color': m.color,
+                    'category': m.category,
+                    'pinned': m.pinned,
+                    'scope': m.scope,
+                    'created_at': m.created_at.isoformat() if m.created_at else None,
+                }
+                for m in sorted(
+                    (m for m in book.marginalia if m.archived_at is None),
+                    key=lambda m: (not m.pinned, -(m.page_number or 0), m.created_at or datetime.min),
+                )
+            ],
             'created_at': book.created_at.isoformat(),
         }
         books_data.append(book_data)
@@ -844,6 +861,46 @@ def _generate_html_template(
             padding: 4px 10px;
             border-radius: 16px;
             font-size: 0.8rem;
+        }}
+
+        .marginalia-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }}
+
+        .marginalia-entry {{
+            padding: 12px 14px;
+            background: var(--bg-tertiary);
+            border-left: 4px solid var(--accent);
+            border-radius: var(--radius);
+        }}
+
+        .marginalia-entry.pinned {{
+            border-left-color: var(--warning);
+        }}
+
+        .marginalia-quote {{
+            margin-bottom: 8px;
+            padding: 6px 10px;
+            background: var(--bg-secondary);
+            border-radius: calc(var(--radius) - 2px);
+            color: var(--text-primary);
+            font-style: italic;
+            white-space: pre-wrap;
+        }}
+
+        .marginalia-note {{
+            color: var(--text-primary);
+            white-space: pre-wrap;
+        }}
+
+        .marginalia-meta {{
+            margin-top: 6px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
         }}
 
         .file-list {{
@@ -1657,6 +1714,26 @@ def _generate_html_template(
 
             if (book.description) {{
                 html += `<div class="detail-section"><div class="detail-label">Description</div><div class="detail-value">${{book.description}}</div></div>`;
+            }}
+
+            if (book.marginalia && book.marginalia.length) {{
+                const entries = book.marginalia.map(m => {{
+                    const quote = m.highlighted_text
+                        ? `<blockquote class="marginalia-quote"${{m.color ? ` style="border-left:3px solid ${{escapeHtml(m.color)}}"` : ''}}>${{escapeHtml(m.highlighted_text)}}</blockquote>`
+                        : '';
+                    const note = m.content
+                        ? `<div class="marginalia-note">${{escapeHtml(m.content)}}</div>`
+                        : '';
+                    const bits = [];
+                    if (m.page_number) bits.push(`p. ${{m.page_number}}`);
+                    if (m.scope) bits.push(m.scope.replace(/_/g, ' '));
+                    if (m.category) bits.push(escapeHtml(m.category));
+                    if (m.pinned) bits.push('pinned');
+                    const meta = bits.length ? `<div class="marginalia-meta">${{bits.join(' • ')}}</div>` : '';
+                    const cls = m.pinned ? 'marginalia-entry pinned' : 'marginalia-entry';
+                    return `<div class="${{cls}}" data-marginalia-uuid="${{escapeHtml(m.uuid || '')}}">${{quote}}${{note}}${{meta}}</div>`;
+                }}).join('');
+                html += `<div class="detail-section"><div class="detail-label">Highlights &amp; Notes (${{book.marginalia.length}})</div><div class="marginalia-list">${{entries}}</div></div>`;
             }}
 
             const meta = [];
