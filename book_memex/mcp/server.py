@@ -266,28 +266,6 @@ def create_mcp_server(library: Library) -> FastMCP:
             library.session, book_id=book_id, limit=limit, offset=offset,
         )
 
-    # ------------------------------------------------------------------
-    # ask_book: FTS5 + LLM Q&A
-    # ------------------------------------------------------------------
-
-    from book_memex.mcp.tools import ask_book_impl
-
-    @mcp.tool(
-        name="ask_book",
-        description=(
-            "Ask a natural-language question about one book. Uses FTS5 to "
-            "retrieve the top-k relevant segments, then asks the configured "
-            "LLM to answer grounded in those segments. Response includes "
-            "`answer` text, structured `citations` parsed from the answer, "
-            "and `segments_used` with full URIs. Returns a `message` (not "
-            "an answer) if no LLM is configured or no segments match."
-        ),
-    )
-    def ask_book(book_id: int, question: str, k: int = 8, model: str | None = None) -> dict:
-        return ask_book_impl(
-            library.session, book_id=book_id, question=question, k=k, model=model,
-        )
-
     return mcp
 
 

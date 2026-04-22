@@ -54,9 +54,7 @@ Changelog = "https://github.com/queelius/ebk/blob/main/CHANGELOG.md"
 
 [project.scripts]
 book-memex = "book_memex.cli:app"
-book-memex-mcp-serve = "book_memex.mcp.server:run_server"
 ebk = "book_memex._ebk_alias:main"
-ebk-mcp-serve = "book_memex.mcp.server:run_server"
 
 # Plugin entry points removed - integrations are optional extras
 # [project.entry-points."book_memex.plugins"]

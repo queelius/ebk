@@ -1,4 +1,4 @@
-"""Phase 2 end-to-end test covering extraction + search + ask_book."""
+"""Phase 2 end-to-end test covering extraction and search."""
 import tempfile
 import shutil
 from pathlib import Path
@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from book_memex.library_db import Library
 from book_memex.server import app, set_library
 from book_memex.mcp.tools import (
-    ask_book_impl, search_library_content_impl, get_segments_impl,
+    search_library_content_impl, get_segments_impl,
 )
 
 
@@ -31,7 +31,7 @@ def e2e_env(sample_epub):
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def test_import_indexes_content_search_and_ask(e2e_env):
+def test_import_indexes_content_and_search(e2e_env):
     client, book, lib = e2e_env
 
     # 1. Content was indexed on import.
@@ -49,27 +49,3 @@ def test_import_indexes_content_search_and_ask(e2e_env):
     lib_hits = search_library_content_impl(lib.session, query="Bayesian")
     assert len(lib_hits) >= 1
     assert lib_hits[0]["book_id"] == book.id
-
-    # 4. ask_book via MCP with a stub LLM that echoes the prompt.
-    def fake_llm(prompt: str, **kw) -> str:
-        return (
-            "The book discusses Bayesian inference. "
-            f"See {lib_hits[0]['book_uri']}#{lib_hits[0]['fragment']}."
-        )
-
-    # Inject by monkey-patching the resolver so ask_book_impl uses fake_llm.
-    from book_memex.mcp import tools as _tools
-    original = _tools._resolve_llm
-    _tools._resolve_llm = lambda model: fake_llm
-    try:
-        answer = ask_book_impl(
-            lib.session, book_id=book.id,
-            question="Bayesian",
-        )
-    finally:
-        _tools._resolve_llm = original
-
-    assert answer["answer"] is not None
-    assert "Bayesian" in answer["answer"]
-    assert len(answer["segments_used"]) >= 1
-    assert len(answer["citations"]) >= 1

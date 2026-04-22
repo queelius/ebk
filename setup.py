@@ -18,9 +18,7 @@ setup(
     entry_points={
         "console_scripts": [
             "book-memex=book_memex.cli:app",
-            "book-memex-mcp-serve=book_memex.mcp.server:run_server",
             "ebk=book_memex._ebk_alias:main",
-            "ebk-mcp-serve=book_memex.mcp.server:run_server",
         ],
     },
     install_requires=[

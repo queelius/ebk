@@ -793,53 +793,6 @@ def get_reading_progress_impl(
     }
 
 
-def ask_book_impl(
-    session: Session, *, book_id: int, question: str,
-    k: int = 8, model: Optional[str] = None,
-) -> Dict[str, Any]:
-    """FTS5 + LLM answer for a single book. Returns answer, citations, segments_used."""
-    from book_memex.services.ask_book import ask_book as _ask_book
-
-    llm = _resolve_llm(model)
-    result = _ask_book(
-        session, book_id=book_id, question=question, k=k, llm=llm,
-    )
-    return {
-        "answer": result.answer,
-        "citations": result.citations,
-        "segments_used": result.segments_used,
-        "message": result.message,
-    }
-
-
-def _resolve_llm(model: Optional[str]):
-    """Resolve an LLM callable from env/config. Returns None if not configured."""
-    import os
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-    try:
-        import anthropic
-    except ImportError:
-        return None
-
-    client = anthropic.Anthropic(api_key=api_key)
-    default_model = model or os.environ.get("BOOK_MEMEX_LLM", "claude-sonnet-4-6")
-
-    def _call(prompt: str, **kwargs) -> str:
-        resp = client.messages.create(
-            model=default_model,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        # Anthropic response is a list of content blocks; concatenate text.
-        return "".join(
-            getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text"
-        )
-
-    return _call
-
-
 def set_reading_progress_impl(
     session: Session,
     *,

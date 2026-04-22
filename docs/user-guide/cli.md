@@ -217,11 +217,6 @@ ebk config get <key>
 ```
 
 Configuration keys:
-- `llm.provider` - LLM provider (ollama, openai)
-- `llm.model` - Model name
-- `llm.host` - Server host
-- `llm.port` - Server port
-- `llm.temperature` - Sampling temperature
 - `server.host` - Web server host
 - `server.port` - Web server port
 - `server.auto_open_browser` - Auto-open browser

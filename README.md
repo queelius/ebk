@@ -59,14 +59,6 @@
 - **Cover Extraction**: Automatic cover extraction and thumbnail generation
   - PDFs: First page rendered as image
   - EPUBs: Cover from metadata or naming patterns
-- **AI-Powered Features** (optional):
-  - **LLM Provider Abstraction**: Support for multiple LLM backends (Ollama, OpenAI-compatible APIs)
-  - **Metadata Enrichment**: Auto-generate tags, categories, and enhanced descriptions using LLMs
-  - **Local & Remote LLM**: Connect to local Ollama or remote GPU servers
-  - **Knowledge Graph**: NetworkX-based concept extraction and relationship mapping
-  - **Semantic Search**: Vector embeddings for similarity search (with TF-IDF fallback)
-  - **Reading Companion**: Track reading sessions with timestamps
-  - **Question Generator**: Generate active recall questions
 - **Web Server Interface**:
   - FastAPI-based REST API for library management
   - URL-based navigation with filters, pagination, and sorting
@@ -174,43 +166,16 @@ book-memex config set server.auto_open_browser true
 book-memex serve ~/my-library
 ```
 
-### 4. AI-Powered Metadata Enrichment
-
-```bash
-# Configure LLM provider
-book-memex config set llm.provider ollama
-book-memex config set llm.model llama3.2
-book-memex config set llm.host localhost
-
-# Enrich library metadata using LLM
-book-memex enrich ~/my-library
-
-# Enrich with all features
-book-memex enrich ~/my-library --generate-tags --categorize --enhance-descriptions
-
-# Use remote GPU server
-book-memex enrich ~/my-library --host 192.168.1.100
-```
-
 ---
 
 ## Configuration
 
-book-memex uses a centralized configuration system stored at `~/.config/ebk/config.json` (path preserved from the `ebk` era so existing configs keep working). This configuration file manages settings for LLM providers, web server, CLI defaults, and library preferences.
+book-memex uses a centralized configuration system stored at `~/.config/ebk/config.json` (path preserved from the `ebk` era so existing configs keep working). This configuration file manages settings for the web server, CLI defaults, and library preferences.
 
 ### Configuration File Structure
 
 ```json
 {
-  "llm": {
-    "provider": "ollama",
-    "model": "llama3.2",
-    "host": "localhost",
-    "port": 11434,
-    "api_key": null,
-    "temperature": 0.7,
-    "max_tokens": null
-  },
   "server": {
     "host": "0.0.0.0",
     "port": 8000,
@@ -241,33 +206,11 @@ book-memex config show
 book-memex config edit
 
 # Set specific values
-book-memex config set llm.provider ollama
-book-memex config set llm.model mistral
 book-memex config set server.port 8080
 book-memex config set library.default_path ~/my-library
 
 # Get specific value
-book-memex config get llm.model
-```
-
-### LLM Provider Configuration
-
-Configure LLM providers for metadata enrichment:
-
-```bash
-# Local Ollama (default)
-book-memex config set llm.provider ollama
-book-memex config set llm.host localhost
-book-memex config set llm.port 11434
-book-memex config set llm.model llama3.2
-
-# Remote GPU server
-book-memex config set llm.host 192.168.1.100
-
-# OpenAI-compatible API (future)
-book-memex config set llm.provider openai
-book-memex config set llm.api_key sk-...
-book-memex config set llm.model gpt-4
+book-memex config get server.port
 ```
 
 ### CLI Overrides
@@ -277,7 +220,6 @@ All commands support CLI arguments that override configuration defaults:
 ```bash
 # These override config settings
 book-memex serve ~/library --port 9000 --host 127.0.0.1
-book-memex enrich ~/library --host 192.168.1.50 --model mistral
 ```
 
 ## CLI Usage
@@ -349,31 +291,6 @@ book-memex config set server.port 8080
 book-memex config set server.auto_open_browser true
 ```
 
-### AI-Powered Features
-
-Enrich metadata using LLMs:
-
-```bash
-# Basic enrichment (uses config settings)
-book-memex enrich ~/my-library
-
-# Full enrichment
-book-memex enrich ~/my-library \
-  --generate-tags \
-  --categorize \
-  --enhance-descriptions \
-  --assess-difficulty
-
-# Enrich specific book
-book-memex enrich ~/my-library --book-id 42
-
-# Use remote GPU server
-book-memex enrich ~/my-library --host 192.168.1.100 --model mistral
-
-# Dry run (preview changes without saving)
-book-memex enrich ~/my-library --dry-run
-```
-
 ### Configuration Management
 
 Manage global configuration:
@@ -384,18 +301,16 @@ book-memex config init
 
 # View configuration
 book-memex config show
-book-memex config show --section llm
 
 # Edit in default editor
 book-memex config edit
 
 # Set values
-book-memex config set llm.model llama3.2
 book-memex config set server.port 8080
 book-memex config set library.default_path ~/books
 
 # Get values
-book-memex config get llm.model
+book-memex config get server.port
 ```
 
 ### Export and Advanced Features
@@ -517,41 +432,6 @@ with Library.open(Path("~/my-library")) as lib:
     results = lib.search("Python programming")
     for book in results:
         print(book.title)
-```
-
-### AI-Powered Metadata Enrichment
-
-```python
-from book_memex.ai.llm_providers.ollama import OllamaProvider
-from book_memex.ai.metadata_enrichment import MetadataEnrichmentService
-
-# Initialize provider (local or remote)
-provider = OllamaProvider.remote(
-    host="192.168.1.100",
-    model="llama3.2"
-)
-
-service = MetadataEnrichmentService(provider)
-
-async with provider:
-    # Generate tags
-    tags = await service.generate_tags(
-        title="Introduction to Algorithms",
-        authors=["Cormen", "Leiserson"],
-        description="Comprehensive algorithms textbook"
-    )
-
-    # Categorize
-    categories = await service.categorize(
-        title="Introduction to Algorithms",
-        subjects=["Algorithms", "Data Structures"]
-    )
-
-    # Enhance description
-    description = await service.enhance_description(
-        title="Introduction to Algorithms",
-        text_sample="Chapter 1: The Role of Algorithms..."
-    )
 ```
 
 See the [CLAUDE.md](CLAUDE.md) file for architectural details and [API documentation](https://queelius.github.io/ebk/user-guide/api/) for complete reference.
