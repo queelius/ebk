@@ -128,6 +128,7 @@ def export_to_html(
                     'category': m.category,
                     'pinned': m.pinned,
                     'scope': m.scope,
+                    'book_ids': [b.id for b in m.books],
                     'created_at': m.created_at.isoformat() if m.created_at else None,
                 }
                 for m in sorted(
@@ -1720,9 +1721,12 @@ def _generate_html_template(
 
         function renderNotesView(books) {{
             const entries = [];
+            const seen = new Set();
             for (const book of books) {{
                 if (!book.marginalia || !book.marginalia.length) continue;
                 for (const m of book.marginalia) {{
+                    if (seen.has(m.uuid)) continue;
+                    seen.add(m.uuid);
                     entries.push({{m: m, book: book}});
                 }}
             }}
@@ -1749,7 +1753,13 @@ def _generate_html_template(
                 if (m.category) bits.push(escapeHtml(m.category));
                 if (m.pinned) bits.push('pinned');
                 const meta = bits.length ? `<div class="marginalia-meta">${{bits.join(' • ')}}</div>` : '';
-                const source = `<div class="marginalia-source">From: <a href="#" onclick="event.preventDefault(); showDetails(${{book.id}});">${{escapeHtml(book.title)}}</a></div>`;
+                const sourceBooks = (m.book_ids && m.book_ids.length)
+                    ? m.book_ids.map(id => BOOKS.find(b => b.id === id)).filter(Boolean)
+                    : [book];
+                const sourceLinks = sourceBooks.map(b =>
+                    `<a href="#" onclick="event.preventDefault(); showDetails(${{b.id}});">${{escapeHtml(b.title)}}</a>`
+                ).join(' + ');
+                const source = `<div class="marginalia-source">From: ${{sourceLinks}}</div>`;
                 const cls = m.pinned ? 'marginalia-entry pinned' : 'marginalia-entry';
                 return `<div class="${{cls}}">${{quote}}${{note}}${{source}}${{meta}}</div>`;
             }});

@@ -242,6 +242,64 @@ def test_notes_view_renders_entries_with_book_source(tmp_path, lib_with_annotate
     )
 
 
+def test_marginalia_serialization_carries_book_ids(tmp_path, lib_with_annotated_book):
+    """Each marginalia dict must include book_ids.
+
+    The Notes view needs this both to dedupe cross-book notes by uuid and to
+    render all linked books as source links for cross_book_note scope.
+    """
+    lib, book = lib_with_annotated_book
+    output = tmp_path / "library.html"
+    export_to_html([book], output)
+    html = output.read_text()
+
+    assert '"book_ids"' in html, (
+        "marginalia serialization must include book_ids for cross-book "
+        "dedup and source-link rendering"
+    )
+
+
+def test_notes_view_dedupes_cross_book_marginalia(tmp_path):
+    """A cross-book note attached to N books must render exactly once in Notes view.
+
+    Without dedup, iterating books-then-marginalia renders the same note
+    once per linked book. The renderer must track seen uuids.
+    """
+    temp_dir = Path(tempfile.mkdtemp())
+    try:
+        lib = Library.open(temp_dir)
+        p1 = lib.library_path / "a.txt"
+        p1.write_text("a")
+        p2 = lib.library_path / "b.txt"
+        p2.write_text("b")
+        book_a = lib.add_book(
+            p1, metadata={"title": "Book A", "creators": ["X"]}, extract_text=False
+        )
+        book_b = lib.add_book(
+            p2, metadata={"title": "Book B", "creators": ["Y"]}, extract_text=False
+        )
+
+        svc = MarginaliaService(lib.session, lib.library_path)
+        svc.create(
+            content="Cross-book observation spanning A and B.",
+            book_ids=[book_a.id, book_b.id],
+        )
+        lib.session.refresh(book_a)
+        lib.session.refresh(book_b)
+
+        output = tmp_path / "library.html"
+        export_to_html([book_a, book_b], output)
+        html = output.read_text()
+
+        # Renderer must use a seen-uuid dedup pattern.
+        assert "seen.has(m.uuid)" in html, (
+            "renderNotesView must dedupe cross-book notes by m.uuid"
+        )
+    finally:
+        lib.close()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def test_exported_html_without_marginalia_renders(tmp_path):
     """Books without any marginalia must still export cleanly (no marginalia section)."""
     temp_dir = Path(tempfile.mkdtemp())
