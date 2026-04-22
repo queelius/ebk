@@ -3,7 +3,7 @@ message: "If you use this software, please cite it as below."
 title: "book-memex"
 version: "0.5.1"
 license: MIT
-repository-code: "https://github.com/queelius/ebk"
+repository-code: "https://github.com/queelius/book-memex"
 url: "https://pypi.org/project/book-memex/"
 authors:
   - family-names: "Towell"

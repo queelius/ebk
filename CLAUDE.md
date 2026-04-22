@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-**book-memex** (the directory is still `ebk/` on disk and GitHub; the Python package was renamed to `book_memex` in Phase 1). An eBook library manager evolving into the book-domain archive of the `*-memex` family. See `~/github/memex/CLAUDE.md` for ecosystem conventions and `docs/superpowers/specs/2026-04-15-book-memex-v1-design.md` for the v1 design. Phases 1 (rename + URI-addressable marginalia + soft-delete + CRUD surfaces), 2 (content extraction + FTS5 per-segment search), and 3 (browser reader) are all complete.
+**book-memex**. An eBook library manager evolving into the book-domain archive of the `*-memex` family. (The directory, package, and GitHub repo are all `book-memex`/`book_memex` as of 2026-04-22; a legacy `ebk` CLI shim and `~/.config/ebk/config.json` path are retained for backcompat.) See `~/github/memex/CLAUDE.md` for ecosystem conventions and `docs/superpowers/specs/2026-04-15-book-memex-v1-design.md` for the v1 design. Phases 1 (rename + URI-addressable marginalia + soft-delete + CRUD surfaces), 2 (content extraction + FTS5 per-segment search), and 3 (browser reader) are all complete.
 
 Key capabilities as of Phase 3:
 - SQLAlchemy + SQLite backend with FTS5 over metadata and per-segment `book_content`.

@@ -13,7 +13,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Alex Towell",
     author_email="lex@metafunctor.com",
-    url="https://github.com/queelius/ebk",
+    url="https://github.com/queelius/book-memex",
     packages=find_packages(),
     entry_points={
         "console_scripts": [
