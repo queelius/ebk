@@ -201,6 +201,47 @@ def test_table_view_has_notes_column(tmp_path, lib_with_annotated_book):
     )
 
 
+def test_library_wide_notes_view_mode_is_wired(tmp_path, lib_with_annotated_book):
+    """A 4th view mode aggregates marginalia across every book into one list.
+
+    Grid / List / Table are book-oriented. The Notes view is annotation-
+    oriented: a flat scrolling list across the library, filterable by scope.
+    This is the surface where cross-book and collection notes (which don't
+    belong to any single book) become first-class.
+    """
+    lib, book = lib_with_annotated_book
+    output = tmp_path / "library.html"
+    export_to_html([book], output)
+    html = output.read_text()
+
+    # Toolbar button with a reserved title.
+    assert 'title="Notes View"' in html, (
+        "toolbar must include a Notes View toggle button"
+    )
+    # Renderer aggregates marginalia across all books.
+    assert "renderNotesView" in html, (
+        "a renderNotesView function must aggregate marginalia across books"
+    )
+
+
+def test_notes_view_renders_entries_with_book_source(tmp_path, lib_with_annotated_book):
+    """Notes view entries must link back to the book they belong to.
+
+    Without a source reference, an aggregated marginalia list is useless for
+    navigating back to the passage. Each entry must carry the book's title
+    (as text) and a click-through to showDetails().
+    """
+    lib, book = lib_with_annotated_book
+    output = tmp_path / "library.html"
+    export_to_html([book], output)
+    html = output.read_text()
+
+    # The notes-view render path builds entries with a source link.
+    assert "marginalia-source" in html, (
+        "notes-view entries must carry a .marginalia-source link back to the book"
+    )
+
+
 def test_exported_html_without_marginalia_renders(tmp_path):
     """Books without any marginalia must still export cleanly (no marginalia section)."""
     temp_dir = Path(tempfile.mkdtemp())

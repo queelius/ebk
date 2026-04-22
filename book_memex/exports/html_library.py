@@ -927,6 +927,32 @@ def _generate_html_template(
             letter-spacing: 0.04em;
         }}
 
+        .marginalia-source {{
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }}
+
+        .marginalia-source a {{
+            color: var(--accent);
+            text-decoration: none;
+        }}
+
+        .marginalia-source a:hover {{
+            text-decoration: underline;
+        }}
+
+        .notes-view {{
+            padding: 0 4px;
+        }}
+
+        .notes-empty {{
+            padding: 48px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }}
+
         .file-list {{
             list-style: none;
         }}
@@ -1154,6 +1180,7 @@ def _generate_html_template(
                     <button class="icon-btn active" id="view-grid" onclick="setView('grid')" title="Grid View">▦</button>
                     <button class="icon-btn" id="view-list" onclick="setView('list')" title="List View">☰</button>
                     <button class="icon-btn" id="view-table" onclick="setView('table')" title="Table View">▤</button>
+                    <button class="icon-btn" id="view-notes" onclick="setView('notes')" title="Notes View">🗒</button>
                     <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">🌓</button>
                 </div>
             </header>
@@ -1592,6 +1619,12 @@ def _generate_html_template(
                 container.innerHTML = `<div class="book-grid">${{pageBooks.map(renderGridCard).join('')}}</div>`;
             }} else if (currentView === 'list') {{
                 container.innerHTML = `<div class="book-list">${{pageBooks.map(renderListItem).join('')}}</div>`;
+            }} else if (currentView === 'notes') {{
+                const result = renderNotesView(filteredBooks);
+                container.innerHTML = result.html;
+                resultsInfo.textContent = result.summary;
+                pagination.innerHTML = '';
+                return;
             }} else {{
                 container.innerHTML = renderTable(pageBooks);
             }}
@@ -1683,6 +1716,48 @@ def _generate_html_template(
                     </tbody>
                 </table>
             `;
+        }}
+
+        function renderNotesView(books) {{
+            const entries = [];
+            for (const book of books) {{
+                if (!book.marginalia || !book.marginalia.length) continue;
+                for (const m of book.marginalia) {{
+                    entries.push({{m: m, book: book}});
+                }}
+            }}
+            if (!entries.length) {{
+                return {{
+                    html: '<div class="notes-empty">No marginalia yet. Add highlights and notes via the reader or MCP tools.</div>',
+                    summary: 'No annotations'
+                }};
+            }}
+            entries.sort((a, b) => {{
+                if ((a.m.pinned ? 1 : 0) !== (b.m.pinned ? 1 : 0)) return (b.m.pinned ? 1 : 0) - (a.m.pinned ? 1 : 0);
+                return (b.m.created_at || '').localeCompare(a.m.created_at || '');
+            }});
+            const items = entries.map(({{m, book}}) => {{
+                const quote = m.highlighted_text
+                    ? `<blockquote class="marginalia-quote"${{m.color ? ` style="border-left:3px solid ${{escapeHtml(m.color)}}"` : ''}}>${{escapeHtml(m.highlighted_text)}}</blockquote>`
+                    : '';
+                const note = m.content
+                    ? `<div class="marginalia-note">${{escapeHtml(m.content)}}</div>`
+                    : '';
+                const bits = [];
+                if (m.page_number) bits.push(`p. ${{m.page_number}}`);
+                if (m.scope) bits.push(m.scope.replace(/_/g, ' '));
+                if (m.category) bits.push(escapeHtml(m.category));
+                if (m.pinned) bits.push('pinned');
+                const meta = bits.length ? `<div class="marginalia-meta">${{bits.join(' • ')}}</div>` : '';
+                const source = `<div class="marginalia-source">From: <a href="#" onclick="event.preventDefault(); showDetails(${{book.id}});">${{escapeHtml(book.title)}}</a></div>`;
+                const cls = m.pinned ? 'marginalia-entry pinned' : 'marginalia-entry';
+                return `<div class="${{cls}}">${{quote}}${{note}}${{source}}${{meta}}</div>`;
+            }});
+            const bookCount = new Set(entries.map(e => e.book.id)).size;
+            return {{
+                html: `<div class="marginalia-list notes-view">${{items.join('')}}</div>`,
+                summary: `Showing ${{entries.length}} annotation${{entries.length === 1 ? '' : 's'}} from ${{bookCount}} book${{bookCount === 1 ? '' : 's'}}`
+            }};
         }}
 
         function renderPagination(totalPages) {{
