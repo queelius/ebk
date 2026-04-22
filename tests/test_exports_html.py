@@ -112,6 +112,25 @@ def test_exported_html_wires_marginalia_into_modal(tmp_path, lib_with_annotated_
     )
 
 
+def test_table_rows_are_row_level_clickable(tmp_path, lib_with_annotated_book):
+    """In table view, the whole <tr> must open the detail modal.
+
+    The previous behavior wired onclick only on the title <span>, leaving the
+    author / year / format / rating cells inert. Users who clicked a row but
+    missed the title got no feedback. Row-level click is consistent with grid
+    and list views (both wire onclick on the outer card).
+    """
+    lib, book = lib_with_annotated_book
+    output = tmp_path / "library.html"
+    export_to_html([book], output)
+    html = output.read_text()
+
+    assert '<tr onclick="showDetails(' in html, (
+        "table <tr> must wire the detail modal at the row level, not just on "
+        "the title cell"
+    )
+
+
 def test_exported_html_without_marginalia_renders(tmp_path):
     """Books without any marginalia must still export cleanly (no marginalia section)."""
     temp_dir = Path(tempfile.mkdtemp())

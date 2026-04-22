@@ -741,16 +741,19 @@ def _generate_html_template(
             color: var(--text-primary);
         }}
 
+        .book-table tbody tr {{
+            cursor: pointer;
+        }}
+
         .book-table tr:hover td {{
             background: var(--bg-tertiary);
         }}
 
         .table-title {{
             font-weight: 500;
-            cursor: pointer;
         }}
 
-        .table-title:hover {{
+        .book-table tr:hover .table-title {{
             color: var(--accent);
         }}
 
@@ -1638,8 +1641,8 @@ def _generate_html_template(
                     </thead>
                     <tbody>
                         ${{books.map(book => `
-                            <tr>
-                                <td><span class="table-title" onclick="showDetails(${{book.id}})">${{book.personal?.favorite ? '⭐ ' : ''}}${{escapeHtml(book.title)}}</span></td>
+                            <tr onclick="showDetails(${{book.id}})">
+                                <td><span class="table-title">${{book.personal?.favorite ? '⭐ ' : ''}}${{escapeHtml(book.title)}}</span></td>
                                 <td>${{escapeHtml(book.authors.map(a => a.name).join(', ') || '-')}}</td>
                                 <td>${{book.publication_date?.substring(0, 4) || '-'}}</td>
                                 <td>${{book.files.map(f => f.format.toUpperCase()).join(', ')}}</td>
