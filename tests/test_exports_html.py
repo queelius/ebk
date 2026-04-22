@@ -165,6 +165,42 @@ def test_book_description_is_html_escaped_in_modal(tmp_path):
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def test_grid_card_shows_marginalia_count_badge(tmp_path, lib_with_annotated_book):
+    """Books with marginalia show a count badge on their grid card.
+
+    This lets users see at a glance which books they've annotated without
+    having to open each detail modal. Implemented as a small positioned
+    badge on the cover; presence is asserted via the reserved CSS class.
+    """
+    lib, book = lib_with_annotated_book
+    output = tmp_path / "library.html"
+    export_to_html([book], output)
+    html = output.read_text()
+
+    assert ".marginalia-badge" in html, (
+        "grid card render must use a .marginalia-badge CSS class for the count"
+    )
+    assert "book.marginalia.length" in html, (
+        "grid card render must reference book.marginalia.length"
+    )
+
+
+def test_table_view_has_notes_column(tmp_path, lib_with_annotated_book):
+    """Table view must include a Notes column showing marginalia count per book.
+
+    Mirrors the grid card badge for the info-dense view. Scannable at a
+    glance without opening the modal.
+    """
+    lib, book = lib_with_annotated_book
+    output = tmp_path / "library.html"
+    export_to_html([book], output)
+    html = output.read_text()
+
+    assert ">Notes<" in html, (
+        "renderTable must have a Notes column header"
+    )
+
+
 def test_exported_html_without_marginalia_renders(tmp_path):
     """Books without any marginalia must still export cleanly (no marginalia section)."""
     temp_dir = Path(tempfile.mkdtemp())

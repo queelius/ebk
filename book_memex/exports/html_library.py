@@ -577,6 +577,27 @@ def _generate_html_template(
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            position: relative;
+        }}
+
+        .marginalia-badge {{
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--accent);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            box-shadow: var(--shadow);
+            pointer-events: none;
+        }}
+
+        .marginalia-cell {{
+            text-align: center;
+            font-weight: 600;
+            color: var(--accent);
         }}
 
         .book-cover img {{
@@ -1582,10 +1603,15 @@ def _generate_html_template(
             const coverUrl = book.cover_path ? (BASE_URL ? BASE_URL + '/' + book.cover_path : book.cover_path) : null;
             const author = book.authors.map(a => a.name).join(', ') || 'Unknown';
             const rating = book.personal?.rating ? '★'.repeat(Math.round(book.personal.rating)) : '';
+            const marginaliaCount = book.marginalia ? book.marginalia.length : 0;
+            const marginaliaBadge = marginaliaCount > 0
+                ? `<span class="marginalia-badge" title="${{marginaliaCount}} highlight${{marginaliaCount === 1 ? '' : 's'}} and notes">📝 ${{marginaliaCount}}</span>`
+                : '';
 
             return `
                 <div class="book-card" onclick="showDetails(${{book.id}})">
                     <div class="book-cover">
+                        ${{marginaliaBadge}}
                         ${{coverUrl ? `<img src="${{coverUrl}}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'book-cover-placeholder\\'>📖</div>'">` : '<div class="book-cover-placeholder">📖</div>'}}
                     </div>
                     <div class="book-info">
@@ -1637,18 +1663,23 @@ def _generate_html_template(
                             <th onclick="sortBy('publication_date')">Year</th>
                             <th>Format</th>
                             <th onclick="sortBy('rating')">Rating</th>
+                            <th>Notes</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${{books.map(book => `
+                        ${{books.map(book => {{
+                            const noteCount = book.marginalia ? book.marginalia.length : 0;
+                            return `
                             <tr onclick="showDetails(${{book.id}})">
                                 <td><span class="table-title">${{book.personal?.favorite ? '⭐ ' : ''}}${{escapeHtml(book.title)}}</span></td>
                                 <td>${{escapeHtml(book.authors.map(a => a.name).join(', ') || '-')}}</td>
                                 <td>${{book.publication_date?.substring(0, 4) || '-'}}</td>
                                 <td>${{book.files.map(f => f.format.toUpperCase()).join(', ')}}</td>
                                 <td>${{book.personal?.rating ? '★'.repeat(Math.round(book.personal.rating)) : '-'}}</td>
+                                <td class="marginalia-cell">${{noteCount > 0 ? '📝 ' + noteCount : '—'}}</td>
                             </tr>
-                        `).join('')}}
+                        `;
+                        }}).join('')}}
                     </tbody>
                 </table>
             `;
