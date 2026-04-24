@@ -1,22 +1,34 @@
-"""Arkiv export format for book-memex libraries.
+"""Arkiv export for book-memex libraries.
 
-The arkiv format is a JSONL record stream paired with a YAML schema
-descriptor, designed for LLM / MCP consumption and cross-archive
-interoperability. Each record has a ``kind`` field and a URI.
+Output can be a directory, a ``.zip`` archive, or a ``.tar.gz`` tarball;
+the choice is inferred from the output path's extension. All three layouts
+contain the same files:
 
-Output layout::
+- ``records.jsonl`` : one JSON line per active book / marginalia / reading
+- ``schema.yaml``   : archive self-description + per-key metadata stats
+- ``README.md``     : arkiv ECHO frontmatter + human-readable explanation
 
-    <out>/
-      records.jsonl  -- one record per line (book, marginalia, reading)
-      schema.yaml    -- field descriptors per kind
+Record URI scheme::
+
+    book-memex://book/<unique_id>
+    book-memex://marginalia/<uuid>
+    book-memex://reading/<uuid>
 
 Only non-archived rows (``archived_at IS NULL``) are emitted.
+
+Compression choice prioritises longevity: ``.zip`` and ``.tar.gz`` are
+both ubiquitous on every OS (30+ years of universal tooling). Modern
+compressors like ``zstd`` are deliberately avoided so the bundle still
+opens in 2050.
 """
 
 from __future__ import annotations
 
+import io
 import json
-from datetime import datetime, timezone
+import tarfile
+import zipfile
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator
 
@@ -59,7 +71,10 @@ SCHEMA: Dict[str, Any] = {
             },
         },
         "marginalia": {
-            "description": "Reader's note, highlight, or observation. May span zero, one, or multiple books.",
+            "description": (
+                "Reader's note, highlight, or observation. May span zero, "
+                "one, or multiple books."
+            ),
             "uri": "book-memex://marginalia/<uuid>",
             "fields": {
                 "kind": "Always 'marginalia'.",
@@ -72,7 +87,10 @@ SCHEMA: Dict[str, Any] = {
                 "category": "User-defined category.",
                 "color": "Hex color string (e.g. '#ffff00').",
                 "pinned": "Whether the note is pinned.",
-                "scope": "Derived scope: 'highlight', 'book_note', 'collection_note', or 'cross_book_note'.",
+                "scope": (
+                    "Derived scope: 'highlight', 'book_note', "
+                    "'collection_note', or 'cross_book_note'."
+                ),
                 "book_uris": "List of book URIs this entry relates to.",
                 "created_at": "ISO 8601 timestamp.",
                 "updated_at": "ISO 8601 timestamp.",
@@ -88,13 +106,33 @@ SCHEMA: Dict[str, Any] = {
                 "book_uri": "URI of the book being read.",
                 "start_time": "ISO 8601 timestamp.",
                 "end_time": "ISO 8601 timestamp, nullable (null = open session).",
-                "start_anchor": "Opaque position anchor at session start (cfi, offset, etc).",
+                "start_anchor": (
+                    "Opaque position anchor at session start (cfi, offset, etc)."
+                ),
                 "end_anchor": "Opaque position anchor at session end.",
                 "pages_read": "Integer pages read during session.",
             },
         },
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Bundle format detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_compression(path: str | Path) -> str:
+    """Infer output format from *path*'s extension.
+
+    Returns one of ``"zip"``, ``"tar.gz"``, ``"dir"``.
+    """
+    lower = str(path).lower()
+    if lower.endswith(".zip"):
+        return "zip"
+    if lower.endswith(".tar.gz") or lower.endswith(".tgz"):
+        return "tar.gz"
+    return "dir"
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -104,13 +142,147 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat()
 
 
+# ---------------------------------------------------------------------------
+# File serialisation helpers (shared by all three bundle formats)
+# ---------------------------------------------------------------------------
+
+
+def _records_to_jsonl_bytes(records: Iterable[Dict[str, Any]]) -> tuple[bytes, Dict[str, int]]:
+    """Serialise records to JSONL bytes and return live per-kind counts."""
+    counts: Dict[str, int] = {"book": 0, "marginalia": 0, "reading": 0}
+    buf = io.StringIO()
+    for rec in records:
+        buf.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        kind = rec.get("kind")
+        if kind in counts:
+            counts[kind] += 1
+    return buf.getvalue().encode("utf-8"), counts
+
+
+def _schema_yaml_bytes(counts: Dict[str, int]) -> bytes:
+    """Render schema.yaml with field docs + live counts."""
+    doc = {
+        "scheme": SCHEMA["scheme"],
+        "exported_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+        "counts": counts,
+        "kinds": SCHEMA["kinds"],
+    }
+    buf = io.StringIO()
+    buf.write("# Auto-generated by book-memex. Edit freely.\n")
+    yaml.safe_dump(doc, buf, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return buf.getvalue().encode("utf-8")
+
+
+def _readme_bytes(counts: Dict[str, int]) -> bytes:
+    """Render README.md with ECHO frontmatter + usage notes."""
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        version = _pkg_version("book-memex")
+    except Exception:
+        version = "unknown"
+
+    today = date.today().isoformat()
+    n_book = counts.get("book", 0)
+    n_marg = counts.get("marginalia", 0)
+    n_read = counts.get("reading", 0)
+    lines = [
+        "---",
+        "name: book-memex archive",
+        (
+            f'description: "{n_book} books + {n_marg} marginalia + '
+            f'{n_read} reading sessions exported from book-memex"'
+        ),
+        f"datetime: {today}",
+        f"generator: book-memex {version}",
+        "contents:",
+        "  - path: records.jsonl",
+        "    description: Book, marginalia, and reading session records (arkiv JSONL)",
+        "  - path: schema.yaml",
+        "    description: Record schema + per-kind counts",
+        "---",
+        "",
+        "# book-memex Archive",
+        "",
+        (
+            f"This archive contains {n_book} book(s), {n_marg} marginalia, "
+            f"and {n_read} reading session(s)"
+        ),
+        "exported from book-memex in [arkiv](https://github.com/queelius/arkiv) format.",
+        "",
+        "Each line in `records.jsonl` is one record. Records are typed by `kind`:",
+        "",
+        "- `book`: library metadata for one book.",
+        "- `marginalia`: a free-form note (highlight or observation), "
+        "potentially attached to zero, one, or multiple books.",
+        "- `reading`: a reading session for a book.",
+        "",
+        "URIs follow the cross-archive `book-memex://` scheme and stay stable",
+        "across re-imports, so marginalia and reading sessions survive their",
+        "parent book being re-imported or round-tripped through another archive.",
+        "",
+        "## Importing back into book-memex",
+        "",
+        "```bash",
+        "# Insert-or-ignore on unique_id + uuid; safe for re-imports.",
+        "book-memex import-arkiv <this bundle>",
+        "",
+        "# Or with explicit --merge semantics (same effect today; reserved",
+        "# for a future stricter-insert mode).",
+        "book-memex import-arkiv <this bundle> --merge",
+        "```",
+        "",
+    ]
+    return "\n".join(lines).encode("utf-8")
+
+
+def _write_file(path: Path, data: bytes) -> None:
+    path.write_bytes(data)
+
+
+def _write_zip(
+    path: Path, jsonl: bytes, schema_yaml: bytes, readme: bytes
+) -> None:
+    """Write the three bundle files into a single .zip archive."""
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("records.jsonl", jsonl)
+        zf.writestr("schema.yaml", schema_yaml)
+        zf.writestr("README.md", readme)
+
+
+def _write_tar_gz(
+    path: Path, jsonl: bytes, schema_yaml: bytes, readme: bytes
+) -> None:
+    """Write the three bundle files into a single .tar.gz archive."""
+    with tarfile.open(path, "w:gz") as tf:
+        for name, data in (
+            ("records.jsonl", jsonl),
+            ("schema.yaml", schema_yaml),
+            ("README.md", readme),
+        ):
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+
+# ---------------------------------------------------------------------------
+# Exporter class
+# ---------------------------------------------------------------------------
+
+
 class ArkivExporter:
-    """Emit JSONL records + schema.yaml for an open Library.
+    """Emit JSONL records + schema.yaml + README.md for an open Library.
 
     Usage::
 
         exporter = ArkivExporter(lib)
         exporter.run(out_path)
+
+    The output path's extension drives the bundle format:
+
+    - ``path``                -> directory
+    - ``path.zip``            -> single zip file
+    - ``path.tar.gz``/``.tgz`` -> single gzip-compressed tarball
     """
 
     def __init__(self, library) -> None:
@@ -121,41 +293,43 @@ class ArkivExporter:
     # -- public API ---------------------------------------------------
 
     def run(self, out_path: Path) -> Dict[str, Any]:
-        """Write records.jsonl and schema.yaml into ``out_path``.
+        """Write the arkiv bundle to ``out_path``.
 
-        Returns a dict with counts per kind.
+        Returns a dict with bundle metadata and per-kind counts. For a
+        directory bundle, ``records_path`` and ``schema_path`` are set to
+        the files inside that directory; for archive bundles both point
+        at the archive file itself.
         """
-        out = Path(out_path)
-        out.mkdir(parents=True, exist_ok=True)
+        out_path = Path(out_path)
+        fmt = _detect_compression(out_path)
 
-        counts = {"book": 0, "marginalia": 0, "reading": 0}
-        records_path = out / "records.jsonl"
-        with open(records_path, "w", encoding="utf-8") as fp:
-            for rec in self._iter_records():
-                fp.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                kind = rec.get("kind")
-                if kind in counts:
-                    counts[kind] += 1
+        # Build records once; serialise into the chosen format.
+        records = list(self._iter_records())
+        jsonl_bytes, counts = _records_to_jsonl_bytes(records)
+        schema_bytes = _schema_yaml_bytes(counts)
+        readme_bytes = _readme_bytes(counts)
 
-        schema_path = out / "schema.yaml"
-        with open(schema_path, "w", encoding="utf-8") as fp:
-            yaml.safe_dump(
-                {
-                    "scheme": SCHEMA["scheme"],
-                    "exported_at": datetime.now(timezone.utc)
-                    .replace(tzinfo=None)
-                    .isoformat(),
-                    "kinds": SCHEMA["kinds"],
-                },
-                fp,
-                sort_keys=False,
-                default_flow_style=False,
-                allow_unicode=True,
-            )
+        if fmt == "zip":
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_zip(out_path, jsonl_bytes, schema_bytes, readme_bytes)
+            records_path = schema_path = str(out_path)
+        elif fmt == "tar.gz":
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            _write_tar_gz(out_path, jsonl_bytes, schema_bytes, readme_bytes)
+            records_path = schema_path = str(out_path)
+        else:
+            out_path.mkdir(parents=True, exist_ok=True)
+            _write_file(out_path / "records.jsonl", jsonl_bytes)
+            _write_file(out_path / "schema.yaml", schema_bytes)
+            _write_file(out_path / "README.md", readme_bytes)
+            records_path = str(out_path / "records.jsonl")
+            schema_path = str(out_path / "schema.yaml")
 
         return {
-            "records_path": str(records_path),
-            "schema_path": str(schema_path),
+            "path": str(out_path),
+            "format": fmt,
+            "records_path": records_path,
+            "schema_path": schema_path,
             "counts": counts,
         }
 

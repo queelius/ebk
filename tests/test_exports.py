@@ -978,3 +978,150 @@ class TestArkivExport:
             assert "reading" not in kinds
         finally:
             shutil.rmtree(out, ignore_errors=True)
+
+    # -- Bundle formats (C5a) ------------------------------------------
+
+    def test_arkiv_directory_includes_readme(self, lib_with_data):
+        """Directory bundle contains records.jsonl + schema.yaml + README.md."""
+        lib, _, _, _ = lib_with_data
+        out = Path(tempfile.mkdtemp())
+        try:
+            result = lib.export_arkiv(out)
+            assert (out / "records.jsonl").is_file()
+            assert (out / "schema.yaml").is_file()
+            assert (out / "README.md").is_file()
+            readme = (out / "README.md").read_text()
+            assert readme.startswith("---")
+            assert "generator: book-memex" in readme
+            assert "book-memex import-arkiv" in readme
+            assert result["format"] == "dir"
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+    def test_arkiv_zip_bundle(self, lib_with_data):
+        """A path ending in .zip produces a single zip archive."""
+        import json as _json
+        import zipfile
+
+        lib, book, _, _ = lib_with_data
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            out = tmp / "bundle.zip"
+            result = lib.export_arkiv(out)
+            assert result["format"] == "zip"
+            assert out.is_file()
+            with zipfile.ZipFile(out) as zf:
+                names = set(zf.namelist())
+                assert {"records.jsonl", "schema.yaml", "README.md"}.issubset(names)
+                with zf.open("records.jsonl") as f:
+                    records = [
+                        _json.loads(ln)
+                        for ln in f.read().decode().splitlines()
+                        if ln.strip()
+                    ]
+            kinds = {r.get("kind") for r in records}
+            assert "book" in kinds
+            assert any(r["uri"] == book.uri for r in records if r.get("kind") == "book")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_arkiv_tar_gz_bundle(self, lib_with_data):
+        """A path ending in .tar.gz produces a gzipped tarball."""
+        import json as _json
+        import tarfile
+
+        lib, _, _, _ = lib_with_data
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            out = tmp / "bundle.tar.gz"
+            result = lib.export_arkiv(out)
+            assert result["format"] == "tar.gz"
+            with tarfile.open(out, "r:gz") as tf:
+                names = set(tf.getnames())
+                assert {"records.jsonl", "schema.yaml", "README.md"}.issubset(names)
+                extracted = tf.extractfile("records.jsonl")
+                assert extracted is not None
+                records = [
+                    _json.loads(ln)
+                    for ln in extracted.read().decode().splitlines()
+                    if ln.strip()
+                ]
+            kinds = {r.get("kind") for r in records}
+            assert "book" in kinds
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_arkiv_tgz_extension_accepted(self, lib_with_data):
+        """.tgz is recognised as a synonym for .tar.gz."""
+        import tarfile
+
+        lib, _, _, _ = lib_with_data
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            out = tmp / "bundle.tgz"
+            result = lib.export_arkiv(out)
+            assert result["format"] == "tar.gz"
+            with tarfile.open(out, "r:gz") as tf:
+                assert "records.jsonl" in tf.getnames()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_arkiv_bundle_records_identical_across_formats(self, lib_with_data):
+        """directory / zip / tar.gz produce the same records for the same library."""
+        import json as _json
+        import tarfile
+        import zipfile
+
+        lib, _, _, _ = lib_with_data
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            dir_out = tmp / "dir"
+            zip_out = tmp / "bundle.zip"
+            tar_out = tmp / "bundle.tar.gz"
+            lib.export_arkiv(dir_out)
+            lib.export_arkiv(zip_out)
+            lib.export_arkiv(tar_out)
+
+            dir_recs = [
+                _json.loads(ln)
+                for ln in (dir_out / "records.jsonl").read_text().splitlines()
+                if ln.strip()
+            ]
+            with zipfile.ZipFile(zip_out) as zf:
+                with zf.open("records.jsonl") as f:
+                    zip_recs = [
+                        _json.loads(ln)
+                        for ln in f.read().decode().splitlines()
+                        if ln.strip()
+                    ]
+            with tarfile.open(tar_out, "r:gz") as tf:
+                tar_recs = [
+                    _json.loads(ln)
+                    for ln in tf.extractfile("records.jsonl").read().decode().splitlines()
+                    if ln.strip()
+                ]
+            assert dir_recs == zip_recs == tar_recs
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestArkivDetectCompression:
+    """Bundle-format extension detection."""
+
+    def test_plain_path_is_directory(self):
+        from book_memex.exports.arkiv import _detect_compression
+        assert _detect_compression("bundle") == "dir"
+
+    def test_zip_extension(self):
+        from book_memex.exports.arkiv import _detect_compression
+        assert _detect_compression("bundle.zip") == "zip"
+        assert _detect_compression("bundle.ZIP") == "zip"
+
+    def test_tar_gz_extension(self):
+        from book_memex.exports.arkiv import _detect_compression
+        assert _detect_compression("bundle.tar.gz") == "tar.gz"
+        assert _detect_compression("bundle.TAR.GZ") == "tar.gz"
+
+    def test_tgz_extension(self):
+        from book_memex.exports.arkiv import _detect_compression
+        assert _detect_compression("bundle.tgz") == "tar.gz"
