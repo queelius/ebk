@@ -70,6 +70,17 @@ class Library:
         close_db()
         logger.debug("Closed library")
 
+    def import_arkiv(self, path: Path, *, merge: bool = False) -> Dict[str, int]:
+        """Import an arkiv bundle into the library.
+
+        Accepts directory, .zip, .tar.gz/.tgz, bare .jsonl, or .jsonl.gz.
+        Insert-or-skip semantics by unique_id (book) and uuid (marginalia,
+        reading session). See
+        :mod:`book_memex.services.arkiv_import` for full details.
+        """
+        from .services.arkiv_import import import_arkiv as _do_import
+        return _do_import(self, Path(path), merge=merge)
+
     def export_arkiv(self, out_path: Path) -> Dict[str, Any]:
         """
         Export the library as an arkiv bundle (records.jsonl + schema.yaml).

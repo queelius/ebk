@@ -3794,6 +3794,121 @@ def export_calibre(
         raise typer.Exit(code=1)
 
 
+@export_app.command(name="arkiv")
+def export_arkiv(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    output_path: Path = typer.Argument(
+        ...,
+        help=(
+            "Output path. If it ends in .zip or .tar.gz/.tgz the bundle is "
+            "written as a single compressed archive; any other path is a "
+            "directory containing records.jsonl, schema.yaml, and README.md."
+        ),
+    ),
+):
+    """Export the library to an arkiv bundle (directory / zip / tar.gz).
+
+    The bundle contains ``records.jsonl`` (one JSON record per book,
+    marginalia, and reading session), ``schema.yaml`` (per-kind field
+    docs and live counts), and ``README.md`` (ECHO frontmatter + the
+    round-trip import command).
+
+    Examples:
+        book-memex export arkiv ~/my-library ~/archive/
+        book-memex export arkiv ~/my-library ~/archive.zip
+        book-memex export arkiv ~/my-library ~/archive.tar.gz
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        result = lib.export_arkiv(output_path)
+        lib.close()
+    except Exception as exc:
+        console.print(f"[red]Error exporting arkiv: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    counts = result.get("counts", {})
+    console.print(
+        f"[green]Exported {counts.get('book', 0)} books, "
+        f"{counts.get('marginalia', 0)} marginalia, "
+        f"{counts.get('reading', 0)} reading sessions to {result['path']} "
+        f"({result['format']})[/green]"
+    )
+
+
+@import_app.command(name="arkiv")
+def import_arkiv(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    bundle_path: Path = typer.Argument(
+        ...,
+        help=(
+            "Path to an arkiv bundle (directory, .zip, .tar.gz, .tgz, "
+            ".jsonl, or .jsonl.gz)."
+        ),
+    ),
+    merge: bool = typer.Option(
+        False,
+        "--merge",
+        help=(
+            "Accepted for ecosystem parity; default insert path is "
+            "already duplicate-safe. Reserved for a future stricter "
+            "insert mode."
+        ),
+    ),
+):
+    """Import an arkiv bundle into the library.
+
+    Books are inserted or skipped by ``unique_id``; existing rows are
+    left untouched (local tags, personal metadata, etc. survive).
+    Marginalia and reading sessions are inserted or skipped by UUID.
+    Reading sessions whose parent book is not present locally are
+    reported as orphaned and skipped.
+    """
+    from .library_db import Library
+    from .services.arkiv_import import detect as detect_arkiv
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    if not detect_arkiv(bundle_path):
+        console.print(
+            f"[red]{bundle_path} does not look like a book-memex arkiv bundle[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        stats = lib.import_arkiv(bundle_path, merge=merge)
+        lib.close()
+    except Exception as exc:
+        console.print(f"[red]Error importing arkiv: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(
+        f"[green]Books: {stats['books_added']} added, "
+        f"{stats['books_skipped_existing']} skipped (already present)[/green]"
+    )
+    if stats["marginalia_seen"]:
+        console.print(
+            f"[green]Marginalia: {stats['marginalia_added']} added, "
+            f"{stats['marginalia_skipped_existing']} skipped[/green]"
+        )
+    if stats["reading_seen"]:
+        orphaned = stats["reading_orphaned"]
+        console.print(
+            f"[green]Reading sessions: {stats['reading_added']} added, "
+            f"{stats['reading_skipped_existing']} skipped"
+            + (f", {orphaned} orphaned (book not found)" if orphaned else "")
+            + "[/green]"
+        )
+
+
 @export_app.command(name="echo")
 def export_echo(
     library_path: Path = typer.Argument(..., help="Path to library"),
