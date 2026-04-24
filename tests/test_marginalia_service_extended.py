@@ -92,3 +92,84 @@ def test_archive_restore_cycle(lib_with_book):
     assert m.archived_at is not None
     svc.restore(m)
     assert m.archived_at is None
+
+
+# ---------------------------------------------------------------------------
+# C9: marginalia orphan survival across hard-delete of a book.
+#
+# The marginalia_books association table uses ON DELETE CASCADE on both
+# FK columns, which removes the *link row* when either side is deleted.
+# The marginalia row itself is on a separate table with no direct FK to
+# books, so it survives. Cross-book marginalia (linked to multiple
+# books) keep their remaining links intact.
+# ---------------------------------------------------------------------------
+
+
+def test_marginalia_survives_book_hard_delete(lib_with_book):
+    """Hard-deleting a book removes the link but keeps the marginalia row."""
+    from sqlalchemy import select
+
+    from book_memex.db.models import Book, Marginalia
+
+    lib, book = lib_with_book
+    svc = MarginaliaService(lib.session, lib.library_path)
+    note = svc.create(
+        content="a note about this book",
+        book_ids=[book.id],
+    )
+    note_uuid = note.uuid
+    book_id = book.id
+
+    # Hard delete via session to exercise the DB-level CASCADE.
+    target = lib.session.get(Book, book_id)
+    assert target is not None
+    lib.session.delete(target)
+    lib.session.commit()
+
+    # Marginalia row is still there, just unlinked.
+    survived = lib.session.execute(
+        select(Marginalia).where(Marginalia.uuid == note_uuid)
+    ).scalar_one_or_none()
+    assert survived is not None, "marginalia must survive book hard delete"
+    assert list(survived.books) == [], (
+        "association rows should have been cascade-deleted, leaving the "
+        "marginalia row detached rather than dangling"
+    )
+
+
+def test_cross_book_marginalia_keeps_other_links(lib_with_book):
+    """Deleting one of N books leaves the marginalia linked to the other N-1."""
+    from sqlalchemy import select
+
+    from book_memex.db.models import Book, Marginalia
+
+    lib, book_a = lib_with_book
+    # Add a second book so we have a cross-book marginalia target.
+    p = lib.library_path / "c.txt"
+    p.write_text("another")
+    book_b = lib.add_book(
+        p, metadata={"title": "C", "creators": ["Y"]}, extract_text=False
+    )
+
+    svc = MarginaliaService(lib.session, lib.library_path)
+    note = svc.create(
+        content="observation spanning two books",
+        book_ids=[book_a.id, book_b.id],
+    )
+    note_uuid = note.uuid
+    keep_uid = book_b.unique_id
+
+    # Hard delete book_a.
+    target = lib.session.get(Book, book_a.id)
+    assert target is not None
+    lib.session.delete(target)
+    lib.session.commit()
+
+    # The marginalia row keeps its link to book_b; only the row for
+    # book_a in marginalia_books is gone.
+    survived = lib.session.execute(
+        select(Marginalia).where(Marginalia.uuid == note_uuid)
+    ).scalar_one_or_none()
+    assert survived is not None
+    remaining_uids = {b.unique_id for b in survived.books}
+    assert remaining_uids == {keep_uid}
