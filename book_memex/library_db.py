@@ -70,6 +70,18 @@ class Library:
         close_db()
         logger.debug("Closed library")
 
+    def export_html_app(self, out_path: Path) -> Dict[str, Any]:
+        """Export the library as a self-contained single-file HTML SPA.
+
+        The file includes vendored sql.js (no CDN), a gzipped+base64
+        copy of a denormalized export DB, hash routing, and warm-palette
+        styling matching the rest of the *-memex ecosystem.
+
+        See :mod:`book_memex.exports.html_app` for full details.
+        """
+        from .exports.html_app import export_html_app as _do_export
+        return _do_export(self, Path(out_path))
+
     def import_arkiv(self, path: Path, *, merge: bool = False) -> Dict[str, int]:
         """Import an arkiv bundle into the library.
 

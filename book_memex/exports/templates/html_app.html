@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>book-memex</title>
+<style>
+:root {
+  --bg: #1a1714;
+  --bg-surface: #221e1a;
+  --bg-overlay: #2b2620;
+  --bg-elevated: #322c25;
+  --text: #e8e1d3;
+  --text-muted: #938c7e;
+  --text-subtle: #6e685c;
+  --text-strong: #f7f1e4;
+  --text-accent: #d4a46a;
+  --border: #3a342c;
+  --border-strong: #4a4238;
+  --border-accent: #d4a46a;
+  --badge-bg: rgba(212, 164, 106, 0.14);
+  --badge-text: #e8c088;
+  --selection: rgba(212, 164, 106, 0.18);
+  --highlight-bg: rgba(255, 235, 120, 0.22);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --header-height: 56px;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino", "Georgia", serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, Menlo, monospace;
+  --font-size: 14px;
+  --font-size-sm: 12px;
+  --font-size-lg: 15px;
+  --font-size-xl: 18px;
+  --radius-sm: 4px;
+  --radius: 8px;
+  --gap: 10px;
+  --gap-sm: 6px;
+  --gap-lg: 18px;
+  --gap-xl: 28px;
+}
+:root[data-theme="light"] {
+  --bg: #faf7f0;
+  --bg-surface: #f2ede2;
+  --bg-overlay: #ffffff;
+  --bg-elevated: #ffffff;
+  --text: #2e2820;
+  --text-muted: #7a7162;
+  --text-subtle: #a39a8a;
+  --text-strong: #1a1610;
+  --text-accent: #8a5a2b;
+  --border: #e4ddce;
+  --border-strong: #cfc6b2;
+  --border-accent: #8a5a2b;
+  --badge-bg: #f3e6d0;
+  --badge-text: #6e4520;
+  --selection: rgba(138, 90, 43, 0.14);
+  --highlight-bg: rgba(212, 164, 106, 0.28);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: var(--font-size); line-height: 1.55; }
+::selection { background: var(--selection); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+body { display: flex; flex-direction: column; min-height: 100vh; }
+header { position: sticky; top: 0; height: var(--header-height); background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0 var(--gap-lg); display: flex; gap: var(--gap); align-items: center; z-index: 10; }
+#brand { color: var(--text-strong); font-family: var(--font-serif); font-size: var(--font-size-xl); font-weight: 600; letter-spacing: 0.3px; text-decoration: none; flex-shrink: 0; }
+#search { flex: 1; padding: 8px 12px; border: 1px solid var(--border); background: var(--bg-overlay); color: var(--text); font-family: inherit; font-size: var(--font-size); border-radius: var(--radius-sm); min-width: 120px; }
+#search:focus { outline: none; border-color: var(--border-accent); box-shadow: 0 0 0 3px var(--badge-bg); }
+#stats { font-size: var(--font-size-sm); color: var(--text-muted); white-space: nowrap; }
+.btn.icon-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: var(--font-size-lg); padding: 6px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.btn.icon-btn:hover { background: var(--bg-elevated); color: var(--text-strong); border-color: var(--border-strong); }
+main { flex: 1; padding: var(--gap-lg); max-width: 1100px; margin: 0 auto; width: 100%; }
+.section-head { color: var(--text-subtle); font-size: var(--font-size-sm); text-transform: uppercase; letter-spacing: 0.6px; margin: var(--gap-lg) 0 var(--gap) 0; font-weight: 600; }
+.breadcrumb { color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--gap); }
+.breadcrumb a { color: var(--text-accent); text-decoration: none; cursor: pointer; }
+.breadcrumb a:hover { text-decoration: underline; }
+.empty { text-align: center; color: var(--text-muted); padding: var(--gap-xl); font-family: var(--font-serif); font-style: italic; }
+
+/* Book grid */
+.book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--gap-lg); }
+.book-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--gap-lg); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: var(--gap-sm); }
+.book-card h3 { font-family: var(--font-serif); font-size: var(--font-size-lg); font-weight: 600; color: var(--text-strong); line-height: 1.3; }
+.book-card h3 a { color: inherit; text-decoration: none; }
+.book-card h3 a:hover { color: var(--text-accent); }
+.book-card .authors { color: var(--text-muted); font-size: var(--font-size-sm); font-style: italic; font-family: var(--font-serif); }
+.book-card .meta-row { display: flex; gap: var(--gap-sm); flex-wrap: wrap; font-size: var(--font-size-sm); color: var(--text-subtle); margin-top: auto; }
+.book-card .meta-row .tag-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Tags / subjects / identifiers */
+.tag { display: inline-block; padding: 2px 10px; background: var(--badge-bg); color: var(--badge-text); border-radius: 999px; font-size: var(--font-size-sm); font-weight: 500; text-decoration: none; line-height: 1.5; }
+.tag:hover { filter: brightness(1.1); }
+
+/* Book detail */
+.book-detail { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--gap-xl); }
+.book-detail h1 { font-family: var(--font-serif); font-size: 28px; color: var(--text-strong); margin-bottom: var(--gap-sm); }
+.book-detail .subtitle { font-family: var(--font-serif); font-style: italic; color: var(--text-muted); font-size: var(--font-size-lg); margin-bottom: var(--gap); }
+.book-detail .authors { font-family: var(--font-serif); color: var(--text); font-size: var(--font-size-lg); margin-bottom: var(--gap-lg); }
+.book-detail .field-grid { display: grid; grid-template-columns: max-content 1fr; gap: 4px var(--gap); margin: var(--gap-lg) 0; color: var(--text-muted); font-size: var(--font-size); }
+.book-detail .field-grid .label { color: var(--text-subtle); font-weight: 500; }
+.book-detail .field-grid .value { color: var(--text); }
+.book-detail .description { font-family: var(--font-serif); font-size: var(--font-size-lg); line-height: 1.7; color: var(--text); margin-top: var(--gap-lg); padding-top: var(--gap-lg); border-top: 1px solid var(--border); }
+.book-detail .identifier-list { display: flex; gap: var(--gap-sm); flex-wrap: wrap; }
+.book-detail .identifier-list .identifier { font-family: var(--font-mono); font-size: var(--font-size-sm); color: var(--text-muted); }
+
+/* Marginalia */
+.marginalia-card { border-left: 3px solid var(--border-accent); padding: var(--gap-sm) var(--gap); margin: var(--gap) 0; background: var(--bg-surface); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.marginalia-card .highlighted { background: var(--highlight-bg); padding: 2px 6px; border-radius: var(--radius-sm); font-style: italic; font-family: var(--font-serif); color: var(--text); margin-bottom: var(--gap-sm); display: inline-block; }
+.marginalia-card .note-content { font-family: var(--font-serif); color: var(--text); line-height: 1.6; }
+.marginalia-card .note-meta { color: var(--text-subtle); font-size: var(--font-size-sm); margin-top: 4px; font-family: var(--font-mono); }
+.marginalia-card .note-meta .scope { background: var(--bg-elevated); padding: 1px 6px; border-radius: var(--radius-sm); margin-right: var(--gap-sm); }
+
+footer { padding: var(--gap-lg); text-align: center; color: var(--text-subtle); font-size: var(--font-size-sm); border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <a id="brand" href="#/">book-memex</a>
+  <input id="search" placeholder="Search books, authors, subjects...">
+  <span id="stats">loading…</span>
+  <a id="nav-marginalia" href="#/marginalia" class="btn icon-btn" title="all marginalia" style="text-decoration:none;font-family:var(--font-serif)">&#9998;</a>
+  <button class="btn icon-btn" id="theme-toggle" title="toggle light/dark mode">&#9790;</button>
+</header>
+<main id="view"><p class="empty">loading archive…</p></main>
+<footer>Generated by book-memex. All data is local; no network requests.</footer>
+
+<script>__SQLJS_INLINE__</script>
+<script id="bm-wasm-b64" type="application/base64">__WASM_BASE64__</script>
+<script id="bm-db-b64" type="application/base64">__DB_BASE64_GZ__</script>
+<script>
+(async function () {
+  "use strict";
+
+  const THEME_KEY = "book_memex_theme";
+  const view = document.getElementById("view");
+  const searchEl = document.getElementById("search");
+  const statsEl = document.getElementById("stats");
+  const themeBtn = document.getElementById("theme-toggle");
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    themeBtn.textContent = theme === "dark" ? "☾" : "☀";
+  }
+  function initTheme() {
+    const saved = localStorage.getItem(THEME_KEY);
+    const theme = (saved === "light" || saved === "dark") ? saved : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    applyTheme(theme);
+  }
+  function toggleTheme() {
+    const cur = document.documentElement.getAttribute("data-theme") || "dark";
+    const next = cur === "dark" ? "light" : "dark";
+    applyTheme(next);
+    localStorage.setItem(THEME_KEY, next);
+  }
+  initTheme();
+  themeBtn.addEventListener("click", toggleTheme);
+
+  // DOM helpers
+  function el(tag, attrs) {
+    const n = document.createElement(tag);
+    if (attrs) for (const k of Object.keys(attrs)) {
+      if (k === "class") n.className = attrs[k];
+      else if (k === "text") n.textContent = attrs[k];
+      else n.setAttribute(k, attrs[k]);
+    }
+    for (let i = 2; i < arguments.length; i++) {
+      const c = arguments[i];
+      if (c === null || c === undefined) continue;
+      if (typeof c === "string") n.appendChild(document.createTextNode(c));
+      else n.appendChild(c);
+    }
+    return n;
+  }
+  function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+  function readInlineBase64(id) {
+    const n = document.getElementById(id);
+    return n ? (n.textContent || "").trim() : "";
+  }
+  function base64ToBytes(b64) {
+    const bin = atob(b64.replace(/\s/g, ""));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  async function gunzip(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  async function loadDb() {
+    const wasmBinary = base64ToBytes(readInlineBase64("bm-wasm-b64"));
+    const SQL = await initSqlJs({ wasmBinary, locateFile: () => "data:application/wasm;base64," });
+    const gz = base64ToBytes(readInlineBase64("bm-db-b64"));
+    const raw = await gunzip(gz);
+    return new SQL.Database(raw);
+  }
+  function all(db, sql, params) {
+    const stmt = db.prepare(sql);
+    stmt.bind(params || []);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  }
+
+  // Queries over the export-DB schema (see html_app.py build_export_db()).
+  function fetchRecent(db, limit) {
+    return all(db, "SELECT id, unique_id, title, subtitle, authors_json, subjects_json, tags_json, description, language, publisher, publication_date, series FROM books WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT ?", [limit || 100]);
+  }
+  function fetchBySearch(db, q) {
+    const like = "%" + q + "%";
+    return all(db, "SELECT id, unique_id, title, subtitle, authors_json, subjects_json, tags_json, description, language, publisher, publication_date, series FROM books WHERE archived_at IS NULL AND (title LIKE ? OR subtitle LIKE ? OR description LIKE ? OR authors_json LIKE ? OR subjects_json LIKE ? OR tags_json LIKE ?) ORDER BY title ASC LIMIT 500", [like, like, like, like, like, like]);
+  }
+  function fetchByTag(db, tag) {
+    const like = '%"' + tag.replace(/"/g, '""') + '"%';
+    return all(db, "SELECT id, unique_id, title, subtitle, authors_json, subjects_json, tags_json, description, language, publisher, publication_date, series FROM books WHERE archived_at IS NULL AND tags_json LIKE ? ORDER BY title ASC", [like]);
+  }
+  function fetchBySubject(db, subj) {
+    const like = '%"' + subj.replace(/"/g, '""') + '"%';
+    return all(db, "SELECT id, unique_id, title, subtitle, authors_json, subjects_json, tags_json, description, language, publisher, publication_date, series FROM books WHERE archived_at IS NULL AND subjects_json LIKE ? ORDER BY title ASC", [like]);
+  }
+  function fetchByAuthor(db, author) {
+    const like = '%"' + author.replace(/"/g, '""') + '"%';
+    return all(db, "SELECT id, unique_id, title, subtitle, authors_json, subjects_json, tags_json, description, language, publisher, publication_date, series FROM books WHERE archived_at IS NULL AND authors_json LIKE ? ORDER BY title ASC", [like]);
+  }
+  function fetchBookByUid(db, uid) {
+    const rows = all(db, "SELECT *, id AS book_id FROM books WHERE unique_id = ? AND archived_at IS NULL LIMIT 1", [uid]);
+    return rows[0] || null;
+  }
+  function fetchMarginaliaForBook(db, bookId) {
+    return all(db, "SELECT uuid, content, highlighted_text, page_number, color, pinned, scope, book_unique_ids_json, created_at FROM marginalia WHERE archived_at IS NULL AND book_unique_ids_json LIKE ? ORDER BY created_at DESC", ['%"' + (bookId || "").replace(/"/g, '""') + '"%']);
+  }
+  function fetchAllMarginalia(db, limit) {
+    return all(db, "SELECT uuid, content, highlighted_text, page_number, color, pinned, scope, book_unique_ids_json, created_at FROM marginalia WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT ?", [limit || 200]);
+  }
+  function fetchPopularTags(db, limit) {
+    // tags_json is like '["a","b/c"]'. We can't SQL-unnest without json1;
+    // instead, collect client-side from fetched books.
+    const rows = all(db, "SELECT tags_json FROM books WHERE archived_at IS NULL AND tags_json IS NOT NULL AND tags_json <> '' AND tags_json <> '[]'", []);
+    const counts = new Map();
+    for (const r of rows) {
+      try {
+        const list = JSON.parse(r.tags_json);
+        for (const t of list) counts.set(t, (counts.get(t) || 0) + 1);
+      } catch (_) {}
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit || 20);
+  }
+  function fetchTopAuthors(db, limit) {
+    const rows = all(db, "SELECT authors_json FROM books WHERE archived_at IS NULL AND authors_json IS NOT NULL AND authors_json <> '' AND authors_json <> '[]'", []);
+    const counts = new Map();
+    for (const r of rows) {
+      try {
+        const list = JSON.parse(r.authors_json);
+        for (const a of list) counts.set(a, (counts.get(a) || 0) + 1);
+      } catch (_) {}
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit || 20);
+  }
+
+  function parseJson(s) { if (!s) return []; try { return JSON.parse(s); } catch (_) { return []; } }
+
+  // Builders
+  function buildTagLink(name, kind, suffix) {
+    const route = kind === "tag" ? "#/tag/" : kind === "subject" ? "#/subject/" : "#/author/";
+    const a = el("a", { class: "tag", href: route + encodeURIComponent(name) });
+    a.textContent = suffix ? name + " " + suffix : name;
+    return a;
+  }
+  function buildBookCard(b) {
+    const card = el("article", { class: "book-card" });
+    const h3 = el("h3");
+    const link = el("a", { href: "#/book/" + encodeURIComponent(b.unique_id) });
+    link.textContent = b.title;
+    h3.appendChild(link);
+    card.appendChild(h3);
+    if (b.subtitle) {
+      const st = el("div", { class: "authors" });
+      st.textContent = b.subtitle;
+      card.appendChild(st);
+    }
+    const authors = parseJson(b.authors_json);
+    if (authors.length) {
+      const a = el("div", { class: "authors" });
+      a.textContent = "by " + authors.join(", ");
+      card.appendChild(a);
+    }
+    const tags = parseJson(b.tags_json);
+    const subjects = parseJson(b.subjects_json);
+    const metaRow = el("div", { class: "meta-row" });
+    const chipBox = el("div", { class: "tag-chips" });
+    for (const s of subjects.slice(0, 4)) chipBox.appendChild(buildTagLink(s, "subject"));
+    for (const t of tags.slice(0, 4)) chipBox.appendChild(buildTagLink(t, "tag"));
+    if (chipBox.firstChild) metaRow.appendChild(chipBox);
+    card.appendChild(metaRow);
+    return card;
+  }
+  function buildBookList(rows) {
+    if (!rows.length) {
+      const p = el("p", { class: "empty" });
+      p.textContent = "No matching books.";
+      return p;
+    }
+    const grid = el("div", { class: "book-grid" });
+    for (const b of rows) grid.appendChild(buildBookCard(b));
+    return grid;
+  }
+  function buildHome(db) {
+    const frag = document.createDocumentFragment();
+    const tags = fetchPopularTags(db, 20);
+    if (tags.length) {
+      const h = el("div", { class: "section-head" });
+      h.textContent = "Popular tags";
+      frag.appendChild(h);
+      const tagBox = el("div", { class: "tag-chips" });
+      for (const [name, cnt] of tags) tagBox.appendChild(buildTagLink(name, "tag", "(" + cnt + ")"));
+      frag.appendChild(tagBox);
+    }
+    const authors = fetchTopAuthors(db, 12);
+    if (authors.length) {
+      const h = el("div", { class: "section-head" });
+      h.textContent = "Top authors";
+      frag.appendChild(h);
+      const authorBox = el("div", { class: "tag-chips" });
+      for (const [name, cnt] of authors) authorBox.appendChild(buildTagLink(name, "author", "(" + cnt + ")"));
+      frag.appendChild(authorBox);
+    }
+    const h = el("div", { class: "section-head" });
+    h.textContent = "Recent books";
+    frag.appendChild(h);
+    frag.appendChild(buildBookList(fetchRecent(db, 60)));
+    return frag;
+  }
+  function buildBookDetail(db, uid) {
+    const frag = document.createDocumentFragment();
+    const b = fetchBookByUid(db, uid);
+    if (!b) {
+      const p = el("p", { class: "empty" });
+      p.textContent = "Book not found (may have been archived).";
+      frag.appendChild(p);
+      return frag;
+    }
+    const crumb = el("div", { class: "breadcrumb" });
+    const back = el("a", { href: "#/" });
+    back.textContent = "← back";
+    crumb.appendChild(back);
+    frag.appendChild(crumb);
+
+    const detail = el("article", { class: "book-detail" });
+    detail.appendChild(el("h1", null, b.title));
+    if (b.subtitle) detail.appendChild(el("div", { class: "subtitle" }, b.subtitle));
+    const authors = parseJson(b.authors_json);
+    if (authors.length) {
+      const a = el("div", { class: "authors" });
+      a.textContent = "by " + authors.join(", ");
+      detail.appendChild(a);
+    }
+
+    const grid = el("div", { class: "field-grid" });
+    function row(label, value) {
+      if (value === null || value === undefined || value === "") return;
+      grid.appendChild(el("div", { class: "label" }, label));
+      const v = el("div", { class: "value" });
+      if (typeof value === "string") v.textContent = value;
+      else v.appendChild(value);
+      grid.appendChild(v);
+    }
+    row("Publisher", b.publisher);
+    row("Published", b.publication_date);
+    row("Language", b.language);
+    row("Series", b.series);
+    row("Pages", b.page_count);
+    const subjects = parseJson(b.subjects_json);
+    if (subjects.length) {
+      const subjectBox = el("div", { class: "tag-chips" });
+      for (const s of subjects) subjectBox.appendChild(buildTagLink(s, "subject"));
+      row("Subjects", subjectBox);
+    }
+    const tags = parseJson(b.tags_json);
+    if (tags.length) {
+      const tagBox = el("div", { class: "tag-chips" });
+      for (const t of tags) tagBox.appendChild(buildTagLink(t, "tag"));
+      row("Tags", tagBox);
+    }
+    const identifiers = parseJson(b.identifiers_json);
+    if (identifiers && Object.keys(identifiers).length) {
+      const idList = el("div", { class: "identifier-list" });
+      for (const k of Object.keys(identifiers)) {
+        const i = el("span", { class: "identifier" });
+        i.textContent = k + ": " + identifiers[k];
+        idList.appendChild(i);
+      }
+      row("Identifiers", idList);
+    }
+    detail.appendChild(grid);
+
+    if (b.description) {
+      const desc = el("div", { class: "description" });
+      desc.textContent = b.description;
+      detail.appendChild(desc);
+    }
+    frag.appendChild(detail);
+
+    const notes = fetchMarginaliaForBook(db, b.unique_id);
+    if (notes.length) {
+      const h = el("div", { class: "section-head" });
+      h.textContent = "Marginalia (" + notes.length + ")";
+      frag.appendChild(h);
+      for (const m of notes) frag.appendChild(buildMarginaliaCard(m));
+    }
+    return frag;
+  }
+  function buildMarginaliaCard(m) {
+    const card = el("div", { class: "marginalia-card" });
+    if (m.highlighted_text) {
+      card.appendChild(el("div", { class: "highlighted" }, '"' + m.highlighted_text + '"'));
+    }
+    if (m.content) {
+      card.appendChild(el("div", { class: "note-content" }, m.content));
+    }
+    const meta = el("div", { class: "note-meta" });
+    if (m.scope) meta.appendChild(el("span", { class: "scope" }, m.scope));
+    if (m.page_number !== null && m.page_number !== undefined) {
+      meta.appendChild(document.createTextNode("page " + m.page_number + "  "));
+    }
+    if (m.created_at) {
+      meta.appendChild(document.createTextNode(String(m.created_at).substring(0, 10)));
+    }
+    card.appendChild(meta);
+    return card;
+  }
+
+  function parseRoute() {
+    const hash = location.hash || "#/";
+    const body = hash.slice(1).replace(/^\//, "");
+    if (!body) return { name: "home" };
+    const parts = body.split("/");
+    if (parts[0] === "book" && parts.length === 2) return { name: "book", uid: decodeURIComponent(parts[1]) };
+    if (parts[0] === "tag" && parts.length >= 2) return { name: "tag", tag: decodeURIComponent(parts.slice(1).join("/")) };
+    if (parts[0] === "subject" && parts.length >= 2) return { name: "subject", subject: decodeURIComponent(parts.slice(1).join("/")) };
+    if (parts[0] === "author" && parts.length >= 2) return { name: "author", author: decodeURIComponent(parts.slice(1).join("/")) };
+    if (parts[0] === "search" && parts.length >= 2) return { name: "search", q: decodeURIComponent(parts.slice(1).join("/")) };
+    if (parts[0] === "marginalia") return { name: "marginalia" };
+    return { name: "home" };
+  }
+  function render(db) {
+    const route = parseRoute();
+    if (route.name === "search" && searchEl.value !== route.q) searchEl.value = route.q;
+    clear(view);
+    if (route.name === "home") view.appendChild(buildHome(db));
+    else if (route.name === "book") view.appendChild(buildBookDetail(db, route.uid));
+    else if (route.name === "search") {
+      const crumb = el("div", { class: "breadcrumb" });
+      crumb.textContent = 'Search results for "' + route.q + '"';
+      view.appendChild(crumb);
+      view.appendChild(buildBookList(fetchBySearch(db, route.q)));
+    } else if (route.name === "tag") {
+      const crumb = el("div", { class: "breadcrumb" });
+      crumb.textContent = "Tag: " + route.tag;
+      view.appendChild(crumb);
+      view.appendChild(buildBookList(fetchByTag(db, route.tag)));
+    } else if (route.name === "subject") {
+      const crumb = el("div", { class: "breadcrumb" });
+      crumb.textContent = "Subject: " + route.subject;
+      view.appendChild(crumb);
+      view.appendChild(buildBookList(fetchBySubject(db, route.subject)));
+    } else if (route.name === "author") {
+      const crumb = el("div", { class: "breadcrumb" });
+      crumb.textContent = "Author: " + route.author;
+      view.appendChild(crumb);
+      view.appendChild(buildBookList(fetchByAuthor(db, route.author)));
+    } else if (route.name === "marginalia") {
+      const crumb = el("div", { class: "breadcrumb" });
+      crumb.textContent = "All marginalia";
+      view.appendChild(crumb);
+      const notes = fetchAllMarginalia(db, 500);
+      if (!notes.length) {
+        const p = el("p", { class: "empty" });
+        p.textContent = "No marginalia in this archive.";
+        view.appendChild(p);
+      } else {
+        for (const m of notes) view.appendChild(buildMarginaliaCard(m));
+      }
+    }
+  }
+
+  try {
+    const db = await loadDb();
+    const bookCount = all(db, "SELECT COUNT(*) AS c FROM books WHERE archived_at IS NULL", [])[0].c;
+    const marginaliaCount = all(db, "SELECT COUNT(*) AS c FROM marginalia WHERE archived_at IS NULL", [])[0].c;
+    statsEl.textContent = bookCount + " books · " + marginaliaCount + " marginalia";
+    render(db);
+    window.addEventListener("hashchange", () => render(db));
+    let timer = 0;
+    searchEl.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const q = searchEl.value.trim();
+        location.hash = q ? "#/search/" + encodeURIComponent(q) : "#/";
+      }, 140);
+    });
+  } catch (err) {
+    clear(view);
+    const p = el("p", { class: "empty" });
+    p.textContent = "Could not load archive: " + (err.message || String(err));
+    view.appendChild(p);
+    statsEl.textContent = "error";
+    console.error(err);
+  }
+})();
+</script>
+</body>
+</html>

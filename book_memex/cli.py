@@ -3794,6 +3794,44 @@ def export_calibre(
         raise typer.Exit(code=1)
 
 
+@export_app.command(name="html-app")
+def export_html_app(
+    library_path: Path = typer.Argument(..., help="Path to library"),
+    output_path: Path = typer.Argument(
+        ...,
+        help="Output .html file path. '.html' auto-appended if missing.",
+    ),
+):
+    """Export the library as a self-contained single-file HTML SPA.
+
+    One portable .html file with vendored sql.js, gzipped database, and
+    hash routing. No network requests; opens in any modern browser.
+
+    Example:
+        book-memex export html-app ~/my-library ~/archive.html
+    """
+    from .library_db import Library
+
+    if not library_path.exists():
+        console.print(f"[red]Error: Library not found: {library_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        lib = Library.open(library_path)
+        result = lib.export_html_app(output_path)
+        lib.close()
+    except Exception as exc:
+        console.print(f"[red]Error exporting html-app: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    mb = result["html_bytes"] / (1024 * 1024)
+    console.print(
+        f"[green]Wrote {result['path']} ({mb:.1f} MB); "
+        f"DB: {result['original_db_bytes']:,} -> "
+        f"{result['embedded_db_bytes']:,} bytes gzipped[/green]"
+    )
+
+
 @export_app.command(name="arkiv")
 def export_arkiv(
     library_path: Path = typer.Argument(..., help="Path to library"),
