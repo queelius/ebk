@@ -36,11 +36,12 @@ from .library_db import Library
 # Read the installed-package version at runtime. This is robust to
 # pytest configurations where a shadow package could hide the real one
 # — importlib.metadata always consults dist-info.
-try:
-    from importlib.metadata import version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
+try:
     __version__ = _pkg_version("book-memex")
-except Exception:
+except PackageNotFoundError:
     __version__ = "unknown"
 
 __all__ = ["Library"]

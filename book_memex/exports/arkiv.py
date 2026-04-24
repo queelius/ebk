@@ -175,11 +175,12 @@ def _schema_yaml_bytes(counts: Dict[str, int]) -> bytes:
 
 def _readme_bytes(counts: Dict[str, int]) -> bytes:
     """Render README.md with ECHO frontmatter + usage notes."""
-    try:
-        from importlib.metadata import version as _pkg_version
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
 
+    try:
         version = _pkg_version("book-memex")
-    except Exception:
+    except PackageNotFoundError:
         version = "unknown"
 
     today = date.today().isoformat()
