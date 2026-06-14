@@ -146,7 +146,10 @@ class TestServerConfig:
     def test_default_values(self):
         """ServerConfig should have sensible defaults."""
         cfg = config.ServerConfig()
-        assert cfg.host == "0.0.0.0"
+        # Loopback by default: the REST API is unauthenticated with
+        # destructive routes, so network exposure must be an explicit
+        # `serve --allow-remote` opt-in, never the default.
+        assert cfg.host == "127.0.0.1"
         assert cfg.port == 8000
         assert cfg.auto_open_browser is False
         assert cfg.page_size > 0

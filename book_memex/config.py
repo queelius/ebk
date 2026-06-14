@@ -16,7 +16,11 @@ from dataclasses import dataclass, asdict, field
 @dataclass
 class ServerConfig:
     """Web server configuration."""
-    host: str = "0.0.0.0"
+    # Loopback by default: the REST API is unauthenticated and includes
+    # destructive routes (book/file deletion, metadata writes, uploads).
+    # Binding a non-loopback host requires an explicit --allow-remote opt-in
+    # at the CLI (see `book-memex serve`).
+    host: str = "127.0.0.1"
     port: int = 8000
     auto_open_browser: bool = False
     page_size: int = 50

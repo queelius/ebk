@@ -332,9 +332,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS — restricted to localhost by default for security.
-# The server is intended for local use; wildcard origins with credentials
-# would allow any site to make authenticated requests to the user's library.
+# Enable CORS with a localhost origin allowlist. NOTE: CORS only constrains
+# *browser* requests; it is NOT an access-control boundary for direct HTTP
+# clients (curl, scripts, other hosts). The actual boundary is the network
+# bind address, which defaults to loopback (see ServerConfig.host) and
+# requires `book-memex serve --allow-remote` to expose. The origin allowlist
+# below avoids the wildcard-origins-with-credentials footgun for browsers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -4550,7 +4550,14 @@ def serve(
     host: Optional[str] = typer.Option(None, "--host", help="Host to bind to (defaults from config)"),
     port: Optional[int] = typer.Option(None, "--port", help="Port to bind to (defaults from config)"),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload for development"),
-    no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open browser")
+    no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open browser"),
+    allow_remote: bool = typer.Option(
+        False,
+        "--allow-remote",
+        help="Permit binding a non-loopback host. The REST API is UNAUTHENTICATED "
+        "and includes destructive routes (delete, file unlink, upload); only use "
+        "this on a trusted network.",
+    ),
 ):
     """
     Start the web server for library management.
@@ -4597,6 +4604,29 @@ def serve(
     server_host = host if host is not None else config.server.host
     server_port = port if port is not None else config.server.port
     auto_open = config.server.auto_open_browser and not no_open
+
+    # Safety guard: the REST API is unauthenticated and exposes destructive
+    # routes (DELETE /api/books with on-disk file unlink, metadata writes,
+    # uploads). Binding a non-loopback host puts all of that on the network,
+    # so require a conscious opt-in rather than letting a config edit do it
+    # silently. CORS does not protect here (it only constrains browsers).
+    _loopback = {"127.0.0.1", "localhost", "::1", ""}
+    if server_host not in _loopback and not allow_remote:
+        console.print(
+            f"[red]Refusing to bind {server_host!r}: the REST API is unauthenticated "
+            f"and includes destructive routes (delete, file unlink, upload).[/red]"
+        )
+        console.print(
+            "[yellow]Bind 127.0.0.1 (the default), or pass --allow-remote only on a "
+            "trusted network.[/yellow]"
+        )
+        raise typer.Exit(code=1)
+    if server_host not in _loopback:
+        console.print(
+            "[yellow]⚠ Bound to a non-loopback host: the unauthenticated REST API "
+            "(including DELETE with file unlink) is reachable by any host that can "
+            "route to you.[/yellow]"
+        )
 
     try:
         import uvicorn
