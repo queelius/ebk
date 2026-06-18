@@ -226,6 +226,44 @@ class TestUpdateBooks:
         assert source_id in result["updated"]
         assert populated_library.get_book(source_id) is None
 
+    def test_merge_preserves_source_data(self, populated_library):
+        """BM-6: merge_into must move the source's identifiers, reading
+        sessions, and personal metadata to the target, and re-link its
+        marginalia, rather than destroying them by cascade."""
+        from book_memex.db.models import (
+            Book, Identifier, ReadingSession, PersonalMetadata, Marginalia,
+        )
+
+        session = populated_library.session
+        books = populated_library.get_all_books()
+        target_id = books[0].id
+        source = books[1]
+        source_id = source.id
+
+        session.add(Identifier(book_id=source_id, scheme="isbn", value="9780000000001"))
+        session.add(ReadingSession(book_id=source_id, pages_read=42))
+        session.add(PersonalMetadata(book_id=source_id, rating=5))
+        marg = Marginalia(content="a highlight on the source")
+        marg.books.append(source)
+        session.add(marg)
+        session.commit()
+        marg_id = marg.id
+
+        result = update_books_impl(
+            session, {str(source_id): {"merge_into": target_id}}
+        )
+        assert source_id in result["updated"], result
+        session.expire_all()
+
+        assert session.get(Book, source_id) is None
+        target = session.get(Book, target_id)
+        assert any(i.value == "9780000000001" for i in target.identifiers)
+        assert len(target.sessions) >= 1
+        assert target.personal is not None and target.personal.rating == 5
+        # The highlight is re-pointed at the target, not orphaned.
+        marg = session.get(Marginalia, marg_id)
+        assert marg is not None and target in marg.books
+
     def test_merge_with_other_fields_rejected(self, populated_library):
         books = populated_library.get_all_books()
         if len(books) < 2:

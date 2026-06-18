@@ -3,14 +3,15 @@ import json as _json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import inspect as sa_inspect, text
+from sqlalchemy import delete, inspect as sa_inspect, text, update
 from sqlalchemy.orm import Session
 
 from book_memex.core.fts import safe_fts_query
 from book_memex.core.uri import parse_uri, InvalidUriError
 from book_memex.db.models import (
     Base, Book, Author, Subject, Tag, PersonalMetadata, Marginalia,
-    ReadingSession, BookContent,
+    ReadingSession, BookContent, Contributor, Identifier, File, Cover,
+    BookConcept,
 )
 from book_memex.mcp.sql_executor import ReadOnlySQLExecutor
 from book_memex.services.marginalia_service import MarginaliaService
@@ -185,16 +186,29 @@ def update_books_impl(
 
 
 def _merge_book(session: Session, source: Book, target_id: int):
-    """Merge source book into target, moving all associated data."""
+    """Merge *source* book into the target, moving ALL associated data.
+
+    BM-6: the previous implementation moved only files/covers and unioned
+    authors/subjects/tags, then deleted the source. Everything else
+    (identifiers, contributors, reading sessions, personal metadata,
+    concepts) was destroyed by ORM cascade, and marginalia silently lost
+    their link to the source book. Worse, reassigning child.book_id via the
+    ORM attribute left the children in source's collection, so the cascade
+    on delete(source) could still delete them.
+
+    This mirrors Library.merge_books for a single source->target: children
+    are moved with SQL UPDATE (bypassing the relationship cascade), source
+    is expired before delete so the stale in-memory collections cannot drive
+    a cascade, and personal metadata is merged rather than dropped. No
+    commit here; the caller (update_books_impl) owns the transaction.
+    """
+    if target_id == source.id:
+        raise ValueError("cannot merge a book into itself")
     target = session.get(Book, target_id)
     if not target:
         raise ValueError(f"Target book {target_id} not found")
-    # Move files and covers
-    for f in source.files:
-        f.book_id = target_id
-    for c in source.covers:
-        c.book_id = target_id
-    # Merge collections (add missing)
+
+    # Collections (union by identity).
     for a in source.authors:
         if a not in target.authors:
             target.authors.append(a)
@@ -204,7 +218,56 @@ def _merge_book(session: Session, source: Book, target_id: int):
     for t in source.tags:
         if t not in target.tags:
             target.tags.append(t)
-    session.delete(source)
+
+    # Move 1:N children with SQL UPDATE so the relationship cascade on
+    # delete(source) cannot take them with it.
+    for model in (Contributor, File, Cover, BookConcept, ReadingSession):
+        session.execute(
+            update(model).where(model.book_id == source.id).values(book_id=target_id)
+        )
+
+    # Identifiers: move only those the target lacks (avoid UNIQUE clashes);
+    # drop exact duplicates.
+    existing_ids = {(i.scheme, i.value) for i in target.identifiers}
+    for ident in list(source.identifiers):
+        if (ident.scheme, ident.value) in existing_ids:
+            session.execute(delete(Identifier).where(Identifier.id == ident.id))
+        else:
+            session.execute(
+                update(Identifier)
+                .where(Identifier.id == ident.id)
+                .values(book_id=target_id)
+            )
+
+    # Marginalia: re-point the M2M link from source to target rather than
+    # letting the highlight degrade to an unanchored note.
+    for entry in list(source.marginalia):
+        if target not in entry.books:
+            entry.books.append(target)
+
+    # Personal metadata: merge into target, or move if target has none.
+    if source.personal is not None:
+        if target.personal is None:
+            session.execute(
+                update(PersonalMetadata)
+                .where(PersonalMetadata.book_id == source.id)
+                .values(book_id=target_id)
+            )
+        else:
+            tp, sp = target.personal, source.personal
+            if sp.rating and (not tp.rating or sp.rating > tp.rating):
+                tp.rating = sp.rating
+            if sp.reading_progress and (
+                not tp.reading_progress or sp.reading_progress > tp.reading_progress
+            ):
+                tp.reading_progress = sp.reading_progress
+            if sp.favorite:
+                tp.favorite = True
+
+    # Expire source so its now-stale child collections don't drive a cascade
+    # delete of the rows we just reassigned, then delete the source row.
+    session.expire(source)
+    session.delete(session.get(Book, source.id))
 
 
 def _apply_collection_ops(session: Session, book: Book, fields: Dict[str, Any]):
