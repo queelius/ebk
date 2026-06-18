@@ -65,3 +65,41 @@ def test_search_rejects_empty_query(lib_indexed):
     lib, book = lib_indexed
     with pytest.raises(ValueError):
         search_book_content_impl(lib.session, book_id=book.id, query="")
+
+
+def test_get_segment_excludes_archived(lib_indexed):
+    """BM-7: get_segment must honor soft delete like get_segments does.
+
+    A soft-deleted (archived_at set) segment should no longer be
+    resolvable; otherwise the singular fetch leaks rows the paginated
+    surface already hides.
+    """
+    from datetime import datetime, timezone
+
+    from book_memex.db.models import BookContent, File
+
+    lib, book = lib_indexed
+    # Sanity: it resolves while live.
+    seg = get_segment_impl(
+        lib.session, book_id=book.id, segment_type="chapter", segment_index=0,
+    )
+    assert seg["segment_index"] == 0
+
+    # Archive that segment, then it must be excluded.
+    row = (
+        lib.session.query(BookContent)
+        .join(BookContent.file)
+        .filter(
+            BookContent.segment_type == "chapter",
+            BookContent.segment_index == 0,
+            File.book_id == book.id,
+        )
+        .first()
+    )
+    row.archived_at = datetime.now(timezone.utc)
+    lib.session.commit()
+
+    with pytest.raises(LookupError):
+        get_segment_impl(
+            lib.session, book_id=book.id, segment_type="chapter", segment_index=0,
+        )

@@ -993,7 +993,10 @@ class TestArkivExport:
             readme = (out / "README.md").read_text()
             assert readme.startswith("---")
             assert "generator: book-memex" in readme
-            assert "book-memex import-arkiv" in readme
+            # BM-8: must name the real CLI (`import arkiv` subcommand with a
+            # library path), not the nonexistent `import-arkiv` command.
+            assert "book-memex import arkiv <library-path>" in readme
+            assert "import-arkiv" not in readme
             assert result["format"] == "dir"
         finally:
             shutil.rmtree(out, ignore_errors=True)

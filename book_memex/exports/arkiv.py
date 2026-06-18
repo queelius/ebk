@@ -226,11 +226,11 @@ def _readme_bytes(counts: Dict[str, int]) -> bytes:
         "",
         "```bash",
         "# Insert-or-ignore on unique_id + uuid; safe for re-imports.",
-        "book-memex import-arkiv <this bundle>",
+        "book-memex import arkiv <library-path> <this-bundle>",
         "",
         "# Or with explicit --merge semantics (same effect today; reserved",
         "# for a future stricter-insert mode).",
-        "book-memex import-arkiv <this bundle> --merge",
+        "book-memex import arkiv <library-path> <this-bundle> --merge",
         "```",
         "",
     ]

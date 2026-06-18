@@ -866,6 +866,7 @@ def get_segment_impl(
             BookContent.segment_type == segment_type,
             BookContent.segment_index == segment_index,
             File.book_id == book_id,
+            BookContent.archived_at.is_(None),
         )
         .first()
     )

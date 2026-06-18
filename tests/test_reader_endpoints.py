@@ -73,6 +73,49 @@ def test_read_epub_contains_book_metadata(client_with_epub):
     assert f'"id": {book.id}' in r.text or f'"id":{book.id}' in r.text
 
 
+def test_read_epub_loads_vendored_libs_not_cdn(client_with_epub):
+    """BM-9: reader libraries are vendored under /static/vendor, never from a
+    CDN, so the reader has no third-party supply-chain or availability
+    dependency and works on an offline host."""
+    client, book, _ = client_with_epub
+    r = client.get(f"/read/{book.id}")
+    assert r.status_code == 200
+    # No CDN references anywhere in the served shell.
+    for smell in ("cdn.jsdelivr.net", "unpkg.com", "cloudflare"):
+        assert smell not in r.text, f"unexpected CDN reference {smell!r}"
+    # The EPUB libs load from the local vendor directory.
+    assert "/static/vendor/jszip.min.js" in r.text
+    assert "/static/vendor/epub.min.js" in r.text
+
+
+def test_vendored_reader_libs_are_served(client_with_epub):
+    """The vendored asset files actually exist and are served as JS."""
+    client, _, _ = client_with_epub
+    for path in (
+        "/static/vendor/jszip.min.js",
+        "/static/vendor/epub.min.js",
+        "/static/vendor/pdf.min.mjs",
+        "/static/vendor/pdf.worker.min.mjs",
+    ):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} not served"
+        assert len(resp.content) > 1000, f"{path} suspiciously small"
+
+
+def test_reader_template_pdf_branch_has_no_cdn():
+    """The PDF branch (no client fixture) must also be CDN-free and must
+    point PDF.js at the vendored worker."""
+    import book_memex.server as server_mod
+
+    template = (
+        Path(server_mod.__file__).parent / "server" / "templates" / "reader.html"
+    )
+    text = template.read_text()
+    assert "cdn.jsdelivr.net" not in text
+    assert "/static/vendor/pdf.min.mjs" in text
+    assert 'PDFJS_WORKER_SRC = "/static/vendor/pdf.worker.min.mjs"' in text
+
+
 def test_read_nonexistent_book_returns_404(client_with_epub):
     client, _, _ = client_with_epub
     r = client.get("/read/99999")

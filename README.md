@@ -3,8 +3,18 @@
 > Renamed from `ebk` (previous name). The `ebk` CLI entrypoint is still available
 > as a deprecation shim and will be removed in the release after v1.
 
-**book-memex** is a powerful eBook metadata management tool with a SQLAlchemy + SQLite database backend. It provides a comprehensive fluent API for programmatic use, a rich Typer-based CLI (with colorized output courtesy of [Rich](https://github.com/Textualize/rich)), full-text search with FTS5 indexing, automatic text extraction and chunking for semantic search, hash-based file deduplication, and optional AI-powered features including knowledge graphs and semantic search.
+**book-memex** is an eBook library manager and the book-domain archive of the
+`*-memex` personal-data ecosystem. It stores book metadata, per-segment content,
+reading marginalia (highlights and notes), and reading sessions in a SQLAlchemy +
+SQLite database with FTS5 full-text search. It ships a Typer CLI, a fluent Python
+API, a FastAPI web server with a browser-based EPUB/PDF reader, an MCP server for
+LLM access, and exporters (arkiv JSONL, HTML, Hugo, OPDS, and more).
 
+It is a thin domain archive by design: it stores and exposes books and reading
+data. It does **not** compute embeddings or run semantic search; that belongs to
+the `memex` federation layer (see `~/github/memex/CLAUDE.md`). The RAG-ready MCP
+surface (per-segment FTS5 search, URI resolution, SQL) is what the federation
+consumes.
 
 ---
 
@@ -13,524 +23,256 @@
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
-  - [Database Commands](#database-commands)
-  - [Web Server](#web-server)
-  - [AI-Powered Features](#ai-powered-features)
-  - [Configuration Management](#configuration-management)
-  - [Legacy Commands](#legacy-commands)
+- [Browser Reader](#browser-reader)
+- [Marginalia and Reading Sessions](#marginalia-and-reading-sessions)
+- [MCP Server](#mcp-server)
 - [Python API](#python-api)
-- [Integrations](#integrations)
+- [Search Syntax](#search-syntax)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
-- [Documentation](#documentation)
-- [Stay Updated](#stay-updated)
-- [Support](#support)
 
 ---
 
 ## Features
 
-- **SQLAlchemy + SQLite Backend**: Robust database with normalized schema, proper relationships, and FTS5 full-text search
-- **Fluent Python API**: Comprehensive programmatic interface with method chaining and query builders
-- **Typer + Rich CLI**: A colorized, easy-to-use command-line interface
-- **Automatic Text Extraction**: Extract and index text from PDFs, EPUBs, and plaintext files
-  - PyMuPDF (primary) with pypdf fallback for PDFs
-  - ebooklib with HTML parsing for EPUBs
-  - Automatic chunking (500-word overlapping chunks) for semantic search
-- **Hash-based Deduplication**: SHA256-based file deduplication
-  - Same file (same hash) = skipped
-  - Same book, different format = added as additional format
-  - Hash-prefixed directory storage for scalability
-- **Advanced Search**: Powerful search with field-specific queries and boolean logic
-  - Field searches: `title:Python`, `author:Knuth`, `tag:programming`
-  - Boolean operators: `AND` (implicit), `OR`, `NOT`/`-prefix`
-  - Comparison filters: `rating:>=4`, `rating:3-5`
-  - Exact filters: `language:en`, `format:pdf`, `favorite:true`
-  - Phrase searches: `"machine learning"`
-  - Fast FTS5-powered full-text search across titles, descriptions, and extracted text
-- **Import from Multiple Sources**:
-  - Calibre libraries (reads metadata.opf files)
-  - Individual ebook files with auto-metadata extraction
-  - Batch import with progress tracking
-- **Cover Extraction**: Automatic cover extraction and thumbnail generation
-  - PDFs: First page rendered as image
-  - EPUBs: Cover from metadata or naming patterns
-- **Web Server Interface**:
-  - FastAPI-based REST API for library management
-  - URL-based navigation with filters, pagination, and sorting
-  - Clickable covers and file formats to open books
-  - Book details modal with comprehensive metadata display
-- **Flexible Exports**:
-  - **HTML Export**: Self-contained interactive catalog with pagination (50 books/page)
-    - Client-side search and filtering
-    - URL state tracking for bookmarkable pages
-    - Optional file copying with `--copy` flag (includes covers)
-  - Export to ZIP archives
-  - Hugo-compatible Markdown with multiple organization options
-  - Jinja2 template support for customizable export formats
-- **Integrations** (optional):
-  - **Streamlit Dashboard**: Interactive web interface
-  - **MCP Server**: AI assistant integration
-  - **Visualizations**: Network graphs for analysis
+- **SQLAlchemy + SQLite backend** with a normalized schema and FTS5 full-text search.
+- **Durable, URI-addressable records**: `book-memex://book/<unique_id>`,
+  `book-memex://marginalia/<uuid>`, `book-memex://reading/<uuid>`.
+- **Soft delete** across marginalia, reading sessions, and (schema-ready) other
+  record kinds; hard delete is opt-in.
+- **Text extraction and per-segment indexing**: PyMuPDF (with pypdf fallback) for
+  PDFs, ebooklib for EPUBs, plus plaintext. Segments are anchored (EPUB CFI, PDF
+  page+bbox, plaintext byte offset) and searchable via `book_content_fts`.
+- **Hash-based deduplication**: SHA-256 file hashing. Same file is skipped; the
+  same book in a different format is added as an additional format.
+- **Cover extraction** and thumbnail generation.
+- **FastAPI web server** with a REST API and a browser-based EPUB/PDF reader.
+- **Marginalia and reading sessions**: URI-addressable highlights, notes, and
+  reading-progress tracking, over both REST and MCP.
+- **Exporters**: arkiv JSONL (the ecosystem interchange format), self-contained
+  HTML catalog and single-file HTML app, Hugo Markdown, OPDS, CSV/JSON, and more.
+- **MCP server** exposing `execute_sql`, `get_schema`, per-segment content search,
+  URI resolution, and marginalia/reading tools.
 
 ---
 
 ## Installation
 
-### Basic Installation
-
 ```bash
 pip install book-memex
 ```
 
-### From Source
+### From source
 
 ```bash
-git clone https://github.com/queelius/ebk.git
-cd ebk
+git clone https://github.com/queelius/book-memex.git
+cd book-memex
 pip install .
 ```
 
-### With Optional Features
+### Optional extras
 
 ```bash
-# With Streamlit dashboard
-pip install book-memex[streamlit]
-
-# With visualization tools
-pip install book-memex[viz]
-
-# With all optional features
-pip install book-memex[all]
-
-# For development
-pip install book-memex[dev]
+pip install book-memex[mcp]    # MCP server (FastMCP)
+pip install book-memex[docs]   # documentation tooling
+pip install book-memex[dev]    # development + test dependencies
+pip install book-memex[all]    # everything
 ```
 
-> **Note**: Requires Python 3.10+
+> Requires Python 3.10+.
 
 ---
 
 ## Quick Start
 
-### 1. Initialize Configuration
-
 ```bash
-# Create default configuration file at ~/.config/ebk/config.json
-book-memex config init
+# 1. Create a library
+book-memex lib init ~/books
 
-# View current configuration
-book-memex config show
+# 2. Add books (source path first, then the library path)
+book-memex import add book.pdf ~/books --title "My Book" --authors "Some Author"
+book-memex import folder ~/Downloads/ebooks ~/books        # bulk import a directory
+book-memex import calibre ~/Calibre\ Library ~/books       # import a Calibre library
 
-# Set default library path
-book-memex config set library.default_path ~/my-library
+# 3. Search (query first, then the library path)
+book-memex query search "title:python rating:>=4" ~/books
+
+# 4. Browse in the web UI (and open the reader)
+book-memex serve ~/books
+# visit http://localhost:8000  (reader at /read/{book_id})
 ```
 
-### 2. Create and Populate Library
-
-```bash
-# Initialize a new library
-book-memex init ~/my-library
-
-# Import a single ebook with auto-metadata extraction
-book-memex import book.pdf ~/my-library
-
-# Import from Calibre library
-book-memex import-calibre ~/Calibre/Library --output ~/my-library
-
-# Search using full-text search
-book-memex search "python programming" ~/my-library
-
-# List books with filtering
-book-memex list ~/my-library --author "Knuth" --limit 20
-
-# Get statistics
-book-memex stats ~/my-library
-```
-
-### 3. Launch Web Interface
-
-```bash
-# Start web server (uses config defaults)
-book-memex serve ~/my-library
-
-# Custom port and host
-book-memex serve ~/my-library --port 8080 --host 127.0.0.1
-
-# Auto-open browser
-book-memex config set server.auto_open_browser true
-book-memex serve ~/my-library
-```
+`book-memex serve` binds a loopback host by default. The REST API is
+UNAUTHENTICATED and includes destructive operations, so binding a non-loopback
+host requires an explicit flag and prints a warning. Do not expose it to an
+untrusted network.
 
 ---
-
-## Configuration
-
-book-memex uses a centralized configuration system stored at `~/.config/ebk/config.json` (path preserved from the `ebk` era so existing configs keep working). This configuration file manages settings for the web server, CLI defaults, and library preferences.
-
-### Configuration File Structure
-
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8000,
-    "auto_open_browser": false,
-    "page_size": 50
-  },
-  "cli": {
-    "verbose": false,
-    "color": true,
-    "page_size": 50
-  },
-  "library": {
-    "default_path": null
-  }
-}
-```
-
-### Configuration Management
-
-```bash
-# Initialize configuration (creates default config file)
-book-memex config init
-
-# View current configuration
-book-memex config show
-
-# Edit configuration in your default editor
-book-memex config edit
-
-# Set specific values
-book-memex config set server.port 8080
-book-memex config set library.default_path ~/my-library
-
-# Get specific value
-book-memex config get server.port
-```
-
-### CLI Overrides
-
-All commands support CLI arguments that override configuration defaults:
-
-```bash
-# These override config settings
-book-memex serve ~/library --port 9000 --host 127.0.0.1
-```
 
 ## CLI Usage
 
-book-memex uses [Typer](https://typer.tiangolo.com/) with [Rich](https://github.com/Textualize/rich) for a beautiful, colorized CLI experience.
-
-### General CLI Structure
+The CLI is a tree of sub-apps: `book-memex <group> <command>`.
 
 ```bash
-book-memex --help                 # See all available commands
-book-memex <command> --help       # See specific command usage
-book-memex --verbose <command>    # Enable verbose output
-```
+# Library lifecycle
+book-memex lib init|migrate|backup|restore|check
 
-### Database Commands
+# Import
+book-memex import add|folder|calibre|isbn|url|opds|arkiv
 
-Core library management with SQLAlchemy + SQLite backend:
+# Export
+book-memex export json|csv|html|html-app|opds|goodreads|calibre|arkiv|echo
 
-```bash
-# Initialize library
-book-memex init ~/my-library
+# Per-book operations
+book-memex book info|status|progress|open|read|rate|favorite|tag|edit|delete|merge|bulk-edit|similar|export
+book-memex book review add|list|show|edit|delete        # nested: structured reviews
 
-# Import books
-book-memex import book.pdf ~/my-library
-book-memex import ~/books/*.epub ~/my-library
-book-memex import-calibre ~/Calibre/Library --output ~/my-library
+# Notes / marginalia (also available over MCP)
+book-memex note add|list|extract|export
 
-# Search with advanced syntax
-book-memex search "machine learning" ~/my-library              # Plain full-text search
-book-memex search "title:Python rating:>=4" ~/my-library       # Field-specific with filters
-book-memex search "author:Knuth format:pdf" ~/my-library       # Multiple criteria
-book-memex search "tag:programming NOT java" ~/my-library      # Boolean operators
-book-memex search '"deep learning" language:en' ~/my-library   # Phrase search with filter
+# Tags
+book-memex tag list|tree|add|remove|rename|delete|stats
 
-# List and filter
-book-memex list ~/my-library
-book-memex list ~/my-library --author "Knuth" --language en --limit 20
-book-memex list ~/my-library --format pdf --rating 4
+# Reading queue
+book-memex queue list|add|remove|move|clear|next
 
-# Statistics
-book-memex stats ~/my-library
-book-memex stats ~/my-library --format json
+# Saved views (the views DSL)
+book-memex view create|list|show|edit|add|remove|set|unset|export|import|delete
 
-# Manage reading status
-book-memex rate ~/my-library <book-id> 5
-book-memex favorite ~/my-library <book-id>
-book-memex tag ~/my-library <book-id> --add "must-read" "technical"
+# Query
+book-memex query search "<query>"
+book-memex query stats
+book-memex query sql "SELECT ..."
 
-# Remove books
-book-memex purge ~/my-library --rating 1 --confirm
-```
+# Content extraction / indexing
+book-memex extract
+book-memex reindex-content
+book-memex reindex-metadata
 
-### Web Server
+# Configuration (flag-based)
+book-memex config --show
+book-memex config --init
+book-memex config --server-host 127.0.0.1 --server-port 8080 --library-path ~/books
 
-Launch FastAPI-based web interface:
-
-```bash
-# Start server (uses config defaults)
-book-memex serve ~/my-library
-
-# Custom host and port
-book-memex serve ~/my-library --host 127.0.0.1 --port 8080
-
-# Auto-open browser
-book-memex serve ~/my-library --auto-open
-
-# Configure defaults in config
-book-memex config set server.port 8080
-book-memex config set server.auto_open_browser true
-```
-
-### Configuration Management
-
-Manage global configuration:
-
-```bash
-# Initialize configuration
-book-memex config init
-
-# View configuration
-book-memex config show
-
-# Edit in default editor
-book-memex config edit
-
-# Set values
-book-memex config set server.port 8080
-book-memex config set library.default_path ~/books
-
-# Get values
-book-memex config get server.port
-```
-
-### Export and Advanced Features
-
-```bash
-# Export library
-book-memex export html ~/my-library ~/library.html                    # Self-contained HTML with pagination
-book-memex export html ~/my-library ~/site/lib.html --copy --base-url /library  # Copy files + covers
-book-memex export zip ~/my-library ~/backup.zip
-book-memex export json ~/my-library ~/metadata.json
-
-# Virtual libraries (filtered views)
-book-memex vlib create ~/my-library "python-books" --subject Python
-book-memex vlib list ~/my-library
-
-# Notes and annotations
-book-memex note add ~/my-library <book-id> "Great chapter on algorithms"
-book-memex note list ~/my-library <book-id>
+# Servers
+book-memex serve [LIBRARY]          # FastAPI web UI + reader
+book-memex mcp-serve [LIBRARY_PATH] # MCP server over stdio
 ```
 
 ---
 
-## Documentation
+## Browser Reader
 
-Comprehensive documentation is available at: **[https://queelius.github.io/ebk/](https://queelius.github.io/ebk/)**
-
-### Documentation Contents
-
-- **Getting Started**
-  - [Installation](https://queelius.github.io/ebk/getting-started/installation/)
-  - [Quick Start](https://queelius.github.io/ebk/getting-started/quickstart/)
-  - [Configuration Guide](https://queelius.github.io/ebk/getting-started/configuration/)
-
-- **User Guide**
-  - [CLI Reference](https://queelius.github.io/ebk/user-guide/cli/)
-  - [Python API](https://queelius.github.io/ebk/user-guide/api/)
-  - [LLM Features](https://queelius.github.io/ebk/user-guide/llm-features/)
-  - [Web Server](https://queelius.github.io/ebk/user-guide/server/)
-  - [Import/Export](https://queelius.github.io/ebk/user-guide/import-export/)
-  - [Search & Query](https://queelius.github.io/ebk/user-guide/search/)
-
-- **Advanced Topics**
-  - [Hugo Export](https://queelius.github.io/ebk/advanced/hugo-export/)
-  - [Symlink DAG](https://queelius.github.io/ebk/advanced/symlink-dag/)
-  - [Recommendations](https://queelius.github.io/ebk/advanced/recommendations/)
-  - [Batch Operations](https://queelius.github.io/ebk/advanced/batch-operations/)
-
-- **Development**
-  - [Architecture](https://queelius.github.io/ebk/development/architecture/)
-  - [Contributing](https://queelius.github.io/ebk/development/contributing/)
-  - [API Reference](https://queelius.github.io/ebk/development/api-reference/)
+`book-memex serve` exposes a browser-based reader at `/read/{book_id}` for EPUB
+and PDF, with highlight capture, reading-progress sync, and three themes (light,
+dark, sepia). The reader libraries (EPUB.js, JSZip, PDF.js and its worker) are
+vendored under `book_memex/server/static/vendor/` and served locally, so the
+running instance needs no CDN or internet access. DRM-protected books cannot be
+rendered.
 
 ---
 
+## Marginalia and Reading Sessions
+
+Marginalia are free-form, URI-addressable notes and highlights attachable to one
+or more books (or to no book, as a collection note). Reading sessions track
+reading events with start/end anchors, and per-book reading progress is stored on
+`personal_metadata`. All of these are exposed over both the REST API
+(`/api/marginalia`, `/api/reading/sessions`, `/api/reading/progress`) and MCP, and
+all participate in soft delete so their URIs survive re-imports and round-trips
+through other archives.
+
+---
+
+## MCP Server
+
+```bash
+book-memex mcp-serve ~/books
+```
+
+Configure in `.mcp.json`:
+
+```json
+{"mcpServers": {"book-memex": {"command": "book-memex", "args": ["mcp-serve", "/path/to/library"]}}}
+```
+
+The MCP surface includes the contract tools (`execute_sql`, `get_schema`) plus
+domain tools for per-segment content search (`search_book_content`,
+`search_library_content`, `get_segment`, `get_segments`), URI resolution, and
+marginalia/reading operations. Per the ecosystem contract, the archive exposes
+retrieval primitives and does not wrap LLM calls or compute embeddings.
+
+---
 
 ## Python API
 
-book-memex provides a comprehensive SQLAlchemy-based API for programmatic library management:
-
 ```python
-from pathlib import Path
 from book_memex.library_db import Library
 
-# Open or create a library
-lib = Library.open(Path("~/my-library"))
+lib = Library.open("~/books")
 
-# Import books with automatic metadata extraction
-book = lib.add_book(
-    Path("book.pdf"),
-    metadata={"title": "My Book", "creators": ["Author Name"]},
-    extract_text=True,
-    extract_cover=True
-)
-
-# Fluent query interface
+# Fluent query API
 results = (lib.query()
-    .filter_by_language("en")
     .filter_by_author("Knuth")
-    .filter_by_subject("Algorithms")
-    .order_by("title", desc=False)
+    .filter_by_language("en")
+    .order_by("title")
     .limit(20)
     .all())
 
-# Full-text search (FTS5)
-results = lib.search("machine learning", limit=50)
-
-# Get book by ID
-book = lib.get_book(42)
-print(f"{book.title} by {', '.join([a.name for a in book.authors])}")
-
-# Update reading status
-lib.update_reading_status(book.id, "reading", progress=50, rating=4)
-
-# Add tags
-lib.add_tags(book.id, ["must-read", "technical"])
-
-# Get statistics
-stats = lib.stats()
-print(f"Total books: {stats['total_books']}")
-print(f"Total authors: {stats['total_authors']}")
-print(f"Languages: {', '.join(stats['languages'])}")
-
-# Query with filters
-from book_memex.db.models import Book, Author
-from sqlalchemy import and_
-
-books = lib.session.query(Book).join(Book.authors).filter(
-    and_(
-        Author.name.like("%Knuth%"),
-        Book.language == "en"
-    )
-).all()
-
-# Always close when done
-lib.close()
-
-# Or use context manager
-with Library.open(Path("~/my-library")) as lib:
-    results = lib.search("Python programming")
-    for book in results:
-        print(book.title)
+# Full-text search
+hits = lib.search("title:python rating:>=4")
 ```
-
-See the [CLAUDE.md](CLAUDE.md) file for architectural details and [API documentation](https://queelius.github.io/ebk/user-guide/api/) for complete reference.
 
 ---
 
-## Contributing
+## Search Syntax
 
-Contributions are welcome! Here's how to get involved:
+`book-memex query search` and `Library.search()` accept a small query language:
 
-1. **Fork the Repo**
-2. **Create a Branch** for your feature or fix
-3. **Commit & Push** your changes
-4. **Open a Pull Request** describing the changes
-
-We appreciate code contributions, bug reports, and doc improvements alike.
-
----
-
-## License
-
-Distributed under the [MIT License](https://github.com/queelius/ebk/blob/main/LICENSE).
-
----
-
-## Integrations
-
-book-memex follows a modular architecture where the core library remains lightweight, with optional integrations available:
-
-### Streamlit Dashboard
-```bash
-pip install book-memex[streamlit]
-streamlit run book_memex/integrations/streamlit/app.py
-```
-
-### MCP Server (AI Assistants)
-```bash
-pip install book-memex[mcp]
-# Configure your AI assistant to use the MCP server
-```
-
-### Visualizations
-```bash
-pip install book-memex[viz]
-# Visualization tools will be available as a separate script
-# Documentation coming soon in integrations/viz/
-```
-
-See the [Integrations Guide](integrations/README.md) for detailed setup instructions.
+- **Field searches**: `title:Python`, `author:"Donald Knuth"`, `tag:programming`,
+  `series:TAOCP`
+- **Boolean operators**: implicit `AND`, explicit `OR`, and `NOT` / `-prefix`
+  negation
+- **Comparisons** (numeric fields): `rating:>=4`, `rating:3-5`
+- **Exact filters**: `language:en`, `format:pdf`, `favorite:true`, `status:...`
+- **Phrase searches**: `"machine learning"`
+- FTS5-backed full-text search across titles, descriptions, and extracted text.
 
 ---
 
 ## Architecture
 
-book-memex is designed with a clean, layered architecture:
-
-1. **Core Library** (`book_memex.library_db`): Fluent API for all operations
-2. **CLI** (`book_memex.cli`): Typer-based commands using the fluent API
-3. **Import/Export** (`book_memex.services`, `book_memex.exports`): Modular format support
-4. **Integrations** (`integrations/`): Optional add-ons (web UI, AI, viz)
-
-This design ensures the core remains lightweight while supporting powerful extensions.
+See [CLAUDE.md](CLAUDE.md) for the full package map. In brief: `cli.py` (Typer
+router) and `server.py` (FastAPI) delegate to `services/`; `library_db.py` holds
+the `Library` class and fluent query API; `core/` has DB-free building blocks
+(URIs, soft delete, FTS5 sanitizer); `db/` holds the ORM, session setup, and
+migrations; `exports/` has one exporter per target. The library directory contains
+`library.db`, hash-prefixed `files/`, and `covers/thumbnails/`.
 
 ---
 
 ## Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/queelius/ebk.git
-cd ebk
-
-# Create virtual environment
-make venv
-
-# Install in development mode
-make setup
-
-# Run tests
-make test
-
-# Check coverage
-make coverage
+make setup          # create venv and install all deps
+make install-dev    # dev deps only
+pytest              # run the test suite
+make lint           # flake8, mypy, pylint
+make format         # black, isort
 ```
 
 ---
 
-## Stay Updated
+## Contributing
 
-- **GitHub**: [https://github.com/queelius/ebk](https://github.com/queelius/ebk)
-- **Website**: [https://metafunctor.com](https://metafunctor.com)
-
----
-
-## Support
-
-- **Issues**: [Open an Issue](https://github.com/queelius/ebk/issues) on GitHub
-- **Contact**: <lex@metafunctor.com>
+Issues and pull requests are welcome at
+<https://github.com/queelius/book-memex>.
 
 ---
 
-Happy eBook managing!
+## License
+
+MIT. See [LICENSE](LICENSE) and <https://github.com/queelius/book-memex>.

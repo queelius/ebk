@@ -6,11 +6,18 @@
   <title>{{ title }} - book-memex reader</title>
   <link rel="stylesheet" href="/static/reader.css">
   {% if format == "epub" %}
-  <!-- JSZip must load before EPUB.js so ePub() can parse ArrayBuffer input. -->
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+  <!-- Libraries are vendored under /static/vendor (no CDN): the reader works
+       on an offline / air-gapped host and carries no third-party supply-chain
+       or availability dependency. JSZip must load before EPUB.js so ePub()
+       can parse ArrayBuffer input. -->
+  <script src="/static/vendor/jszip.min.js"></script>
+  <script src="/static/vendor/epub.min.js"></script>
   {% elif format == "pdf" %}
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.mjs" type="module"></script>
+  <script>
+    // PDF.js runs its parser in a Web Worker; point it at the vendored copy.
+    window.PDFJS_WORKER_SRC = "/static/vendor/pdf.worker.min.mjs";
+  </script>
+  <script src="/static/vendor/pdf.min.mjs" type="module"></script>
   {% endif %}
   <script>
     window.BOOK = {{ book_json | safe }};

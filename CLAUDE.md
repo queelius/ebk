@@ -75,8 +75,8 @@ To filter by scope in list queries, the service fetches the DB-filtered rows the
 
 **Migration pattern.** Each migration is a `migrate_X(library_path, dry_run=False) -> bool` function in `db/migrations.py`. Two-layer idempotency: `is_migration_applied(engine, name)` short-circuit plus per-column defensive checks before each `ALTER TABLE`. Migrations do NOT call `record_migration` themselves; `run_all_migrations` records them. `CURRENT_SCHEMA_VERSION` is bumped per migration. `init_db` runs `run_all_migrations` on every `Library.open()`.
 
-**FTS5.** Two independent FTS5 indexes, both porter + unicode61, both maintained by triggers:
-- `books_fts` mirrors book metadata (title, description, authors joined in, extracted_text truncated to 50k chars). Drives `Library.search()` and `/api/books?q=`.
+**FTS5.** Two independent FTS5 indexes, both porter + unicode61, maintained differently:
+- `books_fts` mirrors book metadata (columns: `book_id`, `title`, `description`, `extracted_text` truncated to 50k chars; no authors column). It is **not** trigger-maintained: it is populated only at text-extraction time (`text_extraction.py`), so metadata edits and deletes do not update it and ghost rows can linger after a delete (see "Deferred post-v1": books_fts reindex). Drives `Library.search()` and `/api/books?q=`.
 - `book_content_fts` is an external-content FTS5 virtual table (`content='book_content'`, `content_rowid='id'`). Indexed columns: `text` (mirrors `book_content.content`) and `title`; `book_id` and `content_id` are UNINDEXED join-back columns. Segment anchoring on `book_content` uses three source columns: `segment_type` (`chapter`, `page`, etc.), `segment_index` (ordinal within the book), and `anchor` (JSON: CFI for EPUB, page+bbox for PDF, byte offset for plain text). Drives `/api/books/{id}/search`, `/api/search/content`, and the `search_book_content` / `search_library_content` / `get_segments` MCP tools. Populated on import via `services/content_indexer.py`; re-indexable via `book-memex reindex-content`.
 
 Always route user-supplied FTS5 queries through `book_memex.core.fts.safe_fts_query` before passing to SQLite; it escapes quotes and neutralizes special syntax.
@@ -98,7 +98,7 @@ results = (lib.query()
 
 ## Database schema
 
-Core tables: `books`, `authors`, `subjects`, `tags` (hierarchical), `files`, `covers`, `personal_metadata` (ratings, favorites, `reading_progress` percentage, `progress_anchor` JSON), `marginalia` (highlights + notes + cross-book observations, with `uuid`, `color`, `scope`-deriving columns), `reading_sessions` (with `uuid`, `start_anchor`, `end_anchor`), `book_content` (per-segment text with `segment_kind` + `segment_ref` anchors; Phase 2), `views` / `view_items` (migration 7 saved views), `concepts` / `book_concepts` / `concept_relations` (knowledge graph; flagged as federation-candidate).
+Core tables: `books`, `authors`, `subjects`, `tags` (hierarchical), `files`, `covers`, `personal_metadata` (ratings, favorites, `reading_progress` percentage, `progress_anchor` JSON), `marginalia` (highlights + notes + cross-book observations, with `uuid`, `color`, `scope`-deriving columns), `reading_sessions` (with `uuid`, `start_anchor`, `end_anchor`), `book_content` (per-segment text with `segment_type` + `segment_index` + `anchor` (JSON) columns; Phase 2), `views` / `view_items` (migration 7 saved views), `concepts` / `book_concepts` / `concept_relations` (knowledge graph; flagged as federation-candidate).
 
 All memex-family record tables have `archived_at` columns (migration 9). Marginalia and reading_sessions have UNIQUE `uuid` (migration 10). `books_fts` mirrors book metadata; `book_content_fts` mirrors per-segment content (migrations 11+12).
 
@@ -134,7 +134,7 @@ Browser-based EPUB/PDF reader at `/read/{book_id}` served by `book_memex.server`
 - **Endpoints.** `GET /read/{book_id}` renders the reader shell and inline-embeds book metadata in `window.BOOK`; `GET /read/{book_id}/file` streams the raw EPUB/PDF. The client pulls existing highlights and last-known progress via the Phase 1 REST surface (`/api/marginalia?book_id=...`, `/api/reading/progress?book_id=...`).
 - **Static assets** at `book_memex/server/static/` (`reader.js` ~850 LOC, `reader.css`).
 - **Templates** at `book_memex/server/templates/` (`reader.html`, `reader_error.html`).
-- **Adapter pattern.** `reader.js` defines a `ReaderAdapter` interface with two implementations: `EpubAdapter` wraps EPUB.js 0.3.93 + JSZip 3.10.1 (from CDN), `PdfAdapter` wraps PDF.js 4.0.379 (from CDN). The shell chooses per-book based on MIME type.
+- **Adapter pattern.** `reader.js` defines a `ReaderAdapter` interface with two implementations: `EpubAdapter` wraps EPUB.js 0.3.93 + JSZip 3.10.1, `PdfAdapter` wraps PDF.js 4.0.379 (worker `pdf.worker.min.mjs`). All four libraries are **vendored** under `book_memex/server/static/vendor/` and served from `/static/vendor/` (no CDN), so the reader carries no third-party supply-chain or availability dependency. The shell chooses per-book based on MIME type.
 - **Server-side state.** All reader state is persisted via the existing Phase 1/2 REST endpoints. Highlights go to `Marginalia` (`POST /api/marginalia`), progress to `PersonalMetadata.progress_anchor` + `reading_progress` (`PATCH /api/reading/progress`), sessions to `ReadingSession` (`POST /api/reading/sessions`). The reader does not introduce new state tables or endpoints.
 - **Themes.** Three themes (light, dark, sepia). Selection is stored client-side in `localStorage.bookMemexReaderTheme`. CSS custom properties drive the shell; EPUB.js `themes.register()` + `themes.select()` propagates into the rendered EPUB iframe.
 - **Limitations** (see "Known limitations" below).
@@ -144,7 +144,7 @@ Browser-based EPUB/PDF reader at `/read/{book_id}` served by `book_memex.server`
 - **DRM-protected ebooks cannot be rendered.** EPUB.js and PDF.js do not decrypt Adobe DRM, Amazon KFX, or similar. Out of scope forever; use original vendor readers.
 - **Mobile touch UX is functional but not polished.** Selection and toolbar work on touch, but highlight handles and long-press behavior are not tuned for small screens.
 - **PDF highlights are not visually re-painted in v1.** PDF highlight captures are stored server-side (with CFI-like anchors) but PdfAdapter does not re-render them as overlays on PDF pages. EPUB highlights paint correctly on reload via EPUB.js annotations.
-- **No offline/PWA support.** No service worker; reading requires a live connection to the `book-memex serve` instance.
+- **No offline/PWA support.** No service worker; reading requires a live connection to the `book-memex serve` instance. (The reader libraries are vendored locally rather than CDN-loaded, so the instance itself needs no internet access, but the browser still talks to the running server for metadata, highlights, progress, and file streaming.)
 
 ## Deferred post-v1
 
