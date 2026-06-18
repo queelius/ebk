@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, and_, text, update
 from sqlalchemy.orm import Session
 
 from .db.models import Book, Author, Subject, File, PersonalMetadata
+from .core.soft_delete import archive as _archive_row, filter_active
 from .db.session import init_db, get_session, close_db
 from .services.import_service import ImportService
 from .services.text_extraction import TextExtractionService
@@ -170,13 +171,23 @@ class Library:
             show_progress=show_progress
         )
 
-    def get_book(self, book_id: int) -> Optional[Book]:
-        """Get book by ID."""
-        return self.session.get(Book, book_id)
+    def get_book(self, book_id: int, *, include_archived: bool = False) -> Optional[Book]:
+        """Get book by ID. Soft-deleted books are hidden unless requested."""
+        book = self.session.get(Book, book_id)
+        if book is not None and book.archived_at is not None and not include_archived:
+            return None
+        return book
 
-    def get_book_by_unique_id(self, unique_id: str) -> Optional[Book]:
-        """Get book by unique ID."""
-        return self.session.query(Book).filter_by(unique_id=unique_id).first()
+    def get_book_by_unique_id(
+        self, unique_id: str, *, include_archived: bool = False
+    ) -> Optional[Book]:
+        """Get book by unique ID. Soft-deleted books are hidden unless requested."""
+        q = filter_active(
+            self.session.query(Book).filter_by(unique_id=unique_id),
+            Book,
+            include_archived=include_archived,
+        )
+        return q.first()
 
     def query(self) -> 'QueryBuilder':
         """Start a fluent query."""
@@ -241,9 +252,11 @@ class Library:
 
             # If we have both FTS and filters, combine them
             if book_ids and where_clause:
-                # Start with FTS results and apply filters
+                # Start with FTS results and apply filters. Exclude
+                # soft-deleted books (and any books_fts ghost rows left by a
+                # hard delete, which join back to no live Book).
                 books_query = self.session.query(Book).filter(
-                    Book.id.in_(book_ids)
+                    Book.id.in_(book_ids), Book.archived_at.is_(None)
                 )
 
                 # Apply additional SQL filters
@@ -258,14 +271,18 @@ class Library:
 
             # If only FTS (no additional filters)
             elif book_ids:
-                books = self.session.query(Book).filter(Book.id.in_(book_ids)).all()
+                books = self.session.query(Book).filter(
+                    Book.id.in_(book_ids), Book.archived_at.is_(None)
+                ).all()
                 books_dict = {b.id: b for b in books}
                 ordered = [books_dict[bid] for bid in book_ids if bid in books_dict]
                 return ordered[offset:offset + limit]
 
             # If only filters (no FTS)
             elif where_clause:
-                books_query = self.session.query(Book)
+                books_query = self.session.query(Book).filter(
+                    Book.archived_at.is_(None)
+                )
                 books_query = books_query.filter(text(where_clause).bindparams(**params))
                 return books_query.offset(offset).limit(limit).all()
 
@@ -340,34 +357,50 @@ class Library:
             'formats': dict(format_dist)
         }
 
-    def get_all_books(self, limit: Optional[int] = None, offset: int = 0) -> List[Book]:
+    def get_all_books(
+        self, limit: Optional[int] = None, offset: int = 0,
+        *, include_archived: bool = False,
+    ) -> List[Book]:
         """
         Get all books with optional pagination.
 
         Args:
             limit: Maximum number of books
             offset: Starting offset
+            include_archived: Include soft-deleted books (default False).
 
         Returns:
             List of books
         """
-        query = self.session.query(Book).order_by(Book.title)
+        query = filter_active(
+            self.session.query(Book), Book, include_archived=include_archived
+        ).order_by(Book.title)
 
         if limit:
             query = query.limit(limit).offset(offset)
 
         return query.all()
 
-    def get_books_by_author(self, author_name: str) -> List[Book]:
+    def get_books_by_author(
+        self, author_name: str, *, include_archived: bool = False
+    ) -> List[Book]:
         """Get all books by an author."""
-        return self.session.query(Book).join(Book.authors).filter(
-            Author.name.ilike(f"%{author_name}%")
+        return filter_active(
+            self.session.query(Book).join(Book.authors).filter(
+                Author.name.ilike(f"%{author_name}%")
+            ),
+            Book, include_archived=include_archived,
         ).all()
 
-    def get_books_by_subject(self, subject_name: str) -> List[Book]:
+    def get_books_by_subject(
+        self, subject_name: str, *, include_archived: bool = False
+    ) -> List[Book]:
         """Get all books with a subject."""
-        return self.session.query(Book).join(Book.subjects).filter(
-            Subject.name.ilike(f"%{subject_name}%")
+        return filter_active(
+            self.session.query(Book).join(Book.subjects).filter(
+                Subject.name.ilike(f"%{subject_name}%")
+            ),
+            Book, include_archived=include_archived,
         ).all()
 
     def update_reading_status(self, book_id: int, status: str,
@@ -876,20 +909,39 @@ class Library:
 
         return sorted(list(libraries))
 
-    def delete_book(self, book_id: int, delete_files: bool = False):
+    def delete_book(self, book_id: int, hard: bool = False, delete_files: bool = False):
         """
         Delete a book from the library.
 
+        Soft delete by default (set ``archived_at``), per workspace
+        convention C1: the book is hidden from default queries but its
+        reading sessions, personal metadata, identifiers, and marginalia
+        links survive, and its ``book-memex://book/<id>`` URI keeps
+        resolving until an explicit purge. ``hard=True`` physically deletes
+        the row (cascading away those children). ``delete_files`` only
+        unlinks files when ``hard=True`` (a soft delete leaves files in
+        place so a restore is lossless).
+
         Args:
             book_id: Book ID
-            delete_files: If True, also delete physical files
+            hard: If True, physically delete the row and cascade children.
+            delete_files: If True (only honored with hard=True), also
+                delete physical files.
         """
-        book = self.get_book(book_id)
+        # include_archived so a hard purge of an already-soft-deleted book
+        # still finds it.
+        book = self.get_book(book_id, include_archived=True)
         if not book:
             logger.warning(f"Book {book_id} not found")
             return
 
-        # Delete physical files if requested
+        if not hard:
+            _archive_row(self.session, book)
+            self.session.commit()
+            logger.debug(f"Archived book: {book.title}")
+            return
+
+        # Delete physical files if requested (hard delete only).
         if delete_files:
             for file in book.files:
                 file_path = self.library_path / file.path
@@ -906,7 +958,17 @@ class Library:
         # Delete from database (cascade will handle related records)
         self.session.delete(book)
         self.session.commit()
-        logger.debug(f"Deleted book: {book.title}")
+        # Drop the now-orphaned metadata FTS row (books_fts is not
+        # trigger-maintained, so a hard delete would otherwise leave a ghost
+        # row that consumes LIMIT budget on every search).
+        try:
+            self.session.execute(
+                text("DELETE FROM books_fts WHERE book_id = :bid"), {"bid": book_id}
+            )
+            self.session.commit()
+        except Exception:  # noqa: BLE001 - FTS table may be absent
+            self.session.rollback()
+        logger.debug(f"Hard-deleted book: {book.title}")
 
     def merge_books(
         self,
@@ -1289,7 +1351,10 @@ class QueryBuilder:
 
     def __init__(self, session: Session):
         self.session = session
-        self._query = session.query(Book)
+        # Exclude soft-deleted books (workspace C1). The fluent builder is
+        # the user-facing search surface; archived books are reached via the
+        # explicit get_book(..., include_archived=True) path instead.
+        self._query = session.query(Book).filter(Book.archived_at.is_(None))
 
     def filter_by_title(self, title: str, exact: bool = False) -> 'QueryBuilder':
         """Filter by title."""

@@ -2081,23 +2081,32 @@ def book_tag(
 def book_delete(
     book_id: int = typer.Argument(..., help="Book ID to delete"),
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
-    delete_files: bool = typer.Option(False, "--delete-files", "-f", help="Also delete associated files from disk"),
+    hard: bool = typer.Option(False, "--hard", help="Physically delete the row (default is a soft delete / archive)"),
+    delete_files: bool = typer.Option(False, "--delete-files", "-f", help="Also delete files from disk (implies --hard)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """
     Delete a book from the library.
 
-    By default, only removes the database entry. Use --delete-files to also
-    remove the physical files from disk.
+    Soft delete by default (sets archived_at): the book is hidden from
+    default queries but its reading sessions, ratings/progress, identifiers,
+    and marginalia survive, and its URI keeps resolving. Use --hard to
+    physically remove the row (cascading those children). --delete-files
+    implies --hard and also unlinks files from disk.
 
     Examples:
-        book-memex book delete 42                    # Delete book, keep files
-        book-memex book delete 42 --delete-files    # Delete book and files
+        book-memex book delete 42                    # Soft delete (archive)
+        book-memex book delete 42 --hard             # Physical delete
+        book-memex book delete 42 --delete-files     # Physical delete + files
         book-memex book delete 42 -y                 # Skip confirmation
     """
     from .library_db import Library
 
     library_path = resolve_library_path(library_path)
+
+    # Deleting files only makes sense for a physical delete.
+    if delete_files:
+        hard = True
 
     try:
         lib = Library.open(library_path)
@@ -2109,7 +2118,8 @@ def book_delete(
             raise typer.Exit(code=1)
 
         # Show book info before deletion
-        console.print(f"[cyan]Book to delete:[/cyan]")
+        mode = "permanently delete" if hard else "archive (soft delete)"
+        console.print(f"[cyan]Book to {mode}:[/cyan]")
         console.print(f"  ID: {book.id}")
         console.print(f"  Title: {book.title}")
         console.print(f"  Authors: {', '.join(a.name for a in book.authors)}")
@@ -2118,16 +2128,19 @@ def book_delete(
 
         if delete_files:
             console.print(f"[yellow]  ⚠ Files will also be deleted from disk[/yellow]")
+        elif hard:
+            console.print("[yellow]  ⚠ Reading history, ratings, and identifiers will be destroyed[/yellow]")
 
         # Confirm deletion
         if not yes:
-            if not Confirm.ask("\nDelete this book?"):
+            if not Confirm.ask(f"\n{mode.capitalize()} this book?"):
                 console.print("[dim]Cancelled[/dim]")
                 lib.close()
                 return
 
-        lib.delete_book(book_id, delete_files=delete_files)
-        console.print(f"[green]✓ Deleted book: {book.title}[/green]")
+        lib.delete_book(book_id, hard=hard, delete_files=delete_files)
+        verb = "Deleted" if hard else "Archived"
+        console.print(f"[green]✓ {verb} book: {book.title}[/green]")
 
         lib.close()
 

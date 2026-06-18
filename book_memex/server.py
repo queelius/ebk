@@ -577,26 +577,33 @@ async def update_book(book_id: int, update: BookUpdateRequest):
 
 
 @app.delete("/api/books/{book_id}")
-async def delete_book(book_id: int, delete_files: bool = Query(False)):
-    """Delete a book from the library."""
+async def delete_book(
+    book_id: int,
+    hard: bool = Query(False),
+    delete_files: bool = Query(False),
+):
+    """Delete a book from the library.
+
+    Soft delete by default (sets ``archived_at``): the book is hidden from
+    default queries but its reading sessions, personal metadata, and
+    marginalia links survive and its ``book-memex://book/<id>`` URI keeps
+    resolving. Pass ``?hard=true`` to physically delete the row (cascading
+    children). ``delete_files`` only unlinks files when combined with
+    ``hard=true`` (a soft delete leaves files in place for a lossless
+    restore).
+    """
     lib = get_library()
-    book = lib.get_book(book_id)
+    book = lib.get_book(book_id, include_archived=True)
 
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    # Delete files if requested
-    if delete_files and _library_path:
-        for file in book.files:
-            file_path = _library_path / file.path
-            if file_path.exists():
-                file_path.unlink()
+    if not hard:
+        lib.delete_book(book_id)  # soft delete (sets archived_at)
+        return {"message": "Book archived", "hard": False}
 
-    # Delete from database
-    lib.session.delete(book)
-    lib.session.commit()
-
-    return {"message": "Book deleted successfully"}
+    lib.delete_book(book_id, hard=True, delete_files=delete_files)
+    return {"message": "Book deleted successfully", "hard": True}
 
 
 @app.post("/api/books/import")

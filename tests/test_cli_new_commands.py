@@ -259,8 +259,16 @@ class TestBookDelete:
         assert result.exit_code == 0 or "Cancelled" in result.stdout or "Aborted" in result.stdout
 
     def test_book_delete_with_yes_flag(self, populated_library):
-        """Test delete with --yes flag."""
+        """Test delete with --yes flag (default is now a soft delete/archive)."""
         result = runner.invoke(app, ["book", "delete", "1", str(populated_library), "--yes"])
+        assert result.exit_code == 0
+        assert "Archived" in result.stdout or "archived" in result.stdout
+
+    def test_book_delete_hard(self, populated_library):
+        """--hard performs a physical delete."""
+        result = runner.invoke(
+            app, ["book", "delete", "1", str(populated_library), "--hard", "--yes"]
+        )
         assert result.exit_code == 0
         assert "Deleted" in result.stdout or "deleted" in result.stdout
 

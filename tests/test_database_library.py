@@ -342,43 +342,78 @@ class TestReadingStatus:
 class TestBookDeletion:
     """Test book deletion functionality."""
 
-    def test_delete_book_without_files(self, populated_library):
-        """Test deleting book from database only."""
+    def test_delete_book_default_is_soft(self, populated_library):
+        """BM-2: default delete is a soft delete (archive). The book is
+        hidden from default queries but the row and its children survive,
+        and it is reachable with include_archived=True."""
         books = populated_library.get_all_books()
         initial_count = len(books)
         book_id = books[0].id
 
-        populated_library.delete_book(book_id, delete_files=False)
+        populated_library.delete_book(book_id)  # default: soft
 
-        # Book should be removed from database
+        # Hidden from default reads.
         assert populated_library.get_book(book_id) is None
         assert len(populated_library.get_all_books()) == initial_count - 1
+        # But the row survives and is reachable when explicitly requested.
+        archived = populated_library.get_book(book_id, include_archived=True)
+        assert archived is not None
+        assert archived.archived_at is not None
 
-    def test_delete_book_with_files(self, temp_library):
-        """Test deleting book and physical files."""
-        # Create a test book
-        test_file = temp_library.library_path / "test.txt"
+    def test_hard_delete_removes_row(self, populated_library):
+        """BM-2: --hard physically removes the row."""
+        books = populated_library.get_all_books()
+        book_id = books[0].id
+
+        populated_library.delete_book(book_id, hard=True)
+
+        assert populated_library.get_book(book_id, include_archived=True) is None
+
+    def test_soft_delete_does_not_unlink_files(self, temp_library):
+        """BM-2: a soft delete leaves files in place (lossless restore);
+        only a hard delete with delete_files unlinks them."""
+        test_file = temp_library.library_path / "soft.txt"
         test_file.write_text("Test content")
-
         book = temp_library.add_book(
             test_file,
-            metadata={"title": "Test Book", "creators": ["Test Author"]},
-            extract_text=False,
-            extract_cover=False
+            metadata={"title": "Soft Book", "creators": ["A"]},
+            extract_text=False, extract_cover=False,
         )
+        stored = temp_library.library_path / book.files[0].path
 
+        temp_library.delete_book(book.id, delete_files=True)  # but hard=False
+        assert stored.exists(), "soft delete must not unlink files"
+
+    def test_hard_delete_with_files_unlinks(self, temp_library):
+        """Test hard delete + delete_files removes the row and the files."""
+        test_file = temp_library.library_path / "hard.txt"
+        test_file.write_text("Test content")
+        book = temp_library.add_book(
+            test_file,
+            metadata={"title": "Hard Book", "creators": ["A"]},
+            extract_text=False, extract_cover=False,
+        )
         book_id = book.id
+        stored = temp_library.library_path / book.files[0].path
+        assert stored.exists()
 
-        # Delete with files
-        temp_library.delete_book(book_id, delete_files=True)
+        temp_library.delete_book(book_id, hard=True, delete_files=True)
 
-        # Book should be removed
-        assert temp_library.get_book(book_id) is None
+        assert temp_library.get_book(book_id, include_archived=True) is None
+        assert not stored.exists()
+
+    def test_archived_book_excluded_from_query_builder(self, populated_library):
+        """BM-2: soft-deleted books drop out of the fluent search API."""
+        books = populated_library.get_all_books()
+        title = books[0].title
+        populated_library.delete_book(books[0].id)  # soft
+        results = populated_library.query().filter_by_title(title, exact=True).all()
+        assert all(b.id != books[0].id for b in results)
 
     def test_delete_nonexistent_book(self, temp_library):
         """Test deleting a book that doesn't exist."""
         # Should not crash
-        temp_library.delete_book(9999, delete_files=False)
+        temp_library.delete_book(9999)
 
 
 class TestQueryBuilderAdvanced:
@@ -895,10 +930,10 @@ class TestBookDeletion:
         book = temp_library.add_book(test_file, metadata={"title": "Test"}, extract_text=False)
         book_id = book.id
 
-        # When: We delete it
-        temp_library.delete_book(book_id)
+        # When: We hard-delete it (default is now a soft delete / archive)
+        temp_library.delete_book(book_id, hard=True)
 
-        # Then: Book should be deleted
+        # Then: the physical row should be gone
         from book_memex.db.models import Book
         deleted_book = temp_library.session.query(Book).filter_by(id=book_id).first()
         assert deleted_book is None
