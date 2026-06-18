@@ -260,6 +260,56 @@ class TestDeduplication:
         assert len(all_books) == 1
 
 
+class TestMetadataFtsSync:
+    """BM-5: books_fts is not trigger-maintained, so it must be reindexed on
+    metadata edits, populated for extract_text=False imports, and cleaned on
+    hard delete."""
+
+    def _add(self, lib, title, *, extract_text=False):
+        f = lib.library_path / f"{title.replace(' ', '_')}.txt"
+        f.write_text(f"content for {title}")
+        return lib.add_book(
+            f, metadata={"title": title, "creators": ["A"]},
+            extract_text=extract_text, extract_cover=False,
+        )
+
+    def test_metadata_only_import_is_searchable(self, temp_library):
+        """A book imported without text extraction is still findable by
+        title (previously it never entered books_fts)."""
+        self._add(temp_library, "Solitary Metadata Book", extract_text=False)
+        results = temp_library.search("Solitary")
+        assert any(b.title == "Solitary Metadata Book" for b in results)
+
+    def test_edit_reflected_in_search(self, temp_library):
+        """After a title edit + reindex, search returns the new title and
+        not the old one."""
+        from book_memex.services.text_extraction import reindex_book_metadata
+
+        book = self._add(temp_library, "Original Booktitle", extract_text=False)
+        assert temp_library.search("Original")
+
+        book.title = "Renamed Booktitle"
+        reindex_book_metadata(temp_library.session, book.id)
+        temp_library.session.commit()
+
+        assert any(b.id == book.id for b in temp_library.search("Renamed"))
+        assert not any(b.id == book.id for b in temp_library.search("Original"))
+
+    def test_hard_delete_removes_fts_row(self, temp_library):
+        """A hard delete drops the books_fts row (no search ghost)."""
+        from sqlalchemy import text as _text
+
+        book = self._add(temp_library, "Doomed Booktitle", extract_text=False)
+        bid = book.id
+        assert temp_library.search("Doomed")
+
+        temp_library.delete_book(bid, hard=True)
+        rows = temp_library.session.execute(
+            _text("SELECT count(*) FROM books_fts WHERE book_id = :b"), {"b": bid}
+        ).scalar()
+        assert rows == 0
+
+
 class TestSearchFunctionality:
     """Test full-text search functionality."""
 

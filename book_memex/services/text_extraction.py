@@ -21,6 +21,50 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
+def reindex_book_metadata(session: Session, book_id: int) -> None:
+    """Refresh a book's ``books_fts`` row after a metadata edit.
+
+    ``books_fts`` is NOT trigger-maintained, so editing title/description via
+    PATCH /api/books, the MCP ``update_books`` tool, or ``book edit`` would
+    otherwise leave search returning stale text (BM-5). This rewrites the
+    title/description from the live row while PRESERVING the existing
+    ``extracted_text`` (which is sourced from text extraction, not a books
+    column, so a trigger cannot maintain it). If no FTS row exists yet
+    (e.g. the book was imported with ``extract_text=False``), one is created
+    with empty extracted_text so the book becomes searchable by metadata.
+
+    Caller commits.
+    """
+    from ..db.models import Book
+
+    book = session.get(Book, book_id)
+    if book is None:
+        return
+    try:
+        row = session.execute(
+            text("SELECT extracted_text FROM books_fts WHERE book_id = :bid"),
+            {"bid": book_id},
+        ).fetchone()
+        extracted = (row[0] if row else "") or ""
+        session.execute(
+            text("DELETE FROM books_fts WHERE book_id = :bid"), {"bid": book_id}
+        )
+        session.execute(
+            text(
+                "INSERT INTO books_fts (book_id, title, description, extracted_text) "
+                "VALUES (:bid, :title, :description, :extracted_text)"
+            ),
+            {
+                "bid": book_id,
+                "title": book.title or "",
+                "description": book.description or "",
+                "extracted_text": extracted,
+            },
+        )
+    except Exception as e:  # noqa: BLE001 - FTS table may be absent
+        logger.error(f"Error reindexing books_fts for book {book_id}: {e}")
+
+
 class TextExtractionService:
     """Service for extracting and chunking text from ebook files."""
 

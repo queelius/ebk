@@ -134,6 +134,14 @@ class Library:
         )
 
         if book:
+            # When text extraction is skipped, no books_fts row is created
+            # (the FTS writer runs only during extraction), so the book would
+            # be invisible to Library.search. Insert a metadata-only FTS row
+            # so it is at least searchable by title/description (BM-5).
+            if not extract_text:
+                from .services.text_extraction import reindex_book_metadata
+                reindex_book_metadata(self.session, book.id)
+                self.session.commit()
             logger.debug(f"Added book: {book.title}")
 
         return book

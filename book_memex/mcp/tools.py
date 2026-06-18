@@ -170,6 +170,12 @@ def update_books_impl(
                 # Apply collection operations
                 _apply_collection_ops(session, book, fields)
 
+                # Keep books_fts (not trigger-maintained) in sync when a
+                # searchable metadata field changed (BM-5).
+                if "title" in fields or "description" in fields:
+                    from ..services.text_extraction import reindex_book_metadata
+                    reindex_book_metadata(session, book_id)
+
                 updated.append(book_id)
         except Exception as e:
             errors[book_id] = str(e)

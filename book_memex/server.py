@@ -569,6 +569,12 @@ async def update_book(book_id: int, update: BookUpdateRequest):
         if update.tags:
             lib.add_tags(book_id, update.tags)
 
+    # Keep the (non-trigger-maintained) metadata FTS index in sync when a
+    # searchable field changed; otherwise search returns the old text.
+    if update.title is not None or update.description is not None:
+        from .services.text_extraction import reindex_book_metadata
+        reindex_book_metadata(lib.session, book_id)
+
     lib.session.commit()
 
     # Refresh and return

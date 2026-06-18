@@ -2244,6 +2244,12 @@ def book_edit(
             lib.close()
             return
 
+        # Keep books_fts (not trigger-maintained) in sync when a searchable
+        # field changed, so `book search` reflects the edit (BM-5).
+        if title is not None or description is not None:
+            from .services.text_extraction import reindex_book_metadata
+            reindex_book_metadata(lib.session, book_id)
+
         lib.session.commit()
         console.print(f"[green]✓ Updated '{book.title}':[/green]")
         for change in changes:
@@ -6158,6 +6164,43 @@ def reindex_content_cmd(
         typer.echo(
             f"books_processed={books_processed} segments_written={segments_written}"
         )
+    finally:
+        lib.close()
+
+
+@app.command("reindex-metadata")
+def reindex_metadata_cmd(
+    book_id: Optional[int] = typer.Option(None, "--book", help="Specific book ID"),
+    all_books: bool = typer.Option(False, "--all", help="Reindex every book"),
+    library_path: Optional[Path] = typer.Option(
+        None, "--library-path", "-L", help="Library directory"
+    ),
+):
+    """Rebuild the books_fts metadata index (title/description) for one book
+    or the whole library. Repairs drift left by older edits, and indexes
+    books that were imported without text extraction."""
+    if not book_id and not all_books:
+        typer.echo("error: specify --book <id> or --all", err=True)
+        raise typer.Exit(code=2)
+
+    from .library_db import Library
+    from book_memex.db.models import Book
+    from book_memex.services.text_extraction import reindex_book_metadata
+
+    lib = Library.open(resolve_library_path(library_path))
+    try:
+        if all_books:
+            ids = [b.id for b in lib.session.query(Book).all()]
+        else:
+            if lib.session.get(Book, book_id) is None:
+                typer.echo(f"Book {book_id} not found", err=True)
+                raise typer.Exit(code=1)
+            ids = [book_id]
+
+        for bid in ids:
+            reindex_book_metadata(lib.session, bid)
+        lib.session.commit()
+        typer.echo(f"books_reindexed={len(ids)}")
     finally:
         lib.close()
 
