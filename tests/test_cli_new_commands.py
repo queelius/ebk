@@ -55,6 +55,42 @@ def populated_library(temp_library):
     return lib.library_path
 
 
+class TestLibCheckIdentity:
+    """BM-4: `lib check --identity` reconciles stored unique_ids."""
+
+    def test_identity_clean_single_author(self, temp_library):
+        f = temp_library.library_path / "solo.txt"
+        f.write_text("content")
+        temp_library.add_book(
+            f, metadata={"title": "Solo Title", "creators": ["Only Author"]},
+            extract_text=False, extract_cover=False,
+        )
+        path = temp_library.library_path
+        temp_library.close()
+        result = runner.invoke(app, ["lib", "check", str(path), "--identity"])
+        assert result.exit_code == 0
+        assert "match the canonical generator" in result.stdout
+
+    def test_identity_detects_drift(self, temp_library):
+        from book_memex.db.models import Book
+
+        f = temp_library.library_path / "drift.txt"
+        f.write_text("content")
+        book = temp_library.add_book(
+            f, metadata={"title": "Drift Title", "creators": ["Solo Writer"]},
+            extract_text=False, extract_cover=False,
+        )
+        book.unique_id = "deadbeefdeadbeef"
+        temp_library.session.commit()
+        path = temp_library.library_path
+        temp_library.close()
+
+        result = runner.invoke(app, ["lib", "check", str(path), "--identity"])
+        assert result.exit_code == 0
+        assert "deadbeefdeadbeef" in result.stdout
+        assert "no longer" in result.stdout
+
+
 class TestSqlCommand:
     """Tests for the sql command."""
 

@@ -458,6 +458,7 @@ def check(
     library_path: Optional[Path] = typer.Argument(None, help="Path to library (uses config default if not specified)"),
     fix: bool = typer.Option(False, "--fix", help="Attempt to fix issues (remove orphan DB entries)"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show all files, not just issues"),
+    identity: bool = typer.Option(False, "--identity", help="Report books whose stored unique_id no longer matches the canonical generator"),
 ):
     """
     Check library integrity and report issues.
@@ -467,18 +468,59 @@ def check(
     - Orphan files: Files on disk not tracked in database
     - Books without files: Book entries with no associated files
     - Hash mismatches: Files whose content doesn't match stored hash
+    - Identity drift (--identity): rows whose stored unique_id differs from
+      what the canonical generator would produce today
 
     Examples:
         book-memex lib check                    # Check default library
         book-memex lib check ~/my-library       # Check specific library
         book-memex lib check --fix              # Remove orphan DB entries
         book-memex lib check --verbose          # Show all checked files
+        book-memex lib check --identity         # Reconcile durable IDs
     """
     from .library_db import Library
     import hashlib
     import os
 
     library_path = resolve_library_path(library_path)
+
+    if identity:
+        from .db.models import Book
+        from .ident import compute_unique_id
+
+        lib = Library.open(library_path)
+        try:
+            mismatches = []
+            for book in lib.session.query(Book).all():
+                meta = {
+                    "title": book.title,
+                    "creators": [a.name for a in book.authors],
+                    "identifiers": {
+                        i.scheme: i.value for i in book.identifiers
+                    },
+                }
+                expected = compute_unique_id(meta)
+                if book.unique_id != expected:
+                    mismatches.append((book.id, book.unique_id, expected, book.title))
+
+            if not mismatches:
+                console.print("[green]✓ All book unique_ids match the canonical generator[/green]")
+            else:
+                console.print(
+                    f"[yellow]{len(mismatches)} book(s) have a unique_id that no longer "
+                    f"matches the generator:[/yellow]"
+                )
+                for bid, stored, expected, title in mismatches:
+                    console.print(f"  • [{bid}] {title}")
+                    console.print(f"      stored:   {stored}")
+                    console.print(f"      expected: {expected}")
+                console.print(
+                    "\n[dim]These are not auto-fixed: changing a unique_id would break "
+                    "existing book-memex://book/<id> references in trails and marginalia.[/dim]"
+                )
+            return
+        finally:
+            lib.close()
 
     try:
         lib = Library.open(library_path)

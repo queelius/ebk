@@ -53,7 +53,7 @@ SCHEMA: Dict[str, Any] = {
             "fields": {
                 "kind": "Always 'book'.",
                 "uri": "Canonical book-memex URI.",
-                "unique_id": "Hash-based durable ID (32 hex chars).",
+                "unique_id": "Durable book ID: 'isbn_<normalized-isbn>' when an ISBN is known, else md5(title:creators)[:16].",
                 "title": "Book title.",
                 "subtitle": "Book subtitle, if any.",
                 "authors": "List of author names.",

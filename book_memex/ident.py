@@ -87,3 +87,41 @@ def add_unique_id(entry: Dict) -> Dict:
     unique_id = generate_hash_id(entry)
     entry['unique_id'] = unique_id
     return entry
+
+
+def normalize_isbn(isbn: str) -> str:
+    """Strip formatting from an ISBN: drop hyphens/spaces, uppercase the X
+    check digit. So "978-0-13-468599-1" and "9780134685991" canonicalize the
+    same and do not split into two book records."""
+    return re.sub(r"[^0-9Xx]", "", str(isbn)).upper()
+
+
+def compute_unique_id(metadata: Dict) -> str:
+    """The one canonical durable book id.
+
+    Single source of truth for book unique_ids: import, reconciliation, and
+    URI resolution all go through here. Format:
+
+      - ``isbn_<normalized-isbn>`` when the metadata carries an ISBN
+        (hyphens/spaces stripped so formatting variants do not split);
+      - otherwise the first 16 hex chars of md5 over the canonical
+        ``title:creators`` string.
+
+    Known, inherent limitations (not generator bugs): a book imported once
+    with an ISBN and once without still gets two ids (ISBN path vs hash
+    path), and re-importing after a title/author correction mints a new id.
+    Content-derived ids are durable by design; use
+    ``book-memex check --identity`` to find rows whose stored id no longer
+    matches this function.
+    """
+    identifiers = metadata.get("identifiers", {}) or {}
+    isbn = identifiers.get("isbn")
+    if isbn:
+        norm = normalize_isbn(isbn)
+        if norm:
+            return f"isbn_{norm}"
+
+    title = metadata.get("title", "unknown")
+    authors = ",".join(metadata.get("creators", ["unknown"]))
+    content = f"{title}:{authors}".lower()
+    return hashlib.md5(content.encode()).hexdigest()[:16]

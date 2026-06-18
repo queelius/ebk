@@ -374,17 +374,15 @@ class ImportService:
 
     @staticmethod
     def _generate_unique_id(metadata: Dict[str, Any]) -> str:
-        """Generate unique ID for book based on metadata."""
-        # Use ISBN if available
-        identifiers = metadata.get('identifiers', {})
-        if 'isbn' in identifiers:
-            return f"isbn_{identifiers['isbn']}"
+        """Generate the durable unique ID for a book from its metadata.
 
-        # Otherwise use hash of title + authors
-        title = metadata.get('title', 'unknown')
-        authors = ','.join(metadata.get('creators', ['unknown']))
-        content = f"{title}:{authors}".lower()
-        return hashlib.md5(content.encode()).hexdigest()[:16]
+        Delegates to the single canonical generator in ``book_memex.ident``
+        so import, reconciliation, and URI resolution cannot drift apart
+        (BM-4). The generator normalizes the ISBN so formatting variants do
+        not produce two records for one book.
+        """
+        from book_memex.ident import compute_unique_id
+        return compute_unique_id(metadata)
 
     @staticmethod
     def _get_sort_title(title: str) -> str:

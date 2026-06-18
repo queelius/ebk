@@ -366,3 +366,34 @@ class TestUpdateConfig:
                 assert result.server.port == 9000
 
 
+
+
+class TestComputeUniqueId:
+    """BM-4: one canonical durable-id generator, with ISBN normalization."""
+
+    def test_isbn_path_normalizes_formatting(self):
+        clean = ident.compute_unique_id(
+            {"title": "T", "identifiers": {"isbn": "9780134685991"}}
+        )
+        hyphenated = ident.compute_unique_id(
+            {"title": "T", "identifiers": {"isbn": "978-0-13-468599-1"}}
+        )
+        assert clean == hyphenated == "isbn_9780134685991"
+
+    def test_hash_path_is_deterministic(self):
+        meta = {"title": "Some Book", "creators": ["Alice", "Bob"]}
+        a = ident.compute_unique_id(meta)
+        b = ident.compute_unique_id(dict(meta))
+        assert a == b
+        assert len(a) == 16
+        assert not a.startswith("isbn_")
+
+    def test_import_service_delegates_to_canonical(self):
+        from book_memex.services.import_service import ImportService
+
+        meta = {"title": "X", "identifiers": {"isbn": "978-0-13-468599-1"}}
+        assert ImportService._generate_unique_id(meta) == ident.compute_unique_id(meta)
+
+    def test_normalize_isbn_strips_and_uppercases(self):
+        assert ident.normalize_isbn("0-201-53082-1") == "0201530821"
+        assert ident.normalize_isbn("80-902734-1-x") == "809027341X"
