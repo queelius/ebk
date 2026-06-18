@@ -45,21 +45,36 @@ def create_mcp_server(library: Library) -> FastMCP:
     from book_memex.mcp.tools import (
         list_marginalia_impl, get_marginalia_impl, add_marginalia_impl,
         update_marginalia_impl, delete_marginalia_impl, restore_marginalia_impl,
+        get_record_impl,
     )
+
+    @mcp.tool(
+        name="get_record",
+        description=(
+            "Resolve a book-memex:// URI to its record. Dispatches on kind: "
+            "book-memex://book/<unique_id>, book-memex://marginalia/<uuid>, "
+            "or book-memex://reading/<uuid>. This is the archive's "
+            "record-resolution contract tool, used by the federation to "
+            "follow cross-archive trail steps. Archived records still resolve."
+        ),
+    )
+    def get_record(uri: str) -> dict:
+        return get_record_impl(library.session, uri=uri)
 
     @mcp.tool(
         name="list_marginalia",
         description=(
-            "List marginalia for a book. Archived entries are excluded by "
-            "default (set include_archived=True to include them). Default "
-            "limit is 50; pass a smaller or larger value as needed. Optional "
-            "scope filter selects one of: highlight (passage-anchored), "
-            "book_note (whole-book note), collection_note (not attached to "
-            "any book), cross_book_note (spans 2+ books)."
+            "List marginalia. With book_id, lists that book's marginalia; "
+            "with book_id omitted/null, lists collection notes (marginalia "
+            "attached to no book). Archived entries are excluded by default "
+            "(set include_archived=True to include them). Default limit is "
+            "50. Optional scope filter selects one of: highlight "
+            "(passage-anchored), book_note (whole-book note), collection_note "
+            "(not attached to any book), cross_book_note (spans 2+ books)."
         ),
     )
     def list_marginalia(
-        book_id: int, scope: str | None = None,
+        book_id: int | None = None, scope: str | None = None,
         include_archived: bool = False, limit: int = 50,
     ) -> list:
         return list_marginalia_impl(

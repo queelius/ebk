@@ -296,3 +296,56 @@ class TestUpdateBooks:
         assert 99999 in result["errors"]
         book = populated_library.get_book(book_id)
         assert book.title == "Partial Success"
+
+
+class TestGetRecord:
+    """BM-3: get_record resolves book/marginalia/reading URIs (the archive's
+    record-resolution contract tool the federation needs)."""
+
+    def test_get_record_book(self, populated_library):
+        from book_memex.mcp.tools import get_record_impl
+
+        book = populated_library.get_all_books()[0]
+        rec = get_record_impl(populated_library.session, uri=book.uri)
+        assert rec["unique_id"] == book.unique_id
+        assert rec["title"] == book.title
+
+    def test_get_record_marginalia(self, populated_library):
+        from book_memex.mcp.tools import add_marginalia_impl, get_record_impl
+
+        book = populated_library.get_all_books()[0]
+        created = add_marginalia_impl(
+            populated_library.session, book_uris=[book.uri], content="a note"
+        )
+        rec = get_record_impl(populated_library.session, uri=created["uri"])
+        assert rec["uuid"] == created["uuid"]
+        assert rec["content"] == "a note"
+
+    def test_get_record_reading(self, populated_library):
+        from book_memex.mcp.tools import (
+            start_reading_session_impl, get_record_impl,
+        )
+
+        book = populated_library.get_all_books()[0]
+        rs = start_reading_session_impl(populated_library.session, book_id=book.id)
+        rec = get_record_impl(populated_library.session, uri=rs["uri"])
+        assert rec["uuid"] == rs["uuid"]
+        assert rec["book_id"] == book.id
+
+    def test_get_record_unknown_kind_raises(self, populated_library):
+        from book_memex.mcp.tools import get_record_impl
+
+        with pytest.raises(LookupError):
+            get_record_impl(
+                populated_library.session, uri="book-memex://book/does-not-exist"
+            )
+
+    def test_list_marginalia_unattached(self, populated_library):
+        from book_memex.mcp.tools import add_marginalia_impl, list_marginalia_impl
+
+        # A collection note (attached to no book).
+        add_marginalia_impl(
+            populated_library.session, book_uris=[], content="collection-level note"
+        )
+        rows = list_marginalia_impl(populated_library.session, book_id=None)
+        assert any(r["content"] == "collection-level note" for r in rows)

@@ -433,14 +433,65 @@ def list_marginalia_impl(
     include_archived: bool = False,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
-    """List marginalia for a book (scope-filtered, paging-friendly)."""
+    """List marginalia. With a book_id, lists that book's marginalia; with
+    book_id=None, lists collection notes (marginalia attached to no book),
+    which were previously unreachable via MCP."""
     svc = MarginaliaService(session)
     if book_id is None:
-        raise ValueError("book_id is required for now")
+        rows = svc.list_unattached()
+        if not include_archived:
+            rows = [m for m in rows if m.archived_at is None]
+        return [_marginalia_to_dict(m) for m in rows[:limit]]
     rows = svc.list_for_book(
         book_id, scope=scope, include_archived=include_archived, limit=limit
     )
     return [_marginalia_to_dict(m) for m in rows]
+
+
+def _book_to_dict(book: Book) -> Dict[str, Any]:
+    """Serialize a Book ORM row to a plain JSON-friendly dict for MCP."""
+    return {
+        "id": book.id,
+        "unique_id": book.unique_id,
+        "uri": book.uri,
+        "title": book.title,
+        "subtitle": book.subtitle,
+        "authors": [a.name for a in book.authors],
+        "language": book.language,
+        "publisher": book.publisher,
+        "publication_date": book.publication_date,
+        "description": book.description,
+        "identifiers": {i.scheme: i.value for i in book.identifiers},
+        "subjects": [s.name for s in book.subjects],
+        "archived_at": book.archived_at.isoformat() if book.archived_at else None,
+    }
+
+
+def get_record_impl(session: Session, *, uri: str) -> Dict[str, Any]:
+    """Resolve a book-memex:// URI to its record (the archive's contract
+    record-resolution tool).
+
+    Dispatches on the URI kind: ``book`` -> the book row (by unique_id),
+    ``marginalia`` -> the marginalia entry, ``reading`` -> the reading
+    session. Archived records still resolve (the federation must follow
+    trail steps to soft-deleted records until they are purged).
+    """
+    parsed = parse_uri(uri)
+    if parsed.kind == "book":
+        book = (
+            session.query(Book).filter_by(unique_id=parsed.id).first()
+        )
+        if book is None:
+            raise LookupError(f"Book {uri} not found")
+        return _book_to_dict(book)
+    if parsed.kind == "marginalia":
+        return get_marginalia_impl(session, uuid=parsed.id)
+    if parsed.kind == "reading":
+        rs = ReadingSessionService(session).get_by_uuid(parsed.id)
+        if rs is None:
+            raise LookupError(f"Reading session {uri} not found")
+        return _reading_session_to_dict(rs)
+    raise ValueError(f"Unsupported URI kind for get_record: {parsed.kind!r}")
 
 
 def get_marginalia_impl(session: Session, *, uuid: str) -> Dict[str, Any]:
