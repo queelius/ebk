@@ -387,3 +387,62 @@ class TestImportRoundTrip:
         stats = fresh_lib.import_arkiv(out)
         assert stats["books_added"] == 1
         assert stats["marginalia_added"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Tagged-book import (regression: R1, data-loss)
+# ---------------------------------------------------------------------------
+
+
+class TestTaggedBookImport:
+    """A book record carrying a tag must import without crashing (R1).
+
+    Regression for the arkiv importer querying the Tag.full_path *property*
+    in a SQL .where() (it is computed, not a column) and creating a Tag
+    without its NOT NULL ``path`` column. Either defect aborts the whole
+    bundle the moment a single tagged book is imported.
+    """
+
+    def test_import_book_with_tag(self, fresh_lib, tmp_path):
+        from book_memex.db.models import Tag
+
+        bundle = tmp_path / "tagged.jsonl"
+        record = {
+            "kind": "book",
+            "uri": "book-memex://book/tagged123",
+            "unique_id": "tagged123",
+            "title": "A Tagged Book",
+            "tags": ["Programming/Python"],
+        }
+        bundle.write_text(json.dumps(record) + "\n")
+
+        stats = import_arkiv(fresh_lib, bundle)
+        assert stats["books_added"] == 1
+
+        tag = fresh_lib.session.execute(
+            select(Tag).where(Tag.path == "Programming/Python")
+        ).scalar_one()
+        assert tag.path == "Programming/Python"
+        assert tag.name == "Python"
+
+    def test_tag_round_trips_through_export_import(
+        self, lib_with_data, fresh_lib, tmp_path
+    ):
+        from book_memex.db.models import Book, Tag
+
+        lib, info = lib_with_data
+        book = lib.session.execute(
+            select(Book).where(Book.unique_id == info["unique_id"])
+        ).scalar_one()
+        book.tags.append(Tag(name="ToRead", path="Personal/ToRead"))
+        lib.session.commit()
+
+        out = tmp_path / "bundle"
+        lib.export_arkiv(out)
+
+        stats = import_arkiv(fresh_lib, out)
+        assert stats["books_added"] == 1
+        imported_tag = fresh_lib.session.execute(
+            select(Tag).where(Tag.path == "Personal/ToRead")
+        ).scalar_one()
+        assert imported_tag.name == "ToRead"

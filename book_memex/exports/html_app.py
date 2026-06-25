@@ -123,8 +123,13 @@ def _build_export_db(library) -> bytes:
     def _iso(dt) -> str | None:
         return dt.isoformat() if dt else None
 
-    # Books
-    for book in session.query(Book).order_by(Book.id.asc()):
+    # Books. Soft-deleted (archived) records must never ship in a published
+    # artifact (workspace convention #9 / C1), so filter archived_at IS NULL.
+    for book in (
+        session.query(Book)
+        .filter(Book.archived_at.is_(None))
+        .order_by(Book.id.asc())
+    ):
         authors = [a.name for a in book.authors]
         subjects = [s.name for s in book.subjects]
         tags = [t.full_path for t in book.tags] if book.tags else []
@@ -154,8 +159,12 @@ def _build_export_db(library) -> bytes:
             ),
         )
 
-    # Marginalia
-    for m in session.query(Marginalia).order_by(Marginalia.id.asc()):
+    # Marginalia (archived excluded, see above)
+    for m in (
+        session.query(Marginalia)
+        .filter(Marginalia.archived_at.is_(None))
+        .order_by(Marginalia.id.asc())
+    ):
         book_uids = [b.unique_id for b in m.books]
         cur.execute(
             "INSERT INTO marginalia VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -174,8 +183,12 @@ def _build_export_db(library) -> bytes:
             ),
         )
 
-    # Reading sessions
-    for rs in session.query(ReadingSession).order_by(ReadingSession.id.asc()):
+    # Reading sessions (archived excluded, see above)
+    for rs in (
+        session.query(ReadingSession)
+        .filter(ReadingSession.archived_at.is_(None))
+        .order_by(ReadingSession.id.asc())
+    ):
         book_uid = rs.book.unique_id if rs.book else None
         cur.execute(
             "INSERT INTO reading_sessions VALUES (?,?,?,?,?,?,?)",

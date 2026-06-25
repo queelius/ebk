@@ -522,15 +522,17 @@ def _merge_book_metadata(session, book, rec: Dict[str, Any]) -> None:
         if not tag_path:
             continue
         tag = session.execute(
-            select(Tag).where(Tag.full_path == tag_path)
+            select(Tag).where(Tag.path == tag_path)
         ).scalar_one_or_none()
         if tag is None:
             # Split the path and create leaf-only Tag; hierarchy is not
             # reconstructed here because we don't know the parent_id
             # from the bundle. The consequence is flat tags for
             # round-tripped archives; a future pass can rebuild nesting.
+            # Both name and path are NOT NULL, so set both (path is the
+            # unique full path; name is the leaf label).
             name = tag_path.rsplit("/", 1)[-1]
-            tag = Tag(name=name)
+            tag = Tag(name=name, path=tag_path)
             session.add(tag)
             session.flush()
         if tag not in book.tags:

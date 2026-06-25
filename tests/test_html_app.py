@@ -276,3 +276,76 @@ class TestHtmlAppExporter:
         assert result["embedded_db_bytes"] > 0
         assert result["embedded_db_bytes"] <= result["original_db_bytes"]
         assert result["html_bytes"] >= result["embedded_db_bytes"]
+
+
+# ---------------------------------------------------------------------------
+# Soft-deleted records must not ship in the SPA (regression: R2, data-loss)
+# ---------------------------------------------------------------------------
+
+
+class TestHtmlAppExcludesArchived:
+    """An archived book / marginalia / reading session must not be exported."""
+
+    @staticmethod
+    def _shipped(html: str, table: str, col: str):
+        db = _extract_db_from_html(html)
+        f = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        f.write(db)
+        f.close()
+        conn = sqlite3.connect(f.name)
+        try:
+            return [r[0] for r in conn.execute(f"SELECT {col} FROM {table}")]
+        finally:
+            conn.close()
+            Path(f.name).unlink()
+
+    def test_archived_records_absent_from_export(self, lib_with_data, tmp_path):
+        from datetime import datetime
+
+        from book_memex.services.marginalia_service import MarginaliaService
+        from book_memex.services.reading_session_service import (
+            ReadingSessionService,
+        )
+
+        lib, info = lib_with_data
+
+        # A second book, archived.
+        p = lib.library_path / "secret.txt"
+        p.write_text("private")
+        arch_book = lib.add_book(
+            p,
+            metadata={"title": "Archived Secret", "language": "en"},
+            extract_text=False,
+            extract_cover=False,
+        )
+        arch_book_uid = arch_book.unique_id
+        arch_book.archived_at = datetime.utcnow()
+
+        m_svc = MarginaliaService(lib.session)
+        arch_m = m_svc.create(content="deleted note", book_ids=[arch_book.id])
+        arch_m_uuid = arch_m.uuid
+        m_svc.archive(arch_m)
+
+        r_svc = ReadingSessionService(lib.session)
+        arch_rs = r_svc.start(book_id=arch_book.id)
+        r_svc.end(arch_rs.uuid)
+        arch_rs_uuid = arch_rs.uuid
+        r_svc.archive(arch_rs)
+        lib.session.commit()
+
+        out = tmp_path / "archive.html"
+        lib.export_html_app(out)
+        html = out.read_text()
+
+        books = self._shipped(html, "books", "unique_id")
+        assert arch_book_uid not in books
+        assert info["unique_id"] in books
+
+        marg = self._shipped(html, "marginalia", "uuid")
+        assert arch_m_uuid not in marg
+        assert info["marginalia_uuid"] in marg
+
+        # This fixture has no non-archived reading session, so we only assert
+        # the archived one is excluded.
+        reading = self._shipped(html, "reading_sessions", "uuid")
+        assert arch_rs_uuid not in reading
