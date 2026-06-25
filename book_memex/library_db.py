@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .db.models import Book, Author, Subject, File, PersonalMetadata
 from .core.soft_delete import archive as _archive_row, filter_active
-from .db.session import init_db, get_session, close_db
+from .db.session import init_db, get_session, get_scoped_session, close_db
 from .services.import_service import ImportService
 from .services.text_extraction import TextExtractionService
 from .search_parser import parse_search_query
@@ -59,7 +59,12 @@ class Library:
         """
         library_path = Path(library_path)
         init_db(library_path, echo=echo)
-        session = get_session()
+        # Hold the thread-local registry proxy rather than a single resolved
+        # Session (see R3): when this Library is shared across request threads
+        # (the FastAPI server keeps one global instance), every thread resolves
+        # to its own Session through the proxy, so concurrent requests cannot
+        # tear each other's uncommitted writes.
+        session = get_scoped_session()
 
         logger.debug(f"Opened library at {library_path}")
         return cls(library_path, session)

@@ -9,13 +9,23 @@ from typing import Optional
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, scoped_session, Session
 from sqlalchemy.engine import Engine
 
 from .models import Base
 
-# Global session factory
-_SessionFactory: Optional[sessionmaker] = None
+# Global session factory.
+#
+# This is a thread-local ``scoped_session`` (see R3): the FastAPI server keeps a
+# single process-global ``Library`` and reaches into ``library.session`` from
+# every request, but synchronous endpoints run in a worker threadpool, so two
+# concurrent requests are served on two different threads. A plain ``Session`` is
+# not thread-safe; sharing one across threads risks torn writes and
+# cross-request data bleed. A ``scoped_session`` hands each thread its own
+# underlying ``Session`` while preserving the ``lib.session.*`` access pattern
+# used throughout cli.py, server.py and mcp/. Single-threaded callers (CLI, MCP)
+# see identical behaviour: one thread always resolves to one session.
+_SessionFactory: Optional[scoped_session] = None
 _engine: Optional[Engine] = None
 
 
@@ -68,8 +78,8 @@ def init_db(library_path: Path, echo: bool = False) -> Engine:
             """))
             conn.commit()
 
-    # Create session factory
-    _SessionFactory = sessionmaker(bind=_engine)
+    # Create thread-local session factory (see module note on R3).
+    _SessionFactory = scoped_session(sessionmaker(bind=_engine))
 
     # Run pending schema migrations. This both upgrades existing libraries
     # to the current schema and retroactively records baseline migrations
@@ -87,7 +97,7 @@ def init_db(library_path: Path, echo: bool = False) -> Engine:
 
 def get_session() -> Session:
     """
-    Get a new database session.
+    Get the current thread's database session.
 
     Returns:
         SQLAlchemy session
@@ -100,6 +110,28 @@ def get_session() -> Session:
             "Database not initialized. Call init_db() first."
         )
     return _SessionFactory()
+
+
+def get_scoped_session() -> scoped_session:
+    """
+    Get the thread-local session registry proxy (see R3).
+
+    Unlike :func:`get_session`, which resolves to one thread's ``Session`` at
+    call time, this returns the ``scoped_session`` registry itself. Holding the
+    registry (rather than a resolved ``Session``) lets a long-lived object such
+    as ``Library`` be shared across threads safely: every attribute access on
+    the proxy (``.query``, ``.commit``, ``.add``, ...) is dispatched to the
+    calling thread's own ``Session``. This is what the FastAPI server relies on
+    so that concurrent requests do not share uncommitted state.
+
+    Raises:
+        RuntimeError: If database not initialized
+    """
+    if _SessionFactory is None:
+        raise RuntimeError(
+            "Database not initialized. Call init_db() first."
+        )
+    return _SessionFactory
 
 
 @contextmanager
@@ -126,6 +158,11 @@ def session_scope():
 def close_db():
     """Close database connection and cleanup."""
     global _engine, _SessionFactory
+
+    # Release every thread-local Session held by the registry before the
+    # engine is disposed, so no thread keeps a connection to a dead engine.
+    if _SessionFactory is not None:
+        _SessionFactory.remove()
 
     if _engine:
         _engine.dispose()
