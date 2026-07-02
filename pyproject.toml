@@ -30,7 +30,9 @@ classifiers = [
 keywords = ["ebook", "metadata", "library", "books", "management", "calibre"]
 requires-python = ">=3.10"
 
-# Core dependencies only - keep it minimal
+# Core dependencies: everything imported by `import book_memex` (the library
+# path). SQLAlchemy and BeautifulSoup are pulled in transitively by
+# library_db + content extraction, so they belong here, not in an extra.
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
@@ -43,6 +45,8 @@ dependencies = [
     "Pillow>=10.0.0",
     "jinja2>=3.0.0",
     "xmltodict>=0.13.0",
+    "sqlalchemy>=2.0.0",  # core ORM (models, session, library_db)
+    "beautifulsoup4>=4.12.0",  # HTML/EPUB content extraction
 ]
 
 [project.urls]
@@ -69,15 +73,29 @@ mcp = [
     "pydantic>=2.0.0",
 ]
 
-# Development tools
+# Web server + browser reader (the /read and REST/OPDS surfaces)
+server = [
+    "fastapi>=0.100.0",
+    "python-multipart>=0.0.6",  # required for FastAPI form endpoints
+]
+
+# Book-similarity utilities
+similarity = [
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+]
+
+# Development tools (pulls the runtime extras so the full suite runs)
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
+    "httpx>=0.24.0",  # starlette TestClient transport
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "book-memex[mcp,server,similarity]",
 ]
 
 # Documentation
@@ -87,10 +105,9 @@ docs = [
     "mkdocstrings[python]>=0.24.0",
 ]
 
-# All optional dependencies
+# All optional runtime features (mcp + server + similarity)
 all = [
-    "mcp>=1.0,<2.0",
-    "pydantic>=2.0.0",
+    "book-memex[mcp,server,similarity]",
 ]
 
 [tool.setuptools]

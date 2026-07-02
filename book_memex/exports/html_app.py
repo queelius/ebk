@@ -58,6 +58,29 @@ _DB_GZIP_LEVEL = 6
 # ---------------------------------------------------------------------------
 
 
+def _serialize_db(conn: sqlite3.Connection) -> bytes:
+    """Return the connection's database as raw bytes.
+
+    Uses ``sqlite3.Connection.serialize`` on Python 3.11+; on 3.10 (which the
+    project's requires-python still allows) that method does not exist, so back
+    the in-memory DB up to a temporary file and read the bytes instead.
+    """
+    serialize = getattr(conn, "serialize", None)
+    if serialize is not None:
+        return serialize()
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        dest_path = Path(td) / "export.db"
+        dest = sqlite3.connect(str(dest_path))
+        try:
+            conn.backup(dest)
+        finally:
+            dest.close()
+        return dest_path.read_bytes()
+
+
 def _build_export_db(library) -> bytes:
     """Build an in-memory SQLite DB of the library, return raw bytes.
 
@@ -207,7 +230,7 @@ def _build_export_db(library) -> bytes:
     # VACUUM requires no open cursors or pending statements.
     cur.close()
     conn.execute("VACUUM")
-    data: bytes = conn.serialize()
+    data: bytes = _serialize_db(conn)
     conn.close()
     return data
 

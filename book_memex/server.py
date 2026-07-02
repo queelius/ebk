@@ -397,16 +397,14 @@ async def read_book(request: Request, book_id: int):
 
     pf = book.primary_file
     if pf is None:
-        return _templates.TemplateResponse("reader_error.html", {
-            "request": request,
+        return _templates.TemplateResponse(request, "reader_error.html", {
             "error_title": "No readable file",
             "error_message": "This book has no files attached. Import a file first.",
         })
 
     fmt = pf.format.lower()
     if fmt not in ("epub", "pdf"):
-        return _templates.TemplateResponse("reader_error.html", {
-            "request": request,
+        return _templates.TemplateResponse(request, "reader_error.html", {
             "error_title": "Format not supported",
             "error_message": f"Format \"{fmt}\" is not supported in the reader. "
                              "Only EPUB and PDF files can be opened.",
@@ -421,8 +419,7 @@ async def read_book(request: Request, book_id: int):
         "title": book.title,
         "author": author,
     })
-    return _templates.TemplateResponse("reader.html", {
-        "request": request,
+    return _templates.TemplateResponse(request, "reader.html", {
         "title": book.title,
         "format": fmt,
         "book_json": book_json,
