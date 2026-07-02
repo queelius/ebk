@@ -54,7 +54,7 @@ import json
 import tarfile
 import zipfile
 from collections.abc import Iterable, Iterator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -227,16 +227,25 @@ def _parse_jsonl_lines(reader) -> Iterable[Dict[str, Any]]:
 def _parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
         return None
-    cleaned = ts.replace("Z", "+00:00").split("+")[0]
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(cleaned, fmt)
-        except ValueError:
-            continue
+    normalized = ts.replace("Z", "+00:00")
+    dt: Optional[datetime] = None
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(normalized)
     except ValueError:
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                dt = datetime.strptime(normalized, fmt)
+                break
+            except ValueError:
+                continue
+    if dt is None:
         return None
+    # [R4] Convert an offset-bearing timestamp to UTC, then store naive (the
+    # DB columns are naive UTC). The previous split('+') truncated the offset,
+    # shifting every timestamp by its offset and dropping negative offsets.
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 def _unique_id_from_book_uri(uri: Optional[str]) -> Optional[str]:

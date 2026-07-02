@@ -110,6 +110,23 @@ class TestHelpers:
         assert _parse_timestamp(None) is None
         assert _parse_timestamp("") is None
 
+    def test_parse_timestamp_offset_converted_to_utc(self):
+        # [R4] 12:34:56+05:00 is 07:34:56 UTC, not a truncated 12:34:56.
+        from datetime import datetime
+
+        ts = _parse_timestamp("2026-04-23T12:34:56+05:00")
+        assert ts is not None
+        assert ts.tzinfo is None  # stored naive UTC
+        assert ts == datetime(2026, 4, 23, 7, 34, 56)
+
+    def test_parse_timestamp_negative_offset_converted_to_utc(self):
+        # [R4] The old split('+') dropped negative offsets entirely.
+        from datetime import datetime
+
+        ts = _parse_timestamp("2026-04-23T12:34:56-08:00")
+        assert ts is not None
+        assert ts == datetime(2026, 4, 23, 20, 34, 56)
+
     def test_is_record_accepts_book(self):
         assert _is_book_memex_arkiv_record(
             {"kind": "book", "uri": "book-memex://book/abc", "unique_id": "abc"}
